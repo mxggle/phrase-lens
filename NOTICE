@@ -1,0 +1,8 @@
+NextAI Translator Native
+
+This project is a from-scratch native macOS implementation based on the behavior
+and user-facing concepts of NextAI Translator:
+https://github.com/nextai-translator/nextai-translator
+
+The original project is licensed under the GNU Affero General Public License.
+This derivative remains under AGPL-3.0-or-later.
