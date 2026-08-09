@@ -13,9 +13,9 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>NextAI Translator Native</string>
+    <string>PhraseLens</string>
     <key>CFBundleDisplayName</key>
-    <string>NextAI Translator Native</string>
+    <string>PhraseLens</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

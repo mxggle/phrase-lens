@@ -474,7 +474,7 @@ private struct SpeechWritingSettingsPane: View {
         }
         Button("Preview Voice") {
           model.speech.speak(
-            "NextAI Translator is ready.",
+            "PhraseLens is ready.",
             language: settingsStore.settings.targetLanguage,
             rate: settingsStore.settings.speechRate,
             volume: settingsStore.settings.speechVolume,
@@ -550,14 +550,14 @@ private struct AboutSettingsPane: View {
         .accessibilityHidden(true)
 
       VStack(spacing: AppSpacing.xs) {
-        Text("NextAI Translator Native")
+        Text("PhraseLens")
           .font(.title2.weight(.semibold))
         Text("Version 0.1.0")
           .font(.callout)
           .foregroundStyle(.secondary)
       }
 
-      Text("A native SwiftUI desktop edition of NextAI Translator.")
+      Text("A native SwiftUI language workspace for macOS.")
         .multilineTextAlignment(.center)
         .foregroundStyle(.secondary)
         .frame(maxWidth: 340)

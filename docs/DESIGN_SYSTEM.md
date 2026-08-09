@@ -1,4 +1,4 @@
-# NextAI Translator macOS design system
+# PhraseLens macOS design system
 
 The interface follows the macOS design system: the window toolbar and sidebar
 form the navigation layer (Liquid Glass, applied by the system on macOS 26),

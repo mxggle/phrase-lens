@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
 source "${SCRIPT_DIR}/toolchain-env.sh"
-PRODUCT_NAME="NextAI Translator Native"
+PRODUCT_NAME="PhraseLens"
 EXECUTABLE_NAME="NextAITranslatorNative"
 BUILD_DIR="${PROJECT_DIR}/.build"
 APP_PATH="${BUILD_DIR}/${PRODUCT_NAME}.app"

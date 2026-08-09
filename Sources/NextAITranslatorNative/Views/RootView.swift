@@ -48,7 +48,7 @@ struct RootView: View {
       WindowCoordinator.mainWindow()?.level = value ? .floating : .normal
     }
     .alert(
-      "NextAI Translator",
+      "PhraseLens",
       isPresented: Binding(
         get: { model.errorMessage != nil },
         set: { if !$0 { model.errorMessage = nil } }

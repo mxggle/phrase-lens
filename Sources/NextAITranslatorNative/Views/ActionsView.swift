@@ -147,7 +147,7 @@ struct ActionsView: View {
         Text("Action")
       } footer: {
         Label(
-          "Built-in actions keep the original NextAI Translator prompts and cannot be edited. "
+          "Built-in actions use PhraseLens's default prompts and cannot be edited. "
             + "Add a custom action to write your own.",
           systemImage: "info.circle"
         )

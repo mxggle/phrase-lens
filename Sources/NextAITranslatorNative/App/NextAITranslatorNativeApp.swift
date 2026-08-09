@@ -23,7 +23,7 @@ struct NextAITranslatorNativeApp: App {
   }
 
   var body: some Scene {
-    WindowGroup("NextAI Translator Native") {
+  WindowGroup("PhraseLens") {
       RootView()
         .environmentObject(model)
         .environmentObject(model.settingsStore)
@@ -68,7 +68,7 @@ struct NextAITranslatorNativeApp: App {
         .preferredColorScheme(colorScheme)
     }
 
-    MenuBarExtra("NextAI Translator Native", systemImage: "character.bubble") {
+  MenuBarExtra("PhraseLens", systemImage: "character.bubble") {
       Button("Open Translator") { WindowCoordinator.showMain() }
       Button("Translate Selection in Pop-Up") { model.captureSelectionAndTranslate() }
       Button("Screenshot OCR") { model.captureOCR() }
