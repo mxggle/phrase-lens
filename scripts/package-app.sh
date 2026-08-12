@@ -11,7 +11,9 @@ APP_PATH="${BUILD_DIR}/${PRODUCT_NAME}.app"
 EXECUTABLE_PATH="${BUILD_DIR}/release/${EXECUTABLE_NAME}"
 
 cd "${PROJECT_DIR}"
-swift build --disable-sandbox -c release -Xswiftc -warnings-as-errors
+# The distributable favors code size; framework-heavy work still runs in the
+# system frameworks, while this keeps PhraseLens's own Swift code compact.
+swift build --disable-sandbox -c release -Xswiftc -Osize -Xswiftc -warnings-as-errors
 
 EXPECTED_PATH="${PROJECT_DIR}/.build/${PRODUCT_NAME}.app"
 if [[ "${APP_PATH}" != "${EXPECTED_PATH}" ]]; then
@@ -22,6 +24,9 @@ fi
 rm -rf "${APP_PATH}"
 mkdir -p "${APP_PATH}/Contents/MacOS" "${APP_PATH}/Contents/Resources"
 cp "${EXECUTABLE_PATH}" "${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
+# Keep SwiftPM's release binary unstripped for local crash symbolication, but
+# remove local symbols from the distributable copy before it is signed.
+/usr/bin/strip -x "${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
 cp "${PROJECT_DIR}/packaging/Info.plist" "${APP_PATH}/Contents/Info.plist"
 if [[ -f "${PROJECT_DIR}/packaging/AppIcon.icns" ]]; then
     cp "${PROJECT_DIR}/packaging/AppIcon.icns" "${APP_PATH}/Contents/Resources/AppIcon.icns"

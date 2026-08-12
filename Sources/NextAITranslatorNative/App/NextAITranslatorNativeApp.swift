@@ -23,15 +23,16 @@ struct NextAITranslatorNativeApp: App {
   }
 
   var body: some Scene {
-  WindowGroup("PhraseLens") {
+    WindowGroup("PhraseLens") {
       RootView()
         .environmentObject(model)
         .environmentObject(model.settingsStore)
         .frame(minWidth: AppMetrics.windowMinWidth, minHeight: AppMetrics.windowMinHeight)
-        .preferredColorScheme(colorScheme)
     }
-    .defaultSize(width: 1000, height: 700)
-    .windowToolbarStyle(.unified)
+    .defaultSize(width: 1080, height: 720)
+    // The app draws its own top bar, so the system title bar is hidden and the
+    // sidebar reserves the space the traffic lights need.
+    .windowStyle(.hiddenTitleBar)
     .commands {
       CommandGroup(after: .newItem) {
         Button("Translate Selection in Pop-Up") {
@@ -65,10 +66,9 @@ struct NextAITranslatorNativeApp: App {
       SettingsView()
         .environmentObject(model)
         .environmentObject(model.settingsStore)
-        .preferredColorScheme(colorScheme)
     }
 
-  MenuBarExtra("PhraseLens", systemImage: "character.bubble") {
+    MenuBarExtra("PhraseLens", systemImage: "character.bubble") {
       Button("Open Translator") { WindowCoordinator.showMain() }
       Button("Translate Selection in Pop-Up") { model.captureSelectionAndTranslate() }
       Button("Screenshot OCR") { model.captureOCR() }
@@ -79,13 +79,6 @@ struct NextAITranslatorNativeApp: App {
     }
   }
 
-  private var colorScheme: ColorScheme? {
-    switch model.settingsStore.settings.theme {
-    case .system: nil
-    case .light: .light
-    case .dark: .dark
-    }
-  }
 }
 
 @MainActor

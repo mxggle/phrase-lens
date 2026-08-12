@@ -18,10 +18,7 @@ final class SelectionPanelCoordinator {
 
   /// The height covers the action tab strip on top of what the panel showed
   /// before it, so adding the strip did not come out of the result area.
-  private let contentSize = CGSize(
-    width: 460,
-    height: 400 + AppMetrics.compactActionTabBarHeight
-  )
+  private let contentSize = CGSize(width: 480, height: 440)
   private var panel: SelectionPopoverPanel?
   private var outsideClickMonitor: Any?
   private var escapeKeyMonitor: Any?
@@ -36,7 +33,6 @@ final class SelectionPanelCoordinator {
     let rootView = SelectionTranslationPanelView()
       .environmentObject(model)
       .environmentObject(model.settingsStore)
-      .preferredColorScheme(colorScheme(for: model.settingsStore.settings.theme))
       .frame(width: contentSize.width, height: contentSize.height)
     let hostingController = NSHostingController(rootView: rootView)
     let panel = SelectionPopoverPanel(
@@ -66,7 +62,8 @@ final class SelectionPanelCoordinator {
       .ignoresCycle,
     ]
 
-    let anchor = anchorScreenRect.flatMap(Self.appKitScreenRect(from:))
+    let anchor =
+      anchorScreenRect.flatMap(Self.appKitScreenRect(from:))
       ?? NSRect(origin: NSEvent.mouseLocation, size: .zero)
     panel.setFrame(Self.frame(for: contentSize, near: anchor), display: false)
     self.panel = panel
@@ -133,16 +130,9 @@ final class SelectionPanelCoordinator {
     }
   }
 
-  private func colorScheme(for theme: AppTheme) -> ColorScheme? {
-    switch theme {
-    case .system: nil
-    case .light: .light
-    case .dark: .dark
-    }
-  }
-
   private static func frame(for size: CGSize, near anchor: NSRect) -> NSRect {
-    let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchor) })
+    let screen =
+      NSScreen.screens.first(where: { $0.frame.intersects(anchor) })
       ?? NSScreen.screens.first(where: { $0.frame.contains(anchor.origin) })
       ?? NSScreen.main
     let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: size.width, height: size.height)
@@ -156,7 +146,8 @@ final class SelectionPanelCoordinator {
       y = anchor.minY - size.height - gap
     }
     if y < visible.minY + verticalInset {
-      y = min(max(anchor.midY - size.height / 2, visible.minY + verticalInset),
+      y = min(
+        max(anchor.midY - size.height / 2, visible.minY + verticalInset),
         visible.maxY - size.height - verticalInset)
     }
     x = min(max(x, visible.minX + horizontalInset), visible.maxX - size.width - horizontalInset)
@@ -187,6 +178,21 @@ final class SelectionPanelCoordinator {
 private struct SelectionTranslationPanelView: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
+
+  var body: some View {
+    ThemedContainer {
+      SelectionPanelBody()
+    }
+    .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
+  }
+}
+
+/// Split from the panel root so it can read the palette that
+/// `ThemedContainer` publishes for the panel's own appearance.
+private struct SelectionPanelBody: View {
+  @EnvironmentObject private var model: AppModel
+  @EnvironmentObject private var settingsStore: SettingsStore
+  @Environment(\.palette) private var palette
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var didCopy = false
   @State private var copyResetTask: Task<Void, Never>?
@@ -194,19 +200,24 @@ private struct SelectionTranslationPanelView: View {
   var body: some View {
     VStack(spacing: 0) {
       header
-      Divider()
-      ActionTabBar(
-        actions: model.allActions,
-        selection: actionSelection,
-        size: .compact
-      )
-      sourceSummary
-      Divider()
+      Hairline()
+      VStack(spacing: AppSpacing.sm) {
+        ActionTabBar(
+          actions: model.visibleActions,
+          selection: actionSelection,
+          size: .compact
+        )
+        sourceSummary
+      }
+      .padding(.horizontal, AppSpacing.md)
+      .padding(.top, AppSpacing.sm + 2)
+      .padding(.bottom, AppSpacing.sm)
+      Hairline()
       result
-      Divider()
+      Hairline()
       footer
     }
-    .floatingPanelBackground()
+    .floatingPanelBackground(palette)
     .onExitCommand {
       SelectionPanelCoordinator.shared.close()
     }
@@ -218,33 +229,36 @@ private struct SelectionTranslationPanelView: View {
 
   // MARK: - Header
 
-  /// One line of chrome: what this window is, whether it is working, and how to
-  /// dismiss it. Everything else is a command and belongs in the footer.
+  /// One line of chrome: what this window is, whether it is working, and how
+  /// to dismiss it. Everything else is a command and belongs in the footer.
   private var header: some View {
     HStack(spacing: AppSpacing.sm) {
-      Image(systemName: "character.bubble.fill")
-        .foregroundStyle(.tint)
-      Text("Selection Translation")
-        .font(.subheadline.weight(.semibold))
+      RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
+        .fill(palette.primary)
+        .frame(width: 20, height: 20)
+        .overlay {
+          Image(systemName: "character.bubble.fill")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(palette.primaryForeground)
+        }
+        .accessibilityHidden(true)
+
+      Text("Selection")
+        .font(AppFont.bodyMedium)
+        .foregroundStyle(palette.foreground)
+
       Spacer(minLength: AppSpacing.sm)
+
       if model.isTranslating {
-        ProgressView()
-          .controlSize(.small)
-          .accessibilityLabel("Translating")
+        Spinner(size: 12)
       }
-      Button {
+
+      IconButton(title: "Close (Escape)", symbol: "xmark", size: .iconSmall) {
         SelectionPanelCoordinator.shared.close()
-      } label: {
-        Image(systemName: "xmark")
-          .font(.caption.weight(.semibold))
-          .frame(width: 16, height: 16)
       }
-      .buttonStyle(.borderless)
-      .help("Close (Escape)")
-      .accessibilityLabel("Close")
     }
     .padding(.horizontal, AppSpacing.md)
-    .frame(height: AppMetrics.headerBarHeight)
+    .frame(height: AppMetrics.paneHeaderHeight)
   }
 
   // MARK: - Action
@@ -268,40 +282,46 @@ private struct SelectionTranslationPanelView: View {
   // MARK: - Captured text
 
   private var sourceSummary: some View {
-    VStack(alignment: .leading, spacing: AppSpacing.xs) {
-      Text("Selected text")
-        .font(.caption)
-        .foregroundStyle(.secondary)
+    HStack(alignment: .top, spacing: AppSpacing.sm) {
+      Image(systemName: "quote.opening")
+        .font(.system(size: 9, weight: .semibold))
+        .foregroundStyle(palette.faintForeground)
+        .padding(.top, 2)
+        .accessibilityHidden(true)
       Text(model.inputText.isEmpty ? "Nothing was selected" : model.inputText)
-        .font(.callout)
-        .foregroundStyle(model.inputText.isEmpty ? .tertiary : .primary)
+        .font(AppFont.body)
+        .foregroundStyle(
+          model.inputText.isEmpty ? palette.faintForeground : palette.secondaryForeground
+        )
         .lineLimit(2)
         .textSelection(.enabled)
+      Spacer(minLength: 0)
     }
+    .padding(AppSpacing.sm)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.horizontal, AppSpacing.md)
-    .padding(.vertical, AppSpacing.sm + 2)
+    .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
   }
 
   // MARK: - Result
 
-  /// The result takes every point the panel has left. The previous fixed height
-  /// clipped generated text mid-line, which read as a rendering fault.
+  /// The result takes every point the panel has left. A fixed height clipped
+  /// generated text mid-line, which read as a rendering fault.
   @ViewBuilder
   private var result: some View {
     Group {
       if let error = model.errorMessage {
-        message(error, symbol: "exclamationmark.triangle.fill", tint: .orange)
+        message(error, symbol: "exclamationmark.triangle.fill", tint: palette.warning)
       } else if model.outputText.isEmpty, model.isTranslating {
-        message("Translating…", symbol: "ellipsis", tint: .secondary)
+        message("Translating…", symbol: "ellipsis", tint: palette.mutedForeground)
       } else if model.outputText.isEmpty {
         VStack(spacing: AppSpacing.md) {
           Text("Ready to translate")
-            .foregroundStyle(.secondary)
+            .font(AppFont.body)
+            .foregroundStyle(palette.mutedForeground)
           Button("Translate") {
             model.translate()
           }
-          .buttonStyle(.borderedProminent)
+          .appButton(.primary, size: .sm)
           .keyboardShortcut(.return, modifiers: [.command])
           .disabled(model.inputText.isEmpty)
         }
@@ -320,7 +340,7 @@ private struct SelectionTranslationPanelView: View {
           }
           .frame(maxWidth: .infinity, alignment: .topLeading)
           .padding(.horizontal, AppSpacing.md)
-          .padding(.vertical, AppSpacing.sm)
+          .padding(.vertical, AppSpacing.md - 2)
         }
         .scrollBounceBehavior(.basedOnSize)
       }
@@ -330,20 +350,37 @@ private struct SelectionTranslationPanelView: View {
 
   private func message(_ text: String, symbol: String, tint: Color) -> some View {
     Label(text, systemImage: symbol)
+      .font(AppFont.body)
       .foregroundStyle(tint)
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, AppSpacing.md)
-      .padding(.vertical, AppSpacing.sm)
+      .padding(.vertical, AppSpacing.md - 2)
   }
 
   // MARK: - Footer
 
   private var footer: some View {
-    HStack(spacing: AppSpacing.sm) {
-      targetLanguageMenu
-      Spacer(minLength: AppSpacing.sm)
+    HStack(spacing: AppSpacing.xs) {
+      AppSelect(
+        title: "Target language",
+        selection: Binding(
+          get: { settingsStore.settings.targetLanguage },
+          set: { language in
+            guard language != settingsStore.settings.targetLanguage else { return }
+            settingsStore.settings.targetLanguage = language
+            if !model.inputText.isEmpty {
+              model.translate()
+            }
+          }
+        ),
+        options: model.visibleTargetLanguages,
+        label: { $0.displayName },
+        size: .sm
+      )
 
-      BarButton(
+      Spacer(minLength: AppSpacing.xs)
+
+      IconButton(
         title: model.speech.isSpeaking ? "Stop speaking" : "Speak selected text",
         symbol: model.speech.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2",
         isDisabled: model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -351,7 +388,7 @@ private struct SelectionTranslationPanelView: View {
         model.speakInput()
       }
 
-      BarButton(title: "Open the full translator window", symbol: "macwindow") {
+      IconButton(title: "Open the full translator window", symbol: "macwindow") {
         WindowCoordinator.showMain()
       }
 
@@ -365,47 +402,21 @@ private struct SelectionTranslationPanelView: View {
           didCopy = false
         }
       } label: {
-        Label {
-          Text(didCopy ? "Copied" : "Copy")
-        } icon: {
+        HStack(spacing: AppSpacing.xs + 1) {
           Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+            .font(.system(size: 11, weight: .medium))
             .contentTransition(.symbolEffect(.replace))
+          Text(didCopy ? "Copied" : "Copy")
         }
       }
-      .buttonStyle(.borderedProminent)
+      .appButton(.primary, size: .sm)
       .symbolEffect(.bounce, value: didCopy)
       .disabled(model.outputText.isEmpty)
       .help("Copy the translation")
+      .accessibilityLabel(didCopy ? "Copied" : "Copy the translation")
     }
-    .controlSize(.small)
     .padding(.horizontal, AppSpacing.md)
-    .frame(height: AppMetrics.footerBarHeight + 6)
-  }
-
-  /// Changing the target language here saves a trip to the main window; the
-  /// pop-up re-runs the translation so the result matches the new choice.
-  private var targetLanguageMenu: some View {
-    Picker(
-      "Target language",
-      selection: Binding(
-        get: { settingsStore.settings.targetLanguage },
-        set: { language in
-          guard language != settingsStore.settings.targetLanguage else { return }
-          settingsStore.settings.targetLanguage = language
-          if !model.inputText.isEmpty {
-            model.translate()
-          }
-        }
-      )
-    ) {
-      ForEach(model.visibleTargetLanguages) { language in
-        Text(language.displayName).tag(language)
-      }
-    }
-    .pickerStyle(.menu)
-    .labelsHidden()
-    .fixedSize()
-    .help("Target language")
-    .accessibilityLabel("Target language")
+    .frame(height: AppMetrics.paneFooterHeight + 6)
+    .background(palette.chrome)
   }
 }

@@ -1,1 +1,0 @@
-Runtime resources are copied into the application bundle by Swift Package Manager.

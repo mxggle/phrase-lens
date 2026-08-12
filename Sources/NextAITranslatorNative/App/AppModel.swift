@@ -729,15 +729,37 @@ enum WindowCoordinator {
     window.setFrame(frame, display: true)
   }
 
+  /// The main window carries the scene's title, which is the only stable way
+  /// to tell it apart from the Settings window now that both are plain,
+  /// titled-appearance windows of similar size. Width is the fallback for a
+  /// system that has not applied the title yet.
   static func tagMainWindowIfNeeded() {
+    let candidates = NSApp.windows.filter {
+      $0.identifier != mainWindowIdentifier && $0.canBecomeKey && !($0 is NSPanel)
+    }
     guard
-      let window = NSApp.windows.first(where: {
-        $0.identifier != mainWindowIdentifier
-          && $0.canBecomeKey
-          && $0.frame.width >= 760
-      })
+      let window = candidates.first(where: { $0.title == "PhraseLens" })
+        ?? candidates.first(where: { $0.frame.width >= AppMetrics.windowMinWidth })
     else { return }
     window.identifier = mainWindowIdentifier
+    configureChrome(of: window)
+  }
+
+  /// The app draws its own top bar, so the window's content has to reach the
+  /// top edge. `.hiddenTitleBar` hides the title and makes the bar
+  /// transparent, but it leaves the content below the bar: without
+  /// `fullSizeContentView` the sidebar starts 28pt down and the gap it
+  /// reserves for the traffic lights lands under them instead of behind them.
+  ///
+  /// SwiftUI re-applies the scene's own style mask after launch, so this also
+  /// runs from `WindowChrome` once the content view has a window.
+  static func configureChrome(of window: NSWindow) {
+    window.styleMask.insert(.fullSizeContentView)
+    window.titlebarAppearsTransparent = true
+    window.titleVisibility = .hidden
+    // Content, not chrome, fills the bar area now, so dragging from anywhere
+    // in the window would start a move the moment a drag misses a control.
+    window.isMovableByWindowBackground = false
   }
 
   static func mainWindow() -> NSWindow? {

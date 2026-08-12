@@ -3,18 +3,22 @@ import SwiftUI
 struct TranslatorView: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
+  @Environment(\.palette) private var palette
+  @Environment(\.layoutWidth) private var layoutWidth
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
   @FocusState private var inputFocused: Bool
   @State private var swapAngle = 0.0
   @State private var didCopy = false
   @State private var copyResetTask: Task<Void, Never>?
+  @State private var splitFraction = 0.5
 
   private var motion: Animation? {
     AppMotion.state(reduceMotion: reduceMotion)
   }
 
   /// Selection captures stay read-only until the user asks to edit them, so an
-  /// accidental keystroke cannot destroy text that was grabbed from another app.
+  /// accidental keystroke cannot destroy text grabbed from another app.
   private var showsSelectionPreview: Bool {
     model.inputSource == .selection
       && settingsStore.settings.useCompactSelectionPreview
@@ -22,51 +26,76 @@ struct TranslatorView: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      ActionTabBar(actions: model.allActions, selection: actionSelection)
-      HSplitView {
-        // An explicit ideal width keeps the split proportional. Without it the
-        // panes size to whatever their content asks for, and a wide result —
-        // a Markdown table, a long code line — pushes text past the window.
+    VStack(spacing: AppSpacing.md) {
+      commandStrip
+
+      ResizableSplit(
+        fraction: $splitFraction,
+        leadingMin: AppMetrics.paneMinWidth,
+        trailingMin: AppMetrics.paneMinWidth,
+        // The split sits inside the section's horizontal padding, so its own
+        // breakpoint has to be narrower by that much for the panes to stack at
+        // the same window width that turns the section compact.
+        stacksBelow: AppBreakpoints.regular - 2 * AppSpacing.lg
+      ) {
         sourcePane
-          .frame(
-            minWidth: AppMetrics.paneMinWidth,
-            idealWidth: AppMetrics.paneIdealWidth,
-            maxWidth: .infinity
-          )
+          .padding(.trailing, layoutWidth.isCompact ? 0 : AppSpacing.xs)
+          .padding(.bottom, layoutWidth.isCompact ? AppSpacing.xs : 0)
+      } trailing: {
         resultPane
-          .frame(
-            minWidth: AppMetrics.paneMinWidth,
-            idealWidth: AppMetrics.paneIdealWidth,
-            maxWidth: .infinity
-          )
+          .padding(.leading, layoutWidth.isCompact ? 0 : AppSpacing.xs)
+          .padding(.top, layoutWidth.isCompact ? AppSpacing.xs : 0)
       }
+
       statusBar
     }
-    .background(AppDesign.canvas)
-    .toolbar { translatorToolbar }
-    .navigationSubtitle(languagePairSummary)
+    .padding(.horizontal, AppSpacing.lg)
+    .padding(.top, AppSpacing.md)
+    .padding(.bottom, AppSpacing.md)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(palette.background)
     .animation(motion, value: model.isTranslating)
     .animation(motion, value: model.outputText.isEmpty)
     .animation(motion, value: showsSelectionPreview)
   }
 
-  private var languagePairSummary: String {
-    let source = settingsStore.settings.sourceLanguage.displayName
-    let target = settingsStore.settings.targetLanguage.displayName
-    return "\(source) → \(target)"
+  // MARK: - Command strip
+
+  /// Which action runs, and the pair of languages it runs between. Both apply
+  /// to the whole translation, so both sit above the split rather than inside
+  /// one of its panes.
+  private var commandStrip: some View {
+    HStack(spacing: AppSpacing.sm) {
+      ActionTabBar(
+        actions: model.visibleActions,
+        selection: actionSelection,
+        iconsOnly: layoutWidth.isCompact
+      )
+      .layoutPriority(1)
+
+      if !layoutWidth.isCompact {
+        Spacer(minLength: AppSpacing.sm)
+        languageControls
+      }
+    }
   }
 
-  // MARK: - Toolbar
-
-  /// The toolbar carries the single command that runs the window's work. Which
-  /// action runs is a flat tab strip under the toolbar, so every action is one
-  /// click away; everything scoped to one side of the translation lives in that
-  /// pane's own header instead.
-  @ToolbarContentBuilder
-  private var translatorToolbar: some ToolbarContent {
-    ToolbarItemGroup(placement: .primaryAction) {
-      translateButton
+  private var languageControls: some View {
+    HStack(spacing: AppSpacing.xs + 2) {
+      AppSelect(
+        title: "Source language",
+        selection: $settingsStore.settings.sourceLanguage,
+        options: model.visibleSourceLanguages,
+        label: { $0.displayName },
+        symbol: "globe"
+      )
+      swapButton
+      AppSelect(
+        title: "Target language",
+        selection: $settingsStore.settings.targetLanguage,
+        options: model.visibleTargetLanguages,
+        label: { $0.displayName }
+      )
     }
   }
 
@@ -82,53 +111,50 @@ struct TranslatorView: View {
     )
   }
 
-  @ViewBuilder
-  private var translateButton: some View {
-    let button = Button {
-      if model.isTranslating {
-        model.stopTranslation()
-      } else {
-        model.translate()
+  private var swapButton: some View {
+    Button {
+      model.swapLanguages()
+      if let animation = AppMotion.interactive(reduceMotion: reduceMotion) {
+        withAnimation(animation) { swapAngle += 180 }
       }
     } label: {
-      Label(
-        model.isTranslating ? "Stop" : "Translate",
-        systemImage: model.isTranslating ? "stop.fill" : "arrow.forward"
-      )
-      .labelStyle(.titleAndIcon)
+      Image(systemName: "arrow.left.arrow.right")
+        .font(.system(size: 11, weight: .semibold))
+        .rotationEffect(.degrees(swapAngle))
     }
-    .keyboardShortcut(.return, modifiers: [.command])
-    .disabled(
-      !model.isTranslating
-        && model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    .appButton(.ghost, size: .iconSmall)
+    .disabled(settingsStore.settings.sourceLanguage == .auto)
+    .help(
+      settingsStore.settings.sourceLanguage == .auto
+        ? "Choose a source language to swap"
+        : "Swap the source and target languages"
     )
-    .help(model.isTranslating ? "Stop translating (⌘.)" : "Translate (⌘↩)")
-
-    if #available(macOS 26.0, *) {
-      button.buttonStyle(.glassProminent)
-    } else {
-      button.buttonStyle(.borderedProminent)
-    }
+    .accessibilityLabel("Swap languages")
   }
 
   // MARK: - Source pane
 
   private var sourcePane: some View {
-    VStack(spacing: 0) {
-      PaneBar(.header) {
-        languagePicker(
-          "Source language",
-          selection: $settingsStore.settings.sourceLanguage,
-          languages: model.visibleSourceLanguages
-        )
-        Spacer(minLength: AppSpacing.sm)
-        swapButton
+    PaneContainer {
+      PaneHeader(
+        title: "Source",
+        symbol: "text.alignleft",
+        badge: sourceBadge
+      ) {
+        if layoutWidth.isCompact {
+          AppSelect(
+            title: "Source language",
+            selection: $settingsStore.settings.sourceLanguage,
+            options: model.visibleSourceLanguages,
+            label: { $0.displayName }
+          )
+        }
       }
 
       sourceBody
 
-      PaneBar(.footer) {
-        BarButton(
+      PaneFooter {
+        IconButton(
           title: model.speech.isSpeaking ? "Stop speaking" : "Speak source text",
           symbol: model.speech.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2",
           isDisabled: model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -136,51 +162,55 @@ struct TranslatorView: View {
           model.speakInput()
         }
 
-        BarButton(title: "Capture text from the screen", symbol: "viewfinder") {
+        IconButton(title: "Capture text from the screen", symbol: "viewfinder") {
           model.captureOCR()
         }
 
         if showsSelectionPreview {
-          BarButton(title: "Edit the captured text", symbol: "pencil") {
+          IconButton(title: "Edit the captured text", symbol: "pencil") {
             model.isSelectionExpanded = true
             inputFocused = true
           }
         }
 
-        BarButton(
+        IconButton(
           title: "Clear",
-          symbol: "xmark.circle",
+          symbol: "eraser",
           isDisabled: model.inputText.isEmpty && model.outputText.isEmpty
         ) {
           model.clear()
         }
 
-        Spacer(minLength: AppSpacing.sm)
+        Spacer(minLength: AppSpacing.xs)
 
-        Text("\(model.inputText.count) characters")
-          .font(.caption)
+        Text("\(model.inputText.count)")
+          .font(AppFont.caption)
           .monospacedDigit()
-          .foregroundStyle(.secondary)
+          .foregroundStyle(palette.faintForeground)
           .accessibilityLabel("\(model.inputText.count) characters in the source text")
       }
     }
-    .contentPane()
+  }
+
+  private var sourceBadge: Badge? {
+    switch model.inputSource {
+    case .selection: Badge(text: "Selection", variant: .outline, symbol: "cursorarrow")
+    case .ocr: Badge(text: "Screen", variant: .outline, symbol: "viewfinder")
+    case .history: Badge(text: "History", variant: .outline, symbol: "clock")
+    case .manual: nil
+    }
   }
 
   @ViewBuilder
   private var sourceBody: some View {
     if showsSelectionPreview {
       ScrollView {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-          Label("Captured from another app", systemImage: "text.viewfinder")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Text(model.inputText)
-            .font(.system(size: settingsStore.settings.fontSize))
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(AppMetrics.readingInset)
+        Text(model.inputText)
+          .font(.system(size: settingsStore.settings.fontSize))
+          .lineSpacing(3)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(AppMetrics.readingInset)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .transition(.opacity)
@@ -189,6 +219,7 @@ struct TranslatorView: View {
         TextEditor(text: $model.inputText)
           .font(.system(size: settingsStore.settings.fontSize))
           .lineSpacing(3)
+          .foregroundStyle(palette.foreground)
           .scrollContentBackground(.hidden)
           .focused($inputFocused)
           .padding(.horizontal, AppMetrics.readingInset - 5)
@@ -202,7 +233,7 @@ struct TranslatorView: View {
         if model.inputText.isEmpty {
           Text("Type or paste text here.")
             .font(.system(size: settingsStore.settings.fontSize))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(palette.faintForeground)
             .padding(.horizontal, AppMetrics.readingInset)
             .padding(.vertical, AppMetrics.readingInset - 8)
             .allowsHitTesting(false)
@@ -217,35 +248,42 @@ struct TranslatorView: View {
   // MARK: - Result pane
 
   private var resultPane: some View {
-    VStack(spacing: 0) {
-      PaneBar(.header) {
-        languagePicker(
-          "Target language",
-          selection: $settingsStore.settings.targetLanguage,
-          languages: model.visibleTargetLanguages
-        )
-        Spacer(minLength: AppSpacing.sm)
+    PaneContainer {
+      PaneHeader(
+        title: "Result",
+        symbol: "sparkles",
+        badge: model.outputUsesMarkdown && !model.outputText.isEmpty
+          ? Badge(text: "Markdown", variant: .neutral)
+          : nil
+      ) {
+        if layoutWidth.isCompact {
+          AppSelect(
+            title: "Target language",
+            selection: $settingsStore.settings.targetLanguage,
+            options: model.visibleTargetLanguages,
+            label: { $0.displayName }
+          )
+        }
         if model.isTranslating {
-          ProgressView()
-            .controlSize(.small)
-            .accessibilityLabel("Translating")
+          Spinner()
             .transition(.opacity)
         }
       }
 
       resultBody
 
-      PaneBar(.footer) {
+      PaneFooter {
         Button {
           model.collectCurrentWord()
         } label: {
           Label("Collect", systemImage: "bookmark")
+            .labelStyle(.titleAndIcon)
         }
-        .buttonStyle(.borderless)
+        .appButton(.ghost, size: .sm)
         .disabled(model.outputText.isEmpty || model.inputText.count > 80)
         .help("Save this word and its explanation to Vocabulary")
 
-        Spacer(minLength: AppSpacing.sm)
+        Spacer(minLength: AppSpacing.xs)
 
         Button {
           copyOutput()
@@ -256,29 +294,26 @@ struct TranslatorView: View {
             Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
               .contentTransition(.symbolEffect(.replace))
           }
+          .labelStyle(.titleAndIcon)
         }
-        .buttonStyle(.borderless)
+        .appButton(didCopy ? .secondary : .outline, size: .sm)
         .symbolEffect(.bounce, value: didCopy)
         .disabled(model.outputText.isEmpty)
         .help("Copy the translation (⇧⌘C)")
       }
     }
-    .contentPane()
   }
 
   @ViewBuilder
   private var resultBody: some View {
     if model.outputText.isEmpty {
-      ContentUnavailableView {
-        Label("No translation yet", systemImage: "character.bubble")
-      } description: {
-        Text(
-          model.inputText.isEmpty
-            ? "Enter text on the left, or press ⌥F while text is selected in another app."
-            : "Press ⌘↩ to translate."
-        )
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      EmptyState(
+        symbol: model.isTranslating ? "ellipsis" : "character.bubble",
+        title: model.isTranslating ? "Translating…" : "No translation yet",
+        message: model.inputText.isEmpty
+          ? "Enter text on the left, or press ⌥F while text is selected in another app."
+          : "Press ⌘↩ to translate."
+      )
       .transition(.opacity)
     } else {
       ScrollView {
@@ -300,66 +335,34 @@ struct TranslatorView: View {
     }
   }
 
-  // MARK: - Shared controls
-
-  private func languagePicker(
-    _ title: String,
-    selection: Binding<LanguageCode>,
-    languages: [LanguageCode]
-  ) -> some View {
-    Picker(title, selection: selection) {
-      ForEach(languages) { language in
-        Text(language.displayName).tag(language)
-      }
-    }
-    .pickerStyle(.menu)
-    .labelsHidden()
-    .fixedSize()
-    .help(title)
-    .accessibilityLabel(title)
-  }
-
-  private var swapButton: some View {
-    Button {
-      model.swapLanguages()
-      if let animation = AppMotion.interactive(reduceMotion: reduceMotion) {
-        withAnimation(animation) { swapAngle += 180 }
-      }
-    } label: {
-      Image(systemName: "arrow.left.arrow.right")
-        .rotationEffect(.degrees(swapAngle))
-        .frame(width: 18, height: 18)
-    }
-    .buttonStyle(.borderless)
-    .disabled(settingsStore.settings.sourceLanguage == .auto)
-    .help(
-      settingsStore.settings.sourceLanguage == .auto
-        ? "Choose a source language to swap"
-        : "Swap the source and target languages"
-    )
-    .accessibilityLabel("Swap languages")
-  }
+  // MARK: - Status
 
   private var statusBar: some View {
     HStack(spacing: AppSpacing.sm) {
       StatusDot(
-        color: model.isTranslating ? .accentColor : .secondary.opacity(0.55),
+        color: model.isTranslating ? palette.foreground : palette.faintForeground,
         isActive: model.isTranslating
       )
       Text(model.statusMessage)
+        .lineLimit(1)
+
       Spacer(minLength: AppSpacing.sm)
+
       if showsSelectionPreview {
-        Label("Read-only capture", systemImage: "lock")
-          .labelStyle(.titleAndIcon)
+        Badge(text: "Read-only capture", variant: .neutral, symbol: "lock.fill")
+      }
+      if !layoutWidth.isCompact {
+        Text(
+          "\(settingsStore.settings.sourceLanguage.displayName) → "
+            + settingsStore.settings.targetLanguage.displayName
+        )
+        .lineLimit(1)
       }
     }
-    .font(.caption)
-    .foregroundStyle(.secondary)
-    .padding(.horizontal, AppSpacing.md)
+    .font(AppFont.caption)
+    .foregroundStyle(palette.mutedForeground)
     .frame(height: AppMetrics.statusBarHeight)
     .frame(maxWidth: .infinity)
-    .background(.bar)
-    .overlay(alignment: .top) { Divider() }
     .accessibilityElement(children: .combine)
     .accessibilityLabel("Status: \(model.statusMessage)")
   }
@@ -372,6 +375,91 @@ struct TranslatorView: View {
       try? await Task.sleep(for: .seconds(1.6))
       guard !Task.isCancelled else { return }
       didCopy = false
+    }
+  }
+}
+
+// MARK: - Pane chrome
+
+/// A content pane: one card holding a header, a body, and a command footer.
+///
+/// The card is the unit of content in this interface. Nothing floats on the
+/// canvas directly, so every region has an edge and the eye can find it.
+struct PaneContainer<Content: View>: View {
+  @ViewBuilder var content: Content
+
+  @Environment(\.palette) private var palette
+
+  var body: some View {
+    VStack(spacing: 0) {
+      content
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .cardSurface(palette)
+  }
+}
+
+/// A pane's title strip: what the pane holds, its state, and the controls
+/// scoped to it.
+struct PaneHeader<Accessory: View>: View {
+  let title: String
+  let symbol: String
+  var badge: Badge?
+  @ViewBuilder var accessory: Accessory
+
+  @Environment(\.palette) private var palette
+
+  init(
+    title: String,
+    symbol: String,
+    badge: Badge? = nil,
+    @ViewBuilder accessory: () -> Accessory = { EmptyView() }
+  ) {
+    self.title = title
+    self.symbol = symbol
+    self.badge = badge
+    self.accessory = accessory()
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: AppSpacing.sm) {
+        Image(systemName: symbol)
+          .font(.system(size: 11, weight: .medium))
+          .foregroundStyle(palette.faintForeground)
+          .accessibilityHidden(true)
+        Text(title)
+          .font(AppFont.label)
+          .foregroundStyle(palette.secondaryForeground)
+        if let badge { badge }
+        Spacer(minLength: AppSpacing.sm)
+        accessory
+      }
+      .padding(.horizontal, AppSpacing.md)
+      .frame(height: AppMetrics.paneHeaderHeight)
+      Hairline()
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(title)
+  }
+}
+
+/// A pane's command strip, on a muted fill so it separates from the content
+/// above it without a heavy rule.
+struct PaneFooter<Content: View>: View {
+  @ViewBuilder var content: Content
+
+  @Environment(\.palette) private var palette
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Hairline()
+      HStack(spacing: AppSpacing.xs) {
+        content
+      }
+      .padding(.horizontal, AppSpacing.sm + 2)
+      .frame(height: AppMetrics.paneFooterHeight)
+      .background(palette.chrome)
     }
   }
 }

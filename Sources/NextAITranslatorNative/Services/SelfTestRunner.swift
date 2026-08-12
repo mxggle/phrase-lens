@@ -475,16 +475,56 @@ enum SelfTestRunner {
       "English/Japanese-first language detection failed",
       failures: &failures
     )
+    check(
+      TranslationSourceResolver.resolve(
+        "モバイル版は、",
+        configuredSource: .english,
+        inputSource: .selection
+      ) == .japanese
+        && TranslationSourceResolver.resolve(
+          "日本語を勉強する",
+          configuredSource: .english,
+          inputSource: .ocr
+        ) == .japanese
+        && TranslationSourceResolver.resolve(
+          "日本語",
+          configuredSource: .english,
+          inputSource: .manual
+        ) == .english
+        && TranslationSourceResolver.resolve(
+          "Hello",
+          configuredSource: .english,
+          inputSource: .history,
+          restoredSource: .japanese
+        ) == .japanese,
+      "translation source policy failed",
+      failures: &failures
+    )
 
+    // A side-by-side section stops stacking at `AppBreakpoints.regular`. If its
+    // columns need more than that, the layout would be clipped in the band
+    // between the breakpoint and the width the columns actually require —
+    // which reads as content cut off at both edges rather than as a too-small
+    // window. Raising a column minimum without raising the breakpoint fails
+    // here instead of shipping.
+    let splitBudget = AppBreakpoints.regular - AppMetrics.splitHandleWidth
     for (section, columns) in AppMetrics.splitColumnMinimums {
       check(
-        columns.reduce(0, +) <= AppMetrics.splitColumnBudget,
+        columns.reduce(0, +) <= splitBudget,
         "\(section) columns need \(columns.reduce(0, +))pt of a "
-          + "\(AppMetrics.splitColumnBudget)pt budget and would be clipped at the "
-          + "window's minimum width",
+          + "\(splitBudget)pt budget and would be clipped between the stacking "
+          + "breakpoint and the width they need",
         failures: &failures
       )
     }
+
+    // The narrowest window must still leave the detail column enough room for
+    // a section's single-column layout.
+    check(
+      AppMetrics.windowMinWidth - AppMetrics.sidebarRailWidth >= AppMetrics.paneMinWidth,
+      "the detail column is narrower than one pane at the window's minimum width",
+      failures: &failures
+    )
 
     return failures
   }

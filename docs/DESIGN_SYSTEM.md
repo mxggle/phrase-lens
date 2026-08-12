@@ -1,93 +1,154 @@
 # PhraseLens macOS design system
 
-The interface follows the macOS design system: the window toolbar and sidebar
-form the navigation layer (Liquid Glass, applied by the system on macOS 26),
-while source text and the generated result stay on calm, solid content-layer
-surfaces separated by their own chrome bars.
+The interface is built from one token set and one component library, both owned
+by the app rather than inherited from AppKit's default control appearance. The
+palette is achromatic — a neutral ramp from near-white to near-black — and hue
+is spent only where it carries meaning.
+
+The vocabulary is deliberately shadcn/ui's: semantic color roles rather than
+literal colors, a shared radius and spacing scale, and the same component set
+(Button variants, Card, Tabs, Select, Switch, Badge, Input, Empty State). None
+of shadcn's code is used or usable here — it is React, Tailwind, and Radix, and
+this is a native SwiftUI app. What carries over is the design language, rebuilt
+as real SwiftUI views so macOS still supplies text input, menus, focus, and
+accessibility.
 
 ## Principles
 
-- Use native SwiftUI controls so macOS can supply the correct material, focus, contrast, and control metrics for each OS version.
-- Keep window-level commands in the **real window toolbar**: the one button that runs the work. Anything scoped to one side of the translation belongs in that pane's own header or footer.
-- A choice the user switches between constantly is a flat tab strip, not a menu. The strip shows every option and the armed one at a glance, and costs one click instead of two.
-- Keep the content layer calm. Panes are solid text surfaces with no strokes; hierarchy comes from the header and footer bars, spacing, and typography — not decoration.
-- Every control has a visible label or, when icon-only, a `help` tooltip *and* an accessibility label derived from the same string.
-- Tint is reserved for functional meaning: the single primary action, and transient activity state.
-- Never let content clip. Result areas grow with the window instead of being pinned to a fixed height.
-- Preserve keyboard workflows; global shortcuts are recorded, not typed as text.
-- Use short, state-driven springs scoped to the value that changed. Respect the system Reduce Motion preference.
-- State changes are communicated with SF Symbol transitions (replace/bounce) rather than custom indicator UI.
+- Nothing floats on the canvas. Every region of content sits on a card with an
+  edge, so hierarchy is legible without decoration.
+- Color is semantic. A view asks for `palette.mutedForeground`, never a gray.
+  One change to the ramp moves the whole interface, and Light, Dark, and
+  Increased Contrast stay in step by construction.
+- Variants map to intent, not appearance. A view picks `.primary` because the
+  command is the point of the view, not because it wants a dark button.
+- Every layout is a function of the width it was given, not of the window. A
+  section behaves the same at a given width whether the sidebar is expanded,
+  collapsed, or absent.
+- Content never clips and never overflows its window. Where a layout cannot
+  fit, it changes shape — stacks, drops labels, or sheds ornament — rather than
+  spilling.
+- Every control has a visible label or, when icon-only, a `help` tooltip *and*
+  an accessibility label derived from the same string.
+- Short, state-driven springs scoped to the value that changed. Every animation
+  helper returns `nil` under Reduce Motion.
 
 ## Tokens
 
-Shared spacing, metrics, colors, motion, and reusable chrome live in
-`Sources/NextAITranslatorNative/Views/DesignSystem.swift`.
+`Sources/NextAITranslatorNative/Views/DesignSystem.swift`
 
-- `AppSpacing` — 4-pt grid steps (`xxs`…`xxl`). Nothing hard-codes a spacing value.
-- `AppMetrics` — bar heights, split-pane widths, reading insets, corner radii.
-- `AppDesign` — semantic AppKit colors, so everything stays legible in Light, Dark, and Increased Contrast.
-- `PaneBar(.header/.footer)` — the bar material plus a single hairline on the edge facing the content.
-- `ActionTabBar(size: .regular/.compact)` — horizontally scrolling action tab strip with a sliding underline. The underline is `.primary`, not tint, because selection is not a functional accent.
-- `BarButton` — icon-only bar command with matched tooltip and accessibility label.
-- `StatusDot` — provider reachability and translation state.
-- `floatingPanelBackground()` — glass on macOS 26, `regularMaterial` before it.
-- `AppMotion.state` / `AppMotion.interactive` — standard springs; both return `nil` under Reduce Motion.
+- `AppPalette` — the semantic color roles, in four resolved variants (Light,
+  Dark, and an Increased Contrast pair). Published through
+  `EnvironmentValues.palette` by `ThemedContainer`, which resolves the effective
+  appearance once per window, below `preferredColorScheme`, so the Light/Dark
+  override in Settings reaches the tokens.
+- `AppSpacing` — 4-pt grid steps. Nothing hard-codes a spacing value.
+- `AppRadius` — controls, cards, and panels each keep their own step, so nesting
+  reads as a hierarchy rather than as a rounding accident.
+- `AppFont` — one type scale, sized in points rather than semantic styles,
+  because the interface sets its own density.
+- `AppMetrics` — bar heights, column minimums, reading insets, control heights.
+- `AppMotion.state` / `.interactive` / `.hover` — the three motion roles.
+
+## Components
+
+`Sources/NextAITranslatorNative/Views/Components.swift`
+
+| Component | Role |
+| --- | --- |
+| `cardSurface(_:)` | The content surface: fill, hairline, radius, shadow. |
+| `Hairline` | A rule in the palette's border color. `Divider()` uses an AppKit separator that is not on this ramp. |
+| `AppButtonStyle` / `.appButton(_:size:)` | Six variants × six sizes, with a shared hover/press ramp. |
+| `IconButton` | Icon-only command with matched tooltip and accessibility label. |
+| `AdaptiveLabel` | A command label that drops its title when its bar runs out of room. |
+| `Badge`, `KeyCombo` | State labels and keycaps. |
+| `StatusDot`, `Spinner` | Live state. Both readable under Reduce Motion. |
+| `AppTextField`, `AppTextEditor`, `AppSelect`, `AppSwitchStyle`, `ChipToggleStyle` | Inputs. `AppSelect` wraps `Menu`, so the list itself is a real AppKit menu. |
+| `ActionTabBar` | Scrolling segmented switcher; the armed pill slides between tabs. |
+| `NavRow` | Selectable row, used by both sidebars and the Actions source list. |
+| `SettingsCard` / `SettingsRow` / `SettingsBlock` / `InlineNote` | Settings scaffolding, replacing `Form`'s grouped sections. |
+| `EmptyState` | "Nothing here yet", in four progressively shorter forms. |
+| `ResizableSplit` | Two panes with a draggable divider that stack when too narrow. |
+| `WindowChrome` | Applies the main window's chrome from inside the view tree. |
+
+## Responsive layout
+
+Width classes are measured per container by `WidthReader` and published through
+`EnvironmentValues.layoutWidth`. `AppBreakpoints` holds the three thresholds.
+
+| Class | Container width | Behavior |
+| --- | --- | --- |
+| `compact` | `< 640` | One column. Split sections stack; Actions shows list *or* editor with a back button; command labels collapse to glyphs; settings rows stack their control under the label. |
+| `regular` | `640…999` | Two columns. |
+| `wide` | `≥ 1000` | Two columns plus optional secondary detail — history rows put source and translation side by side. |
+
+The sidebar is measured separately against the window: below
+`AppBreakpoints.sidebarRail` (860pt) it collapses to a 64pt icon rail on its
+own. Above it, the user's choice wins.
+
+`SelfTestRunner` enforces two invariants: every side-by-side section's column
+minimums must fit inside the `regular` breakpoint (otherwise there is a band of
+widths where it neither stacks nor fits), and the detail column at the window's
+minimum width must still hold one pane.
 
 ## Layout
 
-**Main window.** Standard titled window with a unified toolbar. The title shows
-the current section and the language pair as its subtitle.
+**Main window.** No system title bar. The window uses `fullSizeContentView`, so
+the app's own chrome reaches the top edge and the sidebar reserves
+`AppMetrics.trafficLightInset` for the traffic lights.
 
-1. Sidebar: section navigation, with a footer that reports the active provider and model and opens Settings.
-2. Toolbar: the prominent Translate/Stop button.
-3. Action tabs: a full-width strip under the toolbar. It spans the window because the action applies to the whole translation, not to one pane.
-4. Content: an `HSplitView` of a source pane and a result pane. Each pane owns its language pop-up in its header and its commands in its footer, so the language is attached to the text it applies to.
-5. Status bar: one line of state across the bottom.
+1. Sidebar: brand, sections grouped under eyebrow headings with live counts, and
+   a provider card that both reports the active model and opens Settings.
+2. Top bar: the section, one line saying what it is for, and the window-level
+   commands for that section.
+3. Content: each section owns its layout inside the detail column.
 
-**Selection pop-up.** A borderless floating panel: one line of header chrome, a
-compact action tab strip, the captured text, the result filling the remaining
-height, and a footer whose prominent action is Copy — the thing a pop-up is
-opened to do. Switching the action re-runs the captured text through it, the
-same contract the footer's target-language menu follows.
+**Translator.** An action tab strip and the language pair above a resizable
+split of a source card and a result card. Each card carries a title strip and a
+command footer.
 
-**Actions.** A source list with an add/remove bar beneath it (where macOS puts
-list editing) and a form on the right. Edits save automatically, so there is no
-Save button and no way to lose a draft by switching sections.
+**Library.** History and Vocabulary share one scaffold — filter bar, then a
+collection of selectable cards. History is a single column of rows; vocabulary
+tiles into as many columns as the window holds.
+
+**Actions.** A source list with an add/remove bar beneath it and a settings-style
+editor beside it. Edits save automatically.
+
+**Settings.** Its own sidebar and scrolling pane of cards, rather than a tab
+bar, because there are six panes and they are not peers of equal weight.
+
+**Selection pop-up.** A borderless floating panel reusing the same components at
+compact sizes: header, compact tab strip, the captured text, the result filling
+the remaining height, and a footer whose primary action is Copy.
 
 ## Availability
 
 The package targets macOS 14 and builds with the macOS 26 SDK
-(`scripts/toolchain-env.sh` selects it). APIs introduced in macOS 26 — the glass
-button style, `glassEffect` — are gated with `#available(macOS 26.0, *)` and
-fall back to standard styles on older systems.
+(`scripts/toolchain-env.sh` selects it). APIs introduced in macOS 26 —
+`glassEffect` on the floating panel — are gated with `#available(macOS 26.0, *)`
+and fall back to the palette's own surfaces on older systems.
 
 ## Known AppKit workarounds
 
-- **Split-view autosave.** `NavigationSplitView` writes subview frames that do
-  not add up to the window's width. Restoring them clips the sidebar on the left
-  and the detail column on the right, so `clearCorruptSplitViewState` purges the
-  `NSSplitView Subview Frames …` defaults at launch. Window frame memory is
-  unaffected.
+- **Title-bar safe area.** `fullSizeContentView` makes the content view span the
+  title bar, but SwiftUI then insets the content by the bar's height. The root
+  view has to `ignoresSafeArea(.container, edges: .top)` or the space the
+  sidebar reserves for the traffic lights is paid twice.
+- **Style mask timing.** SwiftUI writes the scene's style mask *after*
+  `applicationDidFinishLaunching`, so a mask set from the app delegate is
+  overwritten before the first frame. `WindowChrome` reaches the window through
+  the content view, which runs late enough to survive.
 - **Restored frames on a missing display.** A window restored onto a display
-  that no longer exists is resized *after* the split view has laid out, leaving
-  both columns clipped until the user resizes the window.
+  that no longer exists is resized after layout.
   `WindowCoordinator.revalidateMainWindowLayout` re-applies the frame once at
-  launch to force a correct layout pass.
-- **Ideal widths propagate.** An `HSplitView` reports the sum of its children's
-  ideal widths to its container, and `NavigationSplitView` will overflow the
-  window rather than compress it. The translator panes therefore pin
-  `idealWidth` to `minWidth`.
-- **Toolbar labels.** A `Label` in a toolbar item collapses to its icon unless
-  `.labelStyle(.titleAndIcon)` is explicit.
-- **Fixed panel height.** The selection pop-up is a borderless panel with a
-  hard-coded content size, so anything added to it has to be added to that size
-  too, or it is taken out of the result area.
+  launch to force a correct pass.
+- **Ambiguous main window.** The main window and the Settings window are both
+  plain titled windows of similar size, so `tagMainWindowIfNeeded` matches on
+  the scene title first and falls back to width.
 
 Remove each workaround once the corresponding OS fix ships.
 
 ## References
 
 - [Designing for macOS](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos)
-- [Get to know the new design system](https://developer.apple.com/videos/play/wwdc2025/356/)
-- [Build an AppKit app with the new design](https://developer.apple.com/videos/play/wwdc2025/310/)
-- [Adopting Liquid Glass](https://developer.apple.com/documentation/TechnologyOverviews/adopting-liquid-glass)
+- [shadcn/ui](https://ui.shadcn.com) — the design language this system borrows.

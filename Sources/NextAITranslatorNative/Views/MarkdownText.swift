@@ -10,6 +10,8 @@ struct MarkdownText: View {
   private let blocks: [MarkdownBlock]
   private let baseFontSize: Double
 
+  @Environment(\.palette) private var palette
+
   init(_ markdown: String, baseFontSize: Double = 15) {
     blocks = MarkdownParser.parse(markdown)
     self.baseFontSize = baseFontSize
@@ -27,17 +29,17 @@ struct MarkdownText: View {
   @ViewBuilder
   private func blockView(_ block: MarkdownBlock) -> some View {
     switch block {
-    case let .heading(level, text):
+    case .heading(let level, let text):
       inlineText(text)
         .font(.system(size: headingSize(level), weight: .semibold))
         .padding(.top, level <= 2 ? 4 : 1)
 
-    case let .paragraph(text):
+    case .paragraph(let text):
       inlineText(text)
         .font(.system(size: baseFontSize))
         .lineSpacing(3)
 
-    case let .unorderedList(items):
+    case .unorderedList(let items):
       VStack(alignment: .leading, spacing: 7) {
         ForEach(Array(items.enumerated()), id: \.offset) { _, item in
           HStack(alignment: .firstTextBaseline, spacing: 9) {
@@ -51,7 +53,7 @@ struct MarkdownText: View {
       }
       .padding(.leading, 4)
 
-    case let .orderedList(start, items):
+    case .orderedList(let start, let items):
       VStack(alignment: .leading, spacing: 7) {
         ForEach(Array(items.enumerated()), id: \.offset) { offset, item in
           HStack(alignment: .firstTextBaseline, spacing: 9) {
@@ -66,25 +68,26 @@ struct MarkdownText: View {
       }
       .padding(.leading, 4)
 
-    case let .quote(text):
+    case .quote(let text):
       HStack(spacing: 11) {
-        RoundedRectangle(cornerRadius: 1)
-          .fill(Color.accentColor.opacity(0.65))
+        RoundedRectangle(cornerRadius: 1.5)
+          .fill(palette.borderStrong)
           .frame(width: 3)
         inlineText(text)
           .font(.system(size: baseFontSize))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(palette.mutedForeground)
           .italic()
           .frame(maxWidth: .infinity, alignment: .leading)
       }
       .padding(.vertical, 2)
 
-    case let .code(language, code):
+    case .code(let language, let code):
       VStack(alignment: .leading, spacing: 7) {
         if let language, !language.isEmpty {
           Text(language.uppercased())
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            .foregroundStyle(.secondary)
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .tracking(0.6)
+            .foregroundStyle(palette.faintForeground)
         }
         ScrollView(.horizontal) {
           Text(code)
@@ -94,13 +97,16 @@ struct MarkdownText: View {
       }
       .padding(12)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+      .background(
+        palette.muted,
+        in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
+      )
       .overlay {
-        RoundedRectangle(cornerRadius: 8)
-          .stroke(Color.primary.opacity(0.09), lineWidth: 0.5)
+        RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
+          .strokeBorder(palette.border, lineWidth: 1)
       }
 
-    case let .table(headers, rows):
+    case .table(let headers, let rows):
       // Cells wrap instead of scrolling sideways: a table nested in a scroll
       // view must never widen its container, and translated cells are short.
       Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
@@ -112,9 +118,9 @@ struct MarkdownText: View {
               .frame(maxWidth: .infinity, alignment: .leading)
           }
         }
-        .background(Color.primary.opacity(0.06))
+        .background(palette.muted)
 
-        Divider()
+        Hairline()
 
         ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
           GridRow {
@@ -126,16 +132,17 @@ struct MarkdownText: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
           }
-          Divider()
+          Hairline()
         }
       }
+      .clipShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
       .overlay {
-        RoundedRectangle(cornerRadius: 7)
-          .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
+        RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+          .strokeBorder(palette.border, lineWidth: 1)
       }
 
     case .divider:
-      Divider()
+      Hairline()
         .padding(.vertical, 3)
     }
   }

@@ -8,50 +8,57 @@ struct ShortcutRecorder: View {
   @Binding var value: String
   var accessibilityTitle: String
 
+  @Environment(\.palette) private var palette
   @State private var isRecording = false
   @State private var monitor: Any?
   @State private var rejection: String?
 
   var body: some View {
-    HStack(spacing: AppSpacing.xs) {
+    HStack(spacing: AppSpacing.sm) {
       if let rejection {
         Text(rejection)
-          .font(.caption)
-          .foregroundStyle(.orange)
+          .font(AppFont.caption)
+          .foregroundStyle(palette.warning)
           .transition(.opacity)
       }
 
       Button {
         isRecording ? stopRecording() : startRecording()
       } label: {
-        Text(displayValue)
-          .font(.body.monospaced())
-          .foregroundStyle(isRecording ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
-          .frame(minWidth: 78)
+        Group {
+          if isRecording {
+            Text("Press keys…")
+              .font(AppFont.label)
+              .foregroundStyle(palette.mutedForeground)
+          } else if value.isEmpty {
+            Text("None")
+              .font(AppFont.label)
+              .foregroundStyle(palette.faintForeground)
+          } else {
+            KeyCombo(combination: value, size: 11)
+          }
+        }
+        .frame(minWidth: 86)
       }
-      .buttonStyle(.bordered)
-      .help(isRecording ? "Press the key combination, or Escape to cancel" : "Click to record a shortcut")
+      .appButton(isRecording ? .secondary : .outline, size: .sm)
+      .help(
+        isRecording
+          ? "Press the key combination, or Escape to cancel"
+          : "Click to record a shortcut"
+      )
       .accessibilityLabel("\(accessibilityTitle) shortcut")
       .accessibilityValue(value.isEmpty ? "None" : value)
 
-      Button {
+      IconButton(
+        title: "Remove \(accessibilityTitle) shortcut",
+        symbol: "xmark",
+        isDisabled: value.isEmpty
+      ) {
         value = ""
         stopRecording()
-      } label: {
-        Image(systemName: "xmark.circle.fill")
-          .foregroundStyle(.secondary)
       }
-      .buttonStyle(.borderless)
-      .disabled(value.isEmpty)
-      .help("Remove this shortcut")
-      .accessibilityLabel("Remove \(accessibilityTitle) shortcut")
     }
     .onDisappear { stopRecording() }
-  }
-
-  private var displayValue: String {
-    if isRecording { return "Press keys…" }
-    return value.isEmpty ? "None" : value
   }
 
   private func startRecording() {

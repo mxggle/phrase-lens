@@ -15,10 +15,7 @@ let package = Package(
   ],
   targets: [
     .executableTarget(
-      name: "NextAITranslatorNative",
-      resources: [
-        .process("Resources")
-      ]
+      name: "NextAITranslatorNative"
     )
   ]
 )

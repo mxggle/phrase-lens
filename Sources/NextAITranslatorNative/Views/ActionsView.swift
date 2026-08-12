@@ -2,71 +2,128 @@ import SwiftUI
 
 struct ActionsView: View {
   @EnvironmentObject private var model: AppModel
+  @EnvironmentObject private var settingsStore: SettingsStore
+  @Environment(\.palette) private var palette
+  @Environment(\.layoutWidth) private var layoutWidth
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
   @State private var draftActions: [TranslationAction] = []
+  @State private var draftBuiltIns: [TranslationAction] = []
   @State private var selectedID: UUID?
   @State private var saveTask: Task<Void, Never>?
+  @State private var splitFraction = 0.32
+  /// Compact layouts show one column at a time; this is which one.
+  @State private var showsEditorInCompact = false
 
   var body: some View {
-    HSplitView {
-      actionList
-        .frame(
-          minWidth: AppMetrics.actionListMinWidth,
-          idealWidth: AppMetrics.actionListIdealWidth,
-          maxWidth: AppMetrics.actionListMaxWidth
-        )
-      editor
-        .frame(
-          minWidth: AppMetrics.actionEditorMinWidth,
-          maxWidth: .infinity,
-          maxHeight: .infinity
-        )
-        .layoutPriority(1)
+    Group {
+      if layoutWidth.isCompact {
+        compactLayout
+      } else {
+        ResizableSplit(
+          fraction: $splitFraction,
+          leadingMin: AppMetrics.actionListMinWidth,
+          trailingMin: AppMetrics.actionEditorMinWidth,
+          // Already inside a compact check, so this split never stacks: the
+          // section switches to one column at a time instead.
+          stacksBelow: 0
+        ) {
+          actionList
+        } trailing: {
+          editorColumn
+        }
+      }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(AppDesign.canvas)
+    .background(palette.background)
     .onAppear {
       draftActions = model.customActions
-      selectedID = selectedID ?? TranslationAction.builtIns.first?.id
+      let overrides = Dictionary(
+        settingsStore.settings.builtInActionOverrides.map { ($0.id, $0) },
+        uniquingKeysWith: { _, latest in latest }
+      )
+      draftBuiltIns = TranslationAction.builtIns.map { overrides[$0.id] ?? $0 }
+      selectedID = selectedID ?? orderedActions.first?.id
     }
     .onDisappear { flushPendingSave() }
     .onChange(of: draftActions) { _, actions in
       scheduleSave(actions)
     }
+    .onChange(of: model.customActions) { _, actions in
+      // The library loads asynchronously. If this screen opened before that
+      // completed, hydrate the still-empty draft when the actions arrive.
+      guard draftActions.isEmpty, !actions.isEmpty else { return }
+      draftActions = actions
+      normalizeActionOrder()
+      selectedID = selectedID ?? orderedActions.first?.id
+    }
+    .onChange(of: draftBuiltIns) { _, actions in
+      let overrides = actions.compactMap { action in
+        TranslationAction.builtIns.first(where: { $0.id == action.id }) == action ? nil : action
+      }
+      // Loading the drafts is not an edit. Avoid publishing an identical
+      // settings value while custom actions are still loading, because that
+      // could temporarily invalidate a saved custom default.
+      guard overrides != settingsStore.settings.builtInActionOverrides else { return }
+      settingsStore.settings.builtInActionOverrides = overrides
+    }
+  }
+
+  // MARK: - Compact
+
+  /// One column at a time, with a back button, because neither the list nor
+  /// the prompt editor is usable at half of a narrow window.
+  @ViewBuilder
+  private var compactLayout: some View {
+    if showsEditorInCompact {
+      VStack(spacing: 0) {
+        HStack(spacing: AppSpacing.sm) {
+          Button {
+            withAnimation(AppMotion.state(reduceMotion: reduceMotion)) {
+              showsEditorInCompact = false
+            }
+          } label: {
+            AdaptiveLabel(title: "All Actions", symbol: "chevron.left")
+          }
+          .appButton(.ghost, size: .sm)
+          .accessibilityLabel("Back to all actions")
+          Spacer(minLength: 0)
+        }
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.vertical, AppSpacing.sm)
+        .background(palette.chrome)
+        Hairline()
+        editorColumn
+      }
+      .transition(.opacity)
+    } else {
+      actionList.transition(.opacity)
+    }
   }
 
   // MARK: - List
 
-  /// Editing controls sit in a bar under the list, which is where macOS puts
-  /// add/remove for a source list. Nothing here is a window-level command, so
-  /// nothing here belongs in the toolbar.
+  /// A source list with its add/remove bar underneath, which is where macOS
+  /// puts list editing. Nothing here is a window-level command, so nothing
+  /// here belongs in the top bar.
   private var actionList: some View {
     VStack(spacing: 0) {
-      List(selection: $selectedID) {
-        Section("Built-in") {
-          ForEach(TranslationAction.builtIns) { action in
-            Label(action.name, systemImage: action.mode?.symbol ?? "sparkles")
-              .tag(action.id)
-          }
+      ScrollView {
+        VStack(alignment: .leading, spacing: AppSpacing.lg) {
+          group("Display order", actions: orderedActions)
         }
-        if !draftActions.isEmpty {
-          Section("Custom") {
-            ForEach(draftActions) { action in
-              Label(
-                action.name.isEmpty ? "Untitled Action" : action.name,
-                systemImage: "sparkles"
-              )
-              .tag(action.id)
-            }
-          }
-        }
+        .padding(.horizontal, AppSpacing.sm + 2)
+        .padding(.vertical, AppSpacing.md)
       }
-      .listStyle(.sidebar)
+      .scrollIndicators(.never)
 
-      PaneBar(.footer) {
-        BarButton(title: "Add a custom action", symbol: "plus") {
+      Hairline()
+
+      HStack(spacing: AppSpacing.xs) {
+        IconButton(title: "Add a custom action", symbol: "plus") {
           addAction()
         }
-        BarButton(
+        IconButton(
           title: "Delete the selected action",
           symbol: "minus",
           isDisabled: !draftActions.contains(where: { $0.id == selectedID })
@@ -74,93 +131,320 @@ struct ActionsView: View {
           removeSelectedAction()
         }
         Spacer(minLength: 0)
-        Text("\(draftActions.count) custom")
-          .font(.caption)
-          .monospacedDigit()
-          .foregroundStyle(.secondary)
+        Button("Restore Defaults") { restoreAllDefaults() }
+          .appButton(.ghost, size: .sm)
+          .help("Restore built-in actions, visibility, and display order")
+      }
+      .padding(.horizontal, AppSpacing.sm + 2)
+      .frame(height: AppMetrics.paneFooterHeight)
+      .background(palette.chrome)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(palette.chrome.opacity(0.6))
+  }
+
+  private func group(
+    _ title: String,
+    actions: [TranslationAction]
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Eyebrow(text: title)
+        .padding(.horizontal, AppSpacing.sm + 2)
+        .padding(.bottom, AppSpacing.xs)
+      ForEach(actions) { action in
+        HStack(spacing: AppSpacing.xs) {
+          Image(systemName: "line.3.horizontal")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(palette.faintForeground)
+            .frame(width: 24, height: 34)
+            .contentShape(Rectangle())
+            .draggable(action.id.uuidString)
+            .help("Drag to reorder \(action.name)")
+            .accessibilityHidden(true)
+          NavRow(
+            title: action.name.isEmpty ? "Untitled Action" : action.name,
+            symbol: action.mode?.symbol ?? "sparkles",
+            isSelected: action.id == selectedID,
+            subtitle: isActionHidden(action.id) ? "Hidden" : nil,
+            trailing: settingsStore.settings.defaultActionID == action.id ? "Default" : nil
+          ) {
+            selectedID = action.id
+            if layoutWidth.isCompact {
+              withAnimation(AppMotion.state(reduceMotion: reduceMotion)) {
+                showsEditorInCompact = true
+              }
+            }
+          }
+          IconButton(
+            title: isActionHidden(action.id) ? "Show \(action.name)" : "Hide \(action.name)",
+            symbol: isActionHidden(action.id) ? "eye.slash" : "eye",
+            isDisabled: !isActionHidden(action.id) && visibleActionCount == 1,
+            isOn: isActionHidden(action.id)
+          ) {
+            toggleVisibility(action.id)
+          }
+        }
+        .contentShape(Rectangle())
+        .dropDestination(for: String.self) { values, _ in
+          guard let value = values.first, let sourceID = UUID(uuidString: value) else { return false }
+          moveAction(sourceID, before: action.id)
+          return true
+        }
+        .accessibilityAction(named: "Move up") { moveAction(action.id, by: -1) }
+        .accessibilityAction(named: "Move down") { moveAction(action.id, by: 1) }
       }
     }
-    .frame(maxHeight: .infinity)
   }
 
   // MARK: - Editor
 
+  private var editorColumn: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: AppSpacing.lg) {
+        editor
+      }
+      .padding(AppSpacing.lg)
+      .frame(maxWidth: 720, alignment: .leading)
+      .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
   @ViewBuilder
   private var editor: some View {
     if let index = draftActions.firstIndex(where: { $0.id == selectedID }) {
-      Form {
-        Section {
-          TextField("Name", text: $draftActions[index].name)
-          Toggle("Render the result as Markdown", isOn: $draftActions[index].outputMarkdown)
-        } header: {
-          Text("Action")
-        } footer: {
-          Text("Changes are saved automatically.")
-        }
-
-        Section("System Prompt") {
-          promptEditor(text: $draftActions[index].rolePrompt, minHeight: 96)
-        }
-
-        Section {
-          promptEditor(text: $draftActions[index].commandPrompt, minHeight: 132)
-        } header: {
-          Text("Command Prompt")
-        } footer: {
-          Text("Available variables: ${sourceLang}, ${targetLang}, ${text}")
-            .monospaced()
-        }
-      }
-      .formStyle(.grouped)
-    } else if let action = TranslationAction.builtIns.first(where: { $0.id == selectedID }) {
-      builtInDetail(action)
+      actionEditor(action: $draftActions[index], isBuiltIn: false)
+    } else if let index = draftBuiltIns.firstIndex(where: { $0.id == selectedID }) {
+      actionEditor(action: $draftBuiltIns[index], isBuiltIn: true)
     } else {
-      ContentUnavailableView(
-        "No Action Selected",
-        systemImage: "slider.horizontal.3",
-        description: Text("Choose an action on the left, or add a custom one.")
+      EmptyState(
+        symbol: "slider.horizontal.3",
+        title: "No action selected",
+        message: "Choose an action on the left, or add a custom one."
+      ) {
+        Button("Add a Custom Action") { addAction() }
+          .appButton(.primary, size: .sm)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func actionEditor(action: Binding<TranslationAction>, isBuiltIn: Bool) -> some View {
+    SettingsCard("Action", caption: "Changes are saved automatically.") {
+      SettingsRow("Name") {
+        AppTextField(
+          placeholder: "Action name",
+          text: action.name,
+          size: .sm
+        )
+        .frame(maxWidth: 260)
+      }
+      Hairline()
+      SettingsRow(
+        "Render the result as Markdown",
+        detail: "Headings, lists, tables, and fenced code are laid out instead of shown as text."
+      ) {
+        Toggle("", isOn: action.outputMarkdown)
+          .toggleStyle(AppSwitchStyle())
+          .labelsHidden()
+          .accessibilityLabel("Render the result as Markdown")
+      }
+      Hairline()
+      SettingsRow(
+        "Show in translator",
+        detail: "Hidden actions stay configured but do not appear in the action picker."
+      ) {
+        Toggle(
+          "",
+          isOn: Binding(
+            get: { !isActionHidden(action.wrappedValue.id) },
+            set: { setAction(action.wrappedValue.id, visible: $0) }
+          )
+        )
+        .toggleStyle(AppSwitchStyle())
+        .labelsHidden()
+        .disabled(!isActionHidden(action.wrappedValue.id) && visibleActionCount == 1)
+        .accessibilityLabel("Show in translator")
+      }
+      Hairline()
+      SettingsRow(
+        "Default action",
+        detail: "Use this action when a new translation starts."
+      ) {
+        Button(
+          settingsStore.settings.defaultActionID == action.wrappedValue.id
+            ? "Default" : "Set as Default"
+        ) {
+          setDefaultAction(action.wrappedValue.id)
+        }
+        .appButton(
+          settingsStore.settings.defaultActionID == action.wrappedValue.id
+            ? .secondary : .outline,
+          size: .sm
+        )
+        .disabled(settingsStore.settings.defaultActionID == action.wrappedValue.id)
+      }
+    }
+
+    SettingsCard(
+      "System prompt",
+      caption: "Sets the role the model answers in, before it sees the text.",
+      showsChrome: false
+    ) {
+      AppTextEditor(
+        text: action.rolePrompt,
+        placeholder: "You are a helpful language assistant.",
+        minHeight: 100
       )
     }
-  }
 
-  private func promptEditor(text: Binding<String>, minHeight: CGFloat) -> some View {
-    TextEditor(text: text)
-      .font(.system(size: 12, design: .monospaced))
-      .scrollContentBackground(.hidden)
-      .padding(AppSpacing.sm)
-      .frame(minHeight: minHeight)
-      .background(AppDesign.editorSurface, in: RoundedRectangle(cornerRadius: 6))
-      .overlay {
-        RoundedRectangle(cornerRadius: 6)
-          .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-      }
-  }
-
-  /// Built-in actions use the same form shape as custom ones, disabled, so
-  /// switching between the two does not rearrange the pane.
-  private func builtInDetail(_ action: TranslationAction) -> some View {
-    Form {
-      Section {
-        LabeledContent("Name", value: action.name)
-        LabeledContent("Result format", value: action.outputMarkdown ? "Markdown" : "Plain text")
-      } header: {
-        Text("Action")
-      } footer: {
-        Label(
-          "Built-in actions use PhraseLens's default prompts and cannot be edited. "
-            + "Add a custom action to write your own.",
-          systemImage: "info.circle"
+    SettingsCard(
+      "Command prompt",
+      caption: "What the model is asked to do with the text.",
+      showsChrome: false
+    ) {
+      VStack(alignment: .leading, spacing: AppSpacing.sm) {
+        AppTextEditor(
+          text: action.commandPrompt,
+          placeholder: "${text}",
+          minHeight: 140
         )
-      }
-
-      Section {
-        Button("Add a Custom Action") { addAction() }
+        HStack(spacing: AppSpacing.xs + 2) {
+          Text("Variables")
+            .font(AppFont.caption)
+            .foregroundStyle(palette.faintForeground)
+          ForEach(["${sourceLang}", "${targetLang}", "${text}"], id: \.self) { variable in
+            Text(variable)
+              .font(AppFont.monoSmall)
+              .foregroundStyle(palette.mutedForeground)
+              .padding(.horizontal, 5)
+              .padding(.vertical, 1.5)
+              .background(
+                palette.muted,
+                in: RoundedRectangle(cornerRadius: AppRadius.xs, style: .continuous)
+              )
+          }
+        }
       }
     }
-    .formStyle(.grouped)
+
+    HStack(spacing: AppSpacing.sm) {
+      Button("Restore Default") { restoreAction(action.wrappedValue.id) }
+        .appButton(.outline, size: .sm)
+      Text(
+        isBuiltIn
+          ? "Restores the built-in prompt and display options."
+          : "Restores the custom action template."
+      )
+        .font(AppFont.caption)
+        .foregroundStyle(palette.faintForeground)
+    }
   }
 
   // MARK: - Editing
+
+  private var allDraftActions: [TranslationAction] {
+    draftBuiltIns + draftActions
+  }
+
+  private var orderedActions: [TranslationAction] {
+    let actionsByID = Dictionary(uniqueKeysWithValues: allDraftActions.map { ($0.id, $0) })
+    let ordered = settingsStore.settings.actionOrder.compactMap { actionsByID[$0] }
+    let included = Set(ordered.map(\.id))
+    return ordered + allDraftActions.filter { !included.contains($0.id) }
+  }
+
+  private var visibleActionCount: Int {
+    allDraftActions.reduce(into: 0) { count, action in
+      if !isActionHidden(action.id) { count += 1 }
+    }
+  }
+
+  private func isActionHidden(_ id: UUID) -> Bool {
+    settingsStore.settings.hiddenActionIDs.contains(id)
+  }
+
+  private func setAction(_ id: UUID, visible: Bool) {
+    var hidden = settingsStore.settings.hiddenActionIDs
+    if visible {
+      hidden.remove(id)
+    } else {
+      guard visibleActionCount > 1 else { return }
+      hidden.insert(id)
+      if settingsStore.settings.defaultActionID == id,
+        let replacement = orderedActions.first(where: { !hidden.contains($0.id) })
+      {
+        setDefaultAction(replacement.id)
+      }
+    }
+    settingsStore.settings.hiddenActionIDs = hidden
+  }
+
+  private func toggleVisibility(_ id: UUID) {
+    setAction(id, visible: isActionHidden(id))
+  }
+
+  private func setDefaultAction(_ id: UUID) {
+    setAction(id, visible: true)
+    settingsStore.setDefaultAction(id)
+    model.selectedActionID = id
+  }
+
+  private func normalizeActionOrder() {
+    let knownIDs = Set(allDraftActions.map(\.id))
+    var seen = Set<UUID>()
+    let saved = settingsStore.settings.actionOrder.filter {
+      knownIDs.contains($0) && seen.insert($0).inserted
+    }
+    let missing = allDraftActions.map(\.id).filter { !seen.contains($0) }
+    settingsStore.settings.actionOrder = saved + missing
+  }
+
+  private func moveAction(_ sourceID: UUID, before destinationID: UUID) {
+    guard sourceID != destinationID else { return }
+    var ids = orderedActions.map(\.id)
+    guard let source = ids.firstIndex(of: sourceID),
+      let destination = ids.firstIndex(of: destinationID)
+    else { return }
+    ids.remove(at: source)
+    // Dropping downward places the source after the targeted row; dropping
+    // upward places it before. This makes adjacent rows reorder instead of
+    // turning a downward drop into a no-op.
+    ids.insert(sourceID, at: min(destination, ids.count))
+    settingsStore.settings.actionOrder = ids
+  }
+
+  private func moveAction(_ id: UUID, by offset: Int) {
+    var ids = orderedActions.map(\.id)
+    guard let source = ids.firstIndex(of: id) else { return }
+    let destination = min(max(source + offset, 0), ids.count - 1)
+    guard source != destination else { return }
+    ids.swapAt(source, destination)
+    settingsStore.settings.actionOrder = ids
+  }
+
+  private func restoreAction(_ id: UUID) {
+    if let original = TranslationAction.builtIns.first(where: { $0.id == id }),
+      let index = draftBuiltIns.firstIndex(where: { $0.id == id })
+    {
+      draftBuiltIns[index] = original
+    } else if let index = draftActions.firstIndex(where: { $0.id == id }) {
+      let name = draftActions[index].name
+      draftActions[index] = TranslationAction(
+        id: id,
+        name: name.isEmpty ? "Custom Action" : name,
+        rolePrompt: "You are a helpful language assistant.",
+        commandPrompt: "${text}",
+        outputMarkdown: false
+      )
+    }
+    setAction(id, visible: true)
+  }
+
+  private func restoreAllDefaults() {
+    draftBuiltIns = TranslationAction.builtIns
+    model.resetActionConfiguration()
+  }
 
   private func addAction() {
     let action = TranslationAction(
@@ -170,16 +454,27 @@ struct ActionsView: View {
       outputMarkdown: false
     )
     draftActions.append(action)
+    settingsStore.settings.actionOrder.append(action.id)
     selectedID = action.id
+    if layoutWidth.isCompact {
+      showsEditorInCompact = true
+    }
   }
 
   private func removeSelectedAction() {
     guard let selectedID else { return }
     let index = draftActions.firstIndex { $0.id == selectedID }
     draftActions.removeAll { $0.id == selectedID }
+    settingsStore.settings.actionOrder.removeAll { $0 == selectedID }
+    settingsStore.settings.hiddenActionIDs.remove(selectedID)
+    if settingsStore.settings.defaultActionID == selectedID {
+      setDefaultAction(orderedActions.first?.id ?? TranslationAction.builtIns[0].id)
+    }
     self.selectedID =
-      index.flatMap { draftActions.indices.contains($0) ? draftActions[$0].id : draftActions.last?.id }
-      ?? TranslationAction.builtIns.first?.id
+      index.flatMap {
+        draftActions.indices.contains($0) ? draftActions[$0].id : draftActions.last?.id
+      }
+      ?? orderedActions.first?.id
   }
 
   /// Typing in a prompt should not write to disk on every keystroke, and the
