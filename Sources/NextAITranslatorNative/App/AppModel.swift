@@ -37,26 +37,57 @@ final class AppModel: ObservableObject {
   private var translationTask: Task<Void, Never>?
   private var requestID = UUID()
   private var selectionCaptureID = UUID()
+  private var restoredSourceLanguage: LanguageCode?
   private var cancellables = Set<AnyCancellable>()
 
   init(settingsStore: SettingsStore = SettingsStore()) {
     self.settingsStore = settingsStore
     isAccessibilityTrusted = accessibility.isTrusted()
-    selectedActionID = settingsStore.settings.defaultActionID
+    selectedActionID =
+      settingsStore.settings.resolvedDefaultAction(customActions: [])?.id
+      ?? TranslationAction.builtIns[0].id
     speech.$errorMessage
       .compactMap { $0 }
       .sink { [weak self] message in self?.errorMessage = message }
       .store(in: &cancellables)
+    settingsStore.$settings
+      .removeDuplicates { previous, current in
+        previous.defaultActionID == current.defaultActionID
+          && previous.actionOrder == current.actionOrder
+          && previous.hiddenActionIDs == current.hiddenActionIDs
+          && previous.builtInActionOverrides == current.builtInActionOverrides
+      }
+      .dropFirst()
+      .sink { [weak self] _ in
+        Task { @MainActor [weak self] in self?.reconcileActionSelection() }
+      }
+      .store(in: &cancellables)
+    observeRuntimeSettings()
     Task { await loadLibrary() }
     configureHotKeys()
   }
 
   var allActions: [TranslationAction] {
-    TranslationAction.builtIns + customActions
+    orderedActions
+  }
+
+  /// All available actions in the user's preferred display order. Hidden
+  /// actions remain here so the Actions editor can manage them.
+  var orderedActions: [TranslationAction] {
+    settingsStore.settings.orderedActions(customActions: customActions)
+  }
+
+  /// The actions that may be selected from translation surfaces.
+  var visibleActions: [TranslationAction] {
+    settingsStore.settings.orderedActions(
+      customActions: customActions,
+      includingHidden: false
+    )
   }
 
   var selectedAction: TranslationAction {
-    allActions.first(where: { $0.id == selectedActionID })
+    visibleActions.first(where: { $0.id == selectedActionID })
+      ?? settingsStore.settings.resolvedDefaultAction(customActions: customActions)
       ?? TranslationAction.builtIns[0]
   }
 
@@ -89,10 +120,12 @@ final class AppModel: ObservableObject {
     statusMessage = "Connecting to \(settingsStore.settings.provider.provider.rawValue)…"
 
     let settings = settingsStore.settings
-    let source =
-      settings.sourceLanguage == .auto
-      ? LanguageDetector.detect(text)
-      : settings.sourceLanguage
+    let source = TranslationSourceResolver.resolve(
+      text,
+      configuredSource: settings.sourceLanguage,
+      inputSource: inputSource,
+      restoredSource: restoredSourceLanguage
+    )
     let target = settings.targetLanguage
     let action = selectedAction
     outputUsesMarkdown = action.outputMarkdown
@@ -110,6 +143,11 @@ final class AppModel: ObservableObject {
 
     translationTask = Task {
       do {
+        var streamedText = ""
+        streamedText.reserveCapacity(min(max(text.utf8.count, 1_024), 65_536))
+        let clock = ContinuousClock()
+        var nextUIUpdate = clock.now
+
         for try await chunk in client.stream(
           prompt: prompt,
           configuration: configuration,
@@ -117,18 +155,24 @@ final class AppModel: ObservableObject {
           proxy: proxy
         ) {
           guard requestID == activeRequest else { return }
-          outputText += chunk
-          statusMessage = "Translating…"
+          streamedText.append(chunk)
+          let now = clock.now
+          if now >= nextUIUpdate {
+            outputText = streamedText
+            statusMessage = "Translating…"
+            nextUIUpdate = now.advanced(by: .milliseconds(50))
+          }
         }
         guard requestID == activeRequest else { return }
+        outputText = streamedText
         isTranslating = false
         statusMessage = "Completed"
-        guard !outputText.isEmpty else {
+        guard !streamedText.isEmpty else {
           throw TranslationError.invalidResponse
         }
         let entry = HistoryEntry(
           sourceText: text,
-          translatedText: outputText,
+          translatedText: streamedText,
           sourceLanguage: source,
           targetLanguage: target,
           actionName: action.name,
@@ -175,6 +219,7 @@ final class AppModel: ObservableObject {
     outputUsesMarkdown = false
     selectionContext = nil
     inputSource = .manual
+    restoredSourceLanguage = nil
     isSelectionExpanded = false
     errorMessage = nil
     statusMessage = "Ready"
@@ -207,10 +252,12 @@ final class AppModel: ObservableObject {
       let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !text.isEmpty else { return }
       let settings = settingsStore.settings
-      let language =
-        settings.sourceLanguage == .auto
-        ? LanguageDetector.detect(text)
-        : settings.sourceLanguage
+      let language = TranslationSourceResolver.resolve(
+        text,
+        configuredSource: settings.sourceLanguage,
+        inputSource: inputSource,
+        restoredSource: restoredSourceLanguage
+      )
       speech.speak(
         text,
         language: language,
@@ -225,10 +272,16 @@ final class AppModel: ObservableObject {
     let word = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !word.isEmpty, !outputText.isEmpty else { return }
     let settings = settingsStore.settings
+    let source = TranslationSourceResolver.resolve(
+      word,
+      configuredSource: settings.sourceLanguage,
+      inputSource: inputSource,
+      restoredSource: restoredSourceLanguage
+    )
     let entry = VocabularyEntry(
       word: word,
       explanation: outputText,
-      sourceLanguage: settings.sourceLanguage,
+      sourceLanguage: source,
       targetLanguage: settings.targetLanguage
     )
     Task {
@@ -251,13 +304,14 @@ final class AppModel: ObservableObject {
     outputText = entry.translatedText
     selectionContext = entry.selectionContext
     inputSource = .history
-    settingsStore.settings.sourceLanguage = entry.sourceLanguage
+    restoredSourceLanguage = entry.sourceLanguage
     settingsStore.settings.targetLanguage = entry.targetLanguage
-    if let action = allActions.first(where: { $0.name == entry.actionName }) {
+    if let action = visibleActions.first(where: { $0.name == entry.actionName }) {
       selectedActionID = action.id
       outputUsesMarkdown = action.outputMarkdown
     } else {
-      outputUsesMarkdown = false
+      selectDefaultAction()
+      outputUsesMarkdown = selectedAction.outputMarkdown
     }
     WindowCoordinator.showMain()
   }
@@ -299,6 +353,7 @@ final class AppModel: ObservableObject {
 
   func saveCustomActions(_ actions: [TranslationAction]) {
     customActions = actions
+    reconcileActionConfiguration()
     Task {
       do {
         try await library.saveCustomActions(actions)
@@ -309,12 +364,99 @@ final class AppModel: ObservableObject {
     }
   }
 
+  func updateAction(_ action: TranslationAction) {
+    if action.isBuiltIn {
+      settingsStore.settings.setBuiltInOverride(action)
+      reconcileActionSelection()
+      return
+    }
+    guard let index = customActions.firstIndex(where: { $0.id == action.id }) else { return }
+    var updated = customActions
+    updated[index] = action
+    saveCustomActions(updated)
+  }
+
+  func setActionHidden(_ id: UUID, hidden: Bool) {
+    guard orderedActions.contains(where: { $0.id == id }) else { return }
+    if hidden {
+      guard visibleActions.count > 1 else { return }
+      settingsStore.settings.hiddenActionIDs.insert(id)
+    } else {
+      settingsStore.settings.hiddenActionIDs.remove(id)
+    }
+    reconcileActionSelection()
+  }
+
+  func moveAction(_ id: UUID, to destination: Int) {
+    var ids = orderedActions.map(\.id)
+    guard let source = ids.firstIndex(of: id) else { return }
+    let moved = ids.remove(at: source)
+    ids.insert(moved, at: min(max(destination, 0), ids.count))
+    settingsStore.settings.actionOrder = ids
+  }
+
+  func restoreActionDefaults(_ id: UUID) {
+    guard TranslationAction.factoryBuiltIn(for: id) != nil else { return }
+    settingsStore.settings.resetBuiltInAction(id)
+    reconcileActionSelection()
+  }
+
+  func resetActionConfiguration() {
+    settingsStore.settings.resetActionPresentation()
+    reconcileActionSelection(preferDefault: true)
+  }
+
+  func setDefaultAction(_ id: UUID) {
+    guard orderedActions.contains(where: { $0.id == id }) else {
+      reconcileActionSelection(preferDefault: true)
+      return
+    }
+    settingsStore.setDefaultAction(id)
+    selectedActionID = id
+  }
+
   func configureHotKeys() {
     shortcutErrors = GlobalHotKeyManager.shared.register(
       shortcuts: settingsStore.settings.shortcuts
     ) { [weak self] action, sourceProcessIdentifier in
       self?.handleHotKey(action, sourceProcessIdentifier: sourceProcessIdentifier)
     }
+  }
+
+  /// Applies settings whose effects live outside SwiftUI's view tree. These
+  /// subscriptions remain active for the lifetime of the app, so changing a
+  /// setting does not depend on a particular Settings pane being on screen.
+  private func observeRuntimeSettings() {
+    settingsStore.$settings
+      .map(\.shortcuts)
+      .removeDuplicates()
+      .dropFirst()
+      .sink { [weak self] _ in
+        Task { @MainActor [weak self] in self?.configureHotKeys() }
+      }
+      .store(in: &cancellables)
+
+    settingsStore.$settings
+      .map(\.showDockIcon)
+      .removeDuplicates()
+      .dropFirst()
+      .sink { visible in
+        Task { @MainActor in
+          NSApp.setActivationPolicy(visible ? .regular : .accessory)
+        }
+      }
+      .store(in: &cancellables)
+
+    settingsStore.$settings
+      .map(\.alwaysOnTop)
+      .removeDuplicates()
+      .dropFirst()
+      .sink { alwaysOnTop in
+        Task { @MainActor in
+          WindowCoordinator.mainWindow()?.level = alwaysOnTop ? .floating : .normal
+        }
+      }
+      .store(in: &cancellables)
   }
 
   func handleHotKey(_ action: HotKeyAction, sourceProcessIdentifier: pid_t? = nil) {
@@ -345,6 +487,7 @@ final class AppModel: ObservableObject {
     outputUsesMarkdown = false
     selectionContext = nil
     inputSource = .selection
+    restoredSourceLanguage = nil
     isSelectionExpanded = false
     errorMessage = nil
     statusMessage = "Reading selection…"
@@ -362,13 +505,7 @@ final class AppModel: ObservableObject {
         inputText = snapshot.text
         selectionContext = snapshot.surroundingText
         statusMessage = "Ready"
-        let preferredMode: ActionMode =
-          PromptBuilder.hasMeaningfulContext(snapshot.surroundingText, for: snapshot.text)
-          ? .explainContext
-          : .translate
-        if let action = TranslationAction.builtIns.first(where: { $0.mode == preferredMode }) {
-          selectedActionID = action.id
-        }
+        selectDefaultAction()
         if compact {
           SelectionPanelCoordinator.shared.show(
             model: self,
@@ -382,6 +519,10 @@ final class AppModel: ObservableObject {
         }
       } catch {
         guard selectionCaptureID == activeCapture else { return }
+        // No text selected: skip silently instead of showing an error dialog.
+        if let error = error as? TranslationError, error == .selectionUnavailable {
+          return
+        }
         statusMessage = "Selection unavailable"
         errorMessage = error.localizedDescription
         if compact {
@@ -401,10 +542,9 @@ final class AppModel: ObservableObject {
         inputText = text
         selectionContext = nil
         inputSource = .ocr
+        restoredSourceLanguage = nil
         isSelectionExpanded = true
-        if let translate = TranslationAction.builtIns.first(where: { $0.mode == .translate }) {
-          selectedActionID = translate.id
-        }
+        selectDefaultAction()
         WindowCoordinator.showMain()
         if settingsStore.settings.autoTranslate {
           self.translate()
@@ -509,8 +649,46 @@ final class AppModel: ObservableObject {
       history = try await loadedHistory
       vocabulary = try await loadedVocabulary
       customActions = try await loadedActions
+      reconcileActionConfiguration()
+      // A saved default may refer to a custom action, which is unavailable
+      // until the library finishes loading. Apply it now instead of leaving
+      // the temporary built-in fallback selected for the rest of the session.
+      reconcileActionSelection(preferDefault: true)
     } catch {
       errorMessage = "Could not load local library: \(error.localizedDescription)"
+    }
+  }
+
+  private func selectDefaultAction() {
+    if let action = settingsStore.settings.resolvedDefaultAction(customActions: customActions) {
+      selectedActionID = action.id
+    }
+  }
+
+  /// Removes references to deleted actions and guarantees that both the saved
+  /// default and the live selection resolve to a visible action.
+  private func reconcileActionConfiguration() {
+    let availableIDs = Set(
+      (settingsStore.settings.resolvedBuiltInActions + customActions).map(\.id)
+    )
+    settingsStore.settings.actionOrder.removeAll { !availableIDs.contains($0) }
+    settingsStore.settings.hiddenActionIDs.formIntersection(availableIDs)
+    reconcileActionSelection()
+  }
+
+  private func reconcileActionSelection(preferDefault: Bool = false) {
+    if visibleActions.isEmpty, let firstAvailable = orderedActions.first {
+      settingsStore.settings.hiddenActionIDs.remove(firstAvailable.id)
+    }
+    guard
+      let fallback = settingsStore.settings.resolvedDefaultAction(customActions: customActions)
+    else { return }
+
+    if settingsStore.settings.defaultActionID != fallback.id {
+      settingsStore.settings.defaultActionID = fallback.id
+    }
+    if preferDefault || !visibleActions.contains(where: { $0.id == selectedActionID }) {
+      selectedActionID = fallback.id
     }
   }
 }

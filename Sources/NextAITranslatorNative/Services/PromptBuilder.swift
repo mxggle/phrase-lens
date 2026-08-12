@@ -1,4 +1,5 @@
 import Foundation
+@preconcurrency import NaturalLanguage
 
 enum PromptBuilder {
   static let maximumSelectionContextLength = 1_600
@@ -29,6 +30,34 @@ enum PromptBuilder {
         text: cleanText
       )
       if action.outputMarkdown {
+        command = "Return valid Markdown.\n\n\(command)"
+      }
+      return TranslationPrompt(system: role, user: command)
+    }
+
+    // Built-ins normally use the generated prompts below. Once a user edits
+    // either prompt, preserve the generated value for any field they left
+    // blank and substitute variables in the field they explicitly changed.
+    if let factory = TranslationAction.factoryBuiltIn(for: action.id),
+      !action.rolePrompt.isEmpty || !action.commandPrompt.isEmpty
+    {
+      let defaultPrompt = build(
+        text: cleanText,
+        source: source,
+        target: target,
+        action: factory,
+        selectionContext: selectionContext,
+        writing: writing
+      )
+      let role = action.rolePrompt.isEmpty
+        ? defaultPrompt.system
+        : substitute(action.rolePrompt, source: sourceName, target: targetName, text: cleanText)
+      var command = action.commandPrompt.isEmpty
+        ? defaultPrompt.user
+        : substitute(action.commandPrompt, source: sourceName, target: targetName, text: cleanText)
+      if action.outputMarkdown
+        && (!action.commandPrompt.isEmpty || action.outputMarkdown != factory.outputMarkdown)
+      {
         command = "Return valid Markdown.\n\n\(command)"
       }
       return TranslationPrompt(system: role, user: command)
@@ -180,6 +209,8 @@ enum PromptBuilder {
 
   private static func isLikelySingleWord(_ text: String) -> Bool {
     guard !text.isEmpty, text.count <= 80 else { return false }
-    return !text.contains(where: \.isWhitespace)
+    let tokenizer = NLTokenizer(unit: .word)
+    tokenizer.string = text
+    return tokenizer.tokens(for: text.startIndex..<text.endIndex).count == 1
   }
 }

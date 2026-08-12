@@ -1,23 +1,21 @@
 import Foundation
 
 final class JSONFileStore<Value: Codable & Sendable>: @unchecked Sendable {
+  private let directoryURL: URL
   private let fileURL: URL
   private var cached: Value?
+  private var isDirectoryReady = false
 
   init(filename: String) {
     let appSupport = FileManager.default.urls(
       for: .applicationSupportDirectory,
       in: .userDomainMask
     )[0]
-    let directory = appSupport.appendingPathComponent(
+    directoryURL = appSupport.appendingPathComponent(
       "NextAITranslatorNative",
       isDirectory: true
     )
-    try? FileManager.default.createDirectory(
-      at: directory,
-      withIntermediateDirectories: true
-    )
-    fileURL = directory.appendingPathComponent(filename)
+    fileURL = directoryURL.appendingPathComponent(filename)
   }
 
   func load(default fallback: @autoclosure () -> Value) throws -> Value {
@@ -34,6 +32,13 @@ final class JSONFileStore<Value: Codable & Sendable>: @unchecked Sendable {
   }
 
   func save(_ value: Value) throws {
+    if !isDirectoryReady {
+      try FileManager.default.createDirectory(
+        at: directoryURL,
+        withIntermediateDirectories: true
+      )
+      isDirectoryReady = true
+    }
     let data = try JSONEncoder.persistence.encode(value)
     try data.write(to: fileURL, options: [.atomic])
     cached = value
@@ -44,7 +49,6 @@ extension JSONEncoder {
   fileprivate static var persistence: JSONEncoder {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     return encoder
   }
 }

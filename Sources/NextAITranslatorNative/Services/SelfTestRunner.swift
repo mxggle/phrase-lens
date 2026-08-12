@@ -46,6 +46,205 @@ enum SelfTestRunner {
       "missing context did not fall back to translation",
       failures: &failures
     )
+    let translateAction = TranslationAction.builtIns.first { $0.mode == .translate }!
+    let japanesePhrasePrompt = PromptBuilder.build(
+      text: "モバイル版は、",
+      source: .japanese,
+      target: .simplifiedChinese,
+      action: translateAction
+    )
+    let japaneseWordPrompt = PromptBuilder.build(
+      text: "設定",
+      source: .japanese,
+      target: .simplifiedChinese,
+      action: translateAction
+    )
+    check(
+      !japanesePhrasePrompt.system.contains("dictionary")
+        && japanesePhrasePrompt.user.contains("Translate from 日本語")
+        && japaneseWordPrompt.system.contains("dictionary"),
+      "Japanese phrase and word prompt classification failed",
+      failures: &failures
+    )
+    var overriddenTranslate = translateAction
+    overriddenTranslate.rolePrompt = "Translate carefully into ${targetLang}."
+    overriddenTranslate.commandPrompt = "Process ${text} from ${sourceLang}."
+    let overriddenPrompt = PromptBuilder.build(
+      text: "Hello",
+      source: .english,
+      target: .japanese,
+      action: overriddenTranslate
+    )
+    check(
+      overriddenPrompt.system == "Translate carefully into 日本語."
+        && overriddenPrompt.user == "Process Hello from English.",
+      "built-in action prompt overrides were ignored",
+      failures: &failures
+    )
+    let customAction = TranslationAction(
+      id: UUID(uuidString: "10000000-0000-4000-8000-000000000001")!,
+      name: "Custom"
+    )
+    var actionSettings = AppSettings()
+    actionSettings.actionOrder = [customAction.id, translateAction.id]
+    actionSettings.hiddenActionIDs = [customAction.id]
+    actionSettings.defaultActionID = customAction.id
+    actionSettings.setBuiltInOverride(overriddenTranslate)
+    let configuredActions = actionSettings.orderedActions(customActions: [customAction])
+    check(
+      configuredActions.map(\.id).prefix(2) == [customAction.id, translateAction.id],
+      "persisted action ordering was not resolved",
+      failures: &failures
+    )
+    check(
+      !actionSettings.orderedActions(customActions: [customAction], includingHidden: false)
+        .contains(where: { $0.id == customAction.id }),
+      "hidden action was exposed on a translation surface",
+      failures: &failures
+    )
+    check(
+      actionSettings.resolvedDefaultAction(customActions: [customAction])?.id
+        == translateAction.id,
+      "hidden default action did not fall back to the first visible action",
+      failures: &failures
+    )
+    check(
+      actionSettings.resolvedBuiltInActions.first(where: { $0.id == translateAction.id })?
+        .rolePrompt == overriddenTranslate.rolePrompt,
+      "built-in action override was not resolved",
+      failures: &failures
+    )
+    actionSettings.setDefaultAction(customAction.id)
+    check(
+      actionSettings.defaultActionID == customAction.id
+        && !actionSettings.hiddenActionIDs.contains(customAction.id),
+      "setting a default action did not atomically make it visible",
+      failures: &failures
+    )
+
+    do {
+      let legacyCustomID = UUID(uuidString: "10000000-0000-4000-8000-000000000002")!
+      let legacySettings = Data(
+        """
+        {
+          "sourceLanguage": "en",
+          "targetLanguage": "ja",
+          "defaultActionID": "\(legacyCustomID.uuidString)",
+          "autoTranslate": false,
+          "theme": "dark"
+        }
+        """.utf8
+      )
+      let migrated = try JSONDecoder().decode(AppSettings.self, from: legacySettings)
+      let legacyCustom = TranslationAction(id: legacyCustomID, name: "Legacy Custom")
+      check(
+        migrated.sourceLanguage == .english
+          && migrated.targetLanguage == .japanese
+          && !migrated.autoTranslate
+          && migrated.theme == .dark,
+        "legacy settings values changed during action-settings migration",
+        failures: &failures
+      )
+      check(
+        migrated.actionOrder == TranslationAction.defaultOrder
+          && migrated.hiddenActionIDs.isEmpty
+          && migrated.builtInActionOverrides.isEmpty,
+        "legacy settings did not receive safe action-presentation defaults",
+        failures: &failures
+      )
+      check(
+        migrated.defaultActionID == legacyCustomID
+          && migrated.resolvedDefaultAction(customActions: [legacyCustom])?.id == legacyCustomID,
+        "legacy custom default was not preserved until custom actions loaded",
+        failures: &failures
+      )
+
+      var persisted = migrated
+      persisted.actionOrder = [legacyCustomID, translateAction.id]
+      persisted.hiddenActionIDs = [
+        TranslationAction.builtIns.first { $0.mode == .polishing }!.id
+      ]
+      persisted.setBuiltInOverride(overriddenTranslate)
+      let roundTripped = try JSONDecoder().decode(
+        AppSettings.self,
+        from: JSONEncoder().encode(persisted)
+      )
+      check(
+        roundTripped == persisted,
+        "action settings changed during serialized persistence round trip",
+        failures: &failures
+      )
+      check(
+        roundTripped.orderedActions(customActions: [legacyCustom]).map(\.id).prefix(2)
+          == [legacyCustomID, translateAction.id]
+          && roundTripped.resolvedBuiltInActions.first(where: {
+            $0.id == translateAction.id
+          })?.commandPrompt == overriddenTranslate.commandPrompt,
+        "persisted order or built-in override was not restored after decoding",
+        failures: &failures
+      )
+    } catch {
+      failures.append("action settings migration or round trip threw: \(error)")
+    }
+    let fragmentedContext = SelectionContextMatcher.context(
+      matching: "selected phrase",
+      in: ["The paragraph starts before the selected", "phrase and continues after it."]
+    )
+    check(
+      fragmentedContext?.contains("before the selected phrase and continues") == true,
+      "fragmented accessibility text was not reconstructed around the selection",
+      failures: &failures
+    )
+    check(
+      SelectionContextMatcher.context(
+        matching: "repeated",
+        in: ["The repeated word appears here.", "Another repeated word appears later."]
+      ) == nil,
+      "ambiguous accessibility context did not fail closed",
+      failures: &failures
+    )
+    let conflictingSelection = SelectionEvidenceResolver.resolve(
+      accessibilityText: "nst anyo",
+      copiedText: "first"
+    )
+    check(
+      conflictingSelection.text == "first"
+        && !conflictingSelection.accessibilityMatches,
+      "clipboard selection did not override conflicting accessibility evidence",
+      failures: &failures
+    )
+    let matchingSelection = SelectionEvidenceResolver.resolve(
+      accessibilityText: "  selected\nphrase ",
+      copiedText: "selected phrase"
+    )
+    check(
+      matchingSelection.text == "selected phrase"
+        && matchingSelection.accessibilityMatches,
+      "equivalent clipboard and accessibility evidence did not reconcile",
+      failures: &failures
+    )
+    let accessibilityOnlySelection = SelectionEvidenceResolver.resolve(
+      accessibilityText: "native selection",
+      copiedText: nil
+    )
+    check(
+      accessibilityOnlySelection.text == "native selection"
+        && accessibilityOnlySelection.accessibilityMatches,
+      "accessibility selection did not survive an unavailable copy fallback",
+      failures: &failures
+    )
+    let booksContext = SelectionContextMatcher.context(
+      matching: conflictingSelection.text,
+      in: [
+        "We are not measuring you against anyone.",
+        "You should feel free to read it on your own first. Many people think differently.",
+      ]
+    )
+    check(
+      booksContext?.contains("own first. Many people") == true,
+      "reconciled selection did not locate the correct accessibility context",
+      failures: &failures
+    )
 
     do {
       _ = try EndpointValidator.validate(
@@ -103,9 +302,10 @@ enum SelfTestRunner {
         configuration: configuration,
         apiKey: "test-key"
       )
-      let disabledBody = try JSONSerialization.jsonObject(
-        with: disabledRequest.httpBody ?? Data()
-      ) as? [String: Any]
+      let disabledBody =
+        try JSONSerialization.jsonObject(
+          with: disabledRequest.httpBody ?? Data()
+        ) as? [String: Any]
       let disabledThinking = disabledBody?["thinking"] as? [String: Any]
       check(
         disabledBody?["reasoning_effort"] as? String == "none"
@@ -120,9 +320,10 @@ enum SelfTestRunner {
         configuration: configuration,
         apiKey: "test-key"
       )
-      let enabledBody = try JSONSerialization.jsonObject(
-        with: enabledRequest.httpBody ?? Data()
-      ) as? [String: Any]
+      let enabledBody =
+        try JSONSerialization.jsonObject(
+          with: enabledRequest.httpBody ?? Data()
+        ) as? [String: Any]
       let enabledThinking = enabledBody?["thinking"] as? [String: Any]
       check(
         enabledBody?["reasoning_effort"] as? String == "high"
@@ -137,7 +338,8 @@ enum SelfTestRunner {
       let legacyConfiguration = try JSONDecoder().decode(
         ProviderConfiguration.self,
         from: Data(
-          #"{"provider":"OpenAI-compatible","endpoint":"https://example.com/v1/chat/completions","model":"example-model","organization":"","apiVersion":"2024-10-21","extendedThinking":false}"#.utf8
+          #"{"provider":"OpenAI-compatible","endpoint":"https://example.com/v1/chat/completions","model":"example-model","organization":"","apiVersion":"2024-10-21","extendedThinking":false}"#
+            .utf8
         )
       )
       check(
@@ -161,7 +363,8 @@ enum SelfTestRunner {
       )
       let geminiModels = try ModelCatalogClient.parseModels(
         Data(
-          #"{"models":[{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/embedding-001","supportedGenerationMethods":["embedContent"]}]}"#.utf8
+          #"{"models":[{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/embedding-001","supportedGenerationMethods":["embedContent"]}]}"#
+            .utf8
         ),
         provider: .gemini
       )

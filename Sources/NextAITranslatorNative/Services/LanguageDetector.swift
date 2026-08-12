@@ -65,3 +65,26 @@ enum LanguageDetector {
     }
   }
 }
+
+enum TranslationSourceResolver {
+  static func resolve(
+    _ text: String,
+    configuredSource: LanguageCode,
+    inputSource: InputSource,
+    restoredSource: LanguageCode? = nil
+  ) -> LanguageCode {
+    switch inputSource {
+    case .selection, .ocr:
+      return LanguageDetector.detect(text)
+    case .history:
+      guard let restoredSource, restoredSource != .auto else {
+        return LanguageDetector.detect(text)
+      }
+      return restoredSource
+    case .manual:
+      return configuredSource == .auto
+        ? LanguageDetector.detect(text)
+        : configuredSource
+    }
+  }
+}

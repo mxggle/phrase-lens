@@ -112,6 +112,21 @@ final class SettingsStore: ObservableObject {
     }
   }
 
+  /// Keeps the default action usable from every surface. Choosing a hidden
+  /// action as the default makes it visible again rather than persisting a
+  /// contradictory configuration.
+  func setDefaultAction(_ id: UUID) {
+    settings.setDefaultAction(id)
+  }
+
+  func resetBuiltInAction(_ id: UUID) {
+    settings.resetBuiltInAction(id)
+  }
+
+  func resetActionPresentation() {
+    settings.resetActionPresentation()
+  }
+
   func reset() {
     providerConfigurations = [:]
     defaults.removeObject(forKey: providerConfigurationsKey)

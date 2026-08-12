@@ -1,6 +1,8 @@
 import Foundation
 
 struct TranslationClient: Sendable {
+  private static let directSession = configuredSession(proxy: nil)
+
   func stream(
     prompt: TranslationPrompt,
     configuration: ProviderConfiguration,
@@ -26,13 +28,16 @@ struct TranslationClient: Sendable {
             throw TranslationError.invalidResponse
           }
           guard (200..<300).contains(http.statusCode) else {
-            var body = ""
+            var bodyData = Data()
             for try await byte in bytes {
-              if body.utf8.count >= 16_384 { break }
-              body.append(Character(UnicodeScalar(byte)))
+              if bodyData.count >= 16_384 { break }
+              bodyData.append(byte)
             }
             throw TranslationError.provider(
-              providerError(status: http.statusCode, body: body)
+              providerError(
+                status: http.statusCode,
+                body: String(decoding: bodyData, as: UTF8.self)
+              )
             )
           }
 
@@ -252,10 +257,17 @@ struct TranslationClient: Sendable {
   }
 
   private func makeSession(proxy: ProxySettings) -> URLSession {
+    guard proxy.enabled, !proxy.host.isEmpty else {
+      return Self.directSession
+    }
+    return Self.configuredSession(proxy: proxy)
+  }
+
+  private static func configuredSession(proxy: ProxySettings?) -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.waitsForConnectivity = true
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-    if proxy.enabled, !proxy.host.isEmpty {
+    if let proxy {
       configuration.connectionProxyDictionary = [
         kCFNetworkProxiesHTTPEnable as String: proxy.scheme == "http",
         kCFNetworkProxiesHTTPProxy as String: proxy.host,

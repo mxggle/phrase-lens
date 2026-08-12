@@ -152,6 +152,16 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
     )
   }
 
+  static var defaultOrder: [UUID] { builtIns.map(\.id) }
+
+  var isBuiltIn: Bool {
+    Self.factoryBuiltIn(for: id) != nil
+  }
+
+  static func factoryBuiltIn(for id: UUID) -> TranslationAction? {
+    builtIns.first { $0.id == id }
+  }
+
   private static func stableUUID(for mode: ActionMode) -> String {
     switch mode {
     case .translate: "00000000-0000-4000-8000-000000000001"
@@ -335,6 +345,14 @@ struct AppSettings: Codable, Equatable, Sendable {
   var targetLanguage: LanguageCode = .simplifiedChinese
   var favoriteLanguages: [LanguageCode] = [.simplifiedChinese, .japanese, .english]
   var defaultActionID = TranslationAction.builtIns[0].id
+  /// Stable IDs in the order actions should be presented. Custom action IDs may
+  /// be included; newly-created or newly-shipped actions are appended by the
+  /// resolved ordering helpers below.
+  var actionOrder: [UUID] = TranslationAction.defaultOrder
+  var hiddenActionIDs: Set<UUID> = []
+  /// User-authored replacements for built-in presentation and prompts. The
+  /// stable built-in ID and mode remain authoritative when resolving them.
+  var builtInActionOverrides: [TranslationAction] = []
   var autoTranslate = true
   var autoSpeakSelection = false
   var autoHideWhenInactive = false
@@ -353,6 +371,169 @@ struct AppSettings: Codable, Equatable, Sendable {
   var proxy = ProxySettings()
 
   var resolvedTTSProvider: TTSProvider { ttsProvider ?? .edge }
+
+  init() {}
+
+  private enum CodingKeys: String, CodingKey {
+    case provider
+    case sourceLanguage
+    case targetLanguage
+    case favoriteLanguages
+    case defaultActionID
+    case actionOrder
+    case hiddenActionIDs
+    case builtInActionOverrides
+    case autoTranslate
+    case autoSpeakSelection
+    case autoHideWhenInactive
+    case alwaysOnTop
+    case launchAtLogin
+    case showDockIcon
+    case useCompactSelectionPreview
+    case useClipboardFallback
+    case theme
+    case fontSize
+    case speechRate
+    case speechVolume
+    case ttsProvider
+    case writingTargetLanguage
+    case shortcuts
+    case proxy
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    provider = try container.decodeIfPresent(ProviderConfiguration.self, forKey: .provider) ?? .init()
+    sourceLanguage = try container.decodeIfPresent(LanguageCode.self, forKey: .sourceLanguage) ?? .auto
+    targetLanguage =
+      try container.decodeIfPresent(LanguageCode.self, forKey: .targetLanguage)
+      ?? .simplifiedChinese
+    favoriteLanguages =
+      try container.decodeIfPresent([LanguageCode].self, forKey: .favoriteLanguages)
+      ?? [.simplifiedChinese, .japanese, .english]
+    defaultActionID =
+      try container.decodeIfPresent(UUID.self, forKey: .defaultActionID)
+      ?? TranslationAction.builtIns[0].id
+    actionOrder =
+      try container.decodeIfPresent([UUID].self, forKey: .actionOrder)
+      ?? TranslationAction.defaultOrder
+    hiddenActionIDs =
+      try container.decodeIfPresent(Set<UUID>.self, forKey: .hiddenActionIDs)
+      ?? []
+    builtInActionOverrides =
+      try container.decodeIfPresent([TranslationAction].self, forKey: .builtInActionOverrides)
+      ?? []
+    autoTranslate = try container.decodeIfPresent(Bool.self, forKey: .autoTranslate) ?? true
+    autoSpeakSelection =
+      try container.decodeIfPresent(Bool.self, forKey: .autoSpeakSelection)
+      ?? false
+    autoHideWhenInactive =
+      try container.decodeIfPresent(Bool.self, forKey: .autoHideWhenInactive)
+      ?? false
+    alwaysOnTop = try container.decodeIfPresent(Bool.self, forKey: .alwaysOnTop) ?? false
+    launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+    showDockIcon = try container.decodeIfPresent(Bool.self, forKey: .showDockIcon) ?? true
+    useCompactSelectionPreview =
+      try container.decodeIfPresent(Bool.self, forKey: .useCompactSelectionPreview)
+      ?? true
+    useClipboardFallback =
+      try container.decodeIfPresent(Bool.self, forKey: .useClipboardFallback)
+      ?? true
+    theme = try container.decodeIfPresent(AppTheme.self, forKey: .theme) ?? .system
+    fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? 15
+    speechRate = try container.decodeIfPresent(Double.self, forKey: .speechRate) ?? 0.48
+    speechVolume = try container.decodeIfPresent(Double.self, forKey: .speechVolume) ?? 1
+    ttsProvider = try container.decodeIfPresent(TTSProvider.self, forKey: .ttsProvider)
+    writingTargetLanguage =
+      try container.decodeIfPresent(LanguageCode.self, forKey: .writingTargetLanguage)
+      ?? .english
+    shortcuts = try container.decodeIfPresent(ShortcutSettings.self, forKey: .shortcuts) ?? .init()
+    proxy = try container.decodeIfPresent(ProxySettings.self, forKey: .proxy) ?? .init()
+
+    sanitizeActionConfiguration()
+  }
+
+  /// Returns built-ins with any user overrides applied. Invalid/duplicate
+  /// overrides are ignored, which keeps corrupt or future-version settings safe.
+  var resolvedBuiltInActions: [TranslationAction] {
+    let overrides = Dictionary(
+      builtInActionOverrides.compactMap { action -> (UUID, TranslationAction)? in
+        guard let factory = TranslationAction.factoryBuiltIn(for: action.id) else { return nil }
+        var resolved = action
+        resolved.id = factory.id
+        resolved.mode = factory.mode
+        return (factory.id, resolved)
+      },
+      uniquingKeysWith: { _, latest in latest }
+    )
+    return TranslationAction.builtIns.map { overrides[$0.id] ?? $0 }
+  }
+
+  func orderedActions(customActions: [TranslationAction], includingHidden: Bool = true)
+    -> [TranslationAction]
+  {
+    let available = resolvedBuiltInActions + customActions
+    let byID = Dictionary(available.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    var seen = Set<UUID>()
+    var result = actionOrder.compactMap { id -> TranslationAction? in
+      guard seen.insert(id).inserted else { return nil }
+      return byID[id]
+    }
+    result.append(contentsOf: available.filter { seen.insert($0.id).inserted })
+    return includingHidden ? result : result.filter { !hiddenActionIDs.contains($0.id) }
+  }
+
+  func resolvedDefaultAction(customActions: [TranslationAction]) -> TranslationAction? {
+    let visible = orderedActions(customActions: customActions, includingHidden: false)
+    return visible.first { $0.id == defaultActionID } ?? visible.first
+  }
+
+  mutating func setBuiltInOverride(_ action: TranslationAction) {
+    guard let factory = TranslationAction.factoryBuiltIn(for: action.id) else { return }
+    var override = action
+    override.id = factory.id
+    override.mode = factory.mode
+    builtInActionOverrides.removeAll { $0.id == factory.id }
+    if override != factory {
+      builtInActionOverrides.append(override)
+    }
+  }
+
+  mutating func resetBuiltInAction(_ id: UUID) {
+    builtInActionOverrides.removeAll { $0.id == id }
+  }
+
+  /// Changes the default and its visibility as one value mutation. Settings
+  /// persistence and observation both happen at the `AppSettings` boundary, so
+  /// publishing these fields separately can expose a transient state where the
+  /// new default is still hidden and gets reconciled away.
+  mutating func setDefaultAction(_ id: UUID) {
+    defaultActionID = id
+    hiddenActionIDs.remove(id)
+  }
+
+  mutating func resetActionPresentation() {
+    actionOrder = TranslationAction.defaultOrder
+    hiddenActionIDs = []
+    builtInActionOverrides = []
+    defaultActionID = TranslationAction.builtIns[0].id
+  }
+
+  private mutating func sanitizeActionConfiguration() {
+    var seenOrder = Set<UUID>()
+    actionOrder = actionOrder.filter { seenOrder.insert($0).inserted }
+
+    var seenOverrides = Set<UUID>()
+    builtInActionOverrides = builtInActionOverrides.reversed().compactMap { action in
+      guard let factory = TranslationAction.factoryBuiltIn(for: action.id),
+        seenOverrides.insert(action.id).inserted
+      else { return nil }
+      var sanitized = action
+      sanitized.id = factory.id
+      sanitized.mode = factory.mode
+      return sanitized == factory ? nil : sanitized
+    }.reversed()
+  }
 }
 
 struct HistoryEntry: Codable, Identifiable, Hashable, Sendable {

@@ -3,6 +3,10 @@ import AppKit
 import Foundation
 
 struct AccessibilityService: Sendable {
+  private static let maximumCandidateCount = 800
+  private static let maximumCandidateDepth = 12
+  private static let maximumParentDepth = 12
+
   func isTrusted(prompt: Bool = false) -> Bool {
     guard prompt else { return AXIsProcessTrusted() }
     let options =
@@ -20,29 +24,45 @@ struct AccessibilityService: Sendable {
     guard isTrusted() else {
       throw TranslationError.accessibilityPermissionRequired
     }
-    // Static text selections in browsers and WebKit-based apps do not always
-    // expose kAXFocusedUIElementAttribute. Treat AX lookup as the preferred
-    // path, not a prerequisite: the guarded Command-C fallback can still read
-    // the user's selection from the source application in that case.
-    let sourceElement = try? focusedElement(in: processIdentifier)
-    let accessibilitySnapshot = sourceElement.flatMap(selectionSnapshot)
+    // The focused element is often only a container. Readers such as Apple
+    // Books keep the actual WebArea and static text below that container, while
+    // browsers and native editors may expose selection on the focused element
+    // or one of its ancestors. Search the active window by capability instead
+    // of assuming a particular application or accessibility-tree direction.
+    let application = try applicationElement(for: processIdentifier)
+    let sourceElement = try? focusedElement(in: application)
+    if let sourceElement, isWithinSecureTextElement(sourceElement) {
+      throw TranslationError.selectionUnavailable
+    }
+    let focusedWindow = uiElementAttribute(kAXFocusedWindowAttribute, from: application)
+    let candidates = selectionCandidates(
+      focusedElement: sourceElement,
+      focusedWindow: focusedWindow
+    )
+    let accessibilitySnapshot = selectionSnapshot(from: candidates)
     let selectedText = accessibilitySnapshot?.text ?? ""
-    let fallbackText =
-      selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && allowCopyFallback
+    // A broad content traversal is useful for finding context, but some readers
+    // expose the same selection range on several static-text descendants. A
+    // range from one paragraph can therefore produce a plausible substring in
+    // another paragraph. When clipboard access is enabled, use Copy as the
+    // selection anchor even when AX returned non-empty text; AX remains the
+    // fallback for controls that cannot copy their selection.
+    let copiedText =
+      allowCopyFallback
       ? await copiedSelectionPreservingClipboard(from: processIdentifier)
       : nil
-    let resolvedText = fallbackText ?? selectedText
+    let evidence = SelectionEvidenceResolver.resolve(
+      accessibilityText: selectedText,
+      copiedText: copiedText
+    )
+    let resolvedText = evidence.text
     let resolvedContext =
-      accessibilitySnapshot?.surroundingText
-      ?? fallbackText.flatMap { copiedText in
-        sourceElement.flatMap {
-          surroundingText(matching: copiedText, from: $0)
-        }
-      }
+      (evidence.accessibilityMatches ? accessibilitySnapshot?.surroundingText : nil)
+      ?? (resolvedText.isEmpty ? nil : surroundingText(matching: resolvedText, in: candidates))
     return SelectionSnapshot(
       text: resolvedText,
       surroundingText: resolvedContext,
-      screenRect: accessibilitySnapshot?.screenRect
+      screenRect: evidence.accessibilityMatches ? accessibilitySnapshot?.screenRect : nil
     )
   }
 
@@ -150,6 +170,9 @@ struct AccessibilityService: Sendable {
       throw TranslationError.accessibilityPermissionRequired
     }
     let element = try focusedElement()
+    guard !isWithinSecureTextElement(element) else {
+      throw TranslationError.provider("Secure text fields cannot be translated or replaced.")
+    }
     guard let value = stringAttribute(kAXValueAttribute, from: element), !value.isEmpty else {
       throw TranslationError.noInput
     }
@@ -161,6 +184,9 @@ struct AccessibilityService: Sendable {
       throw TranslationError.accessibilityPermissionRequired
     }
     let element = try focusedElement()
+    guard !isWithinSecureTextElement(element) else {
+      throw TranslationError.provider("Secure text fields cannot be translated or replaced.")
+    }
     guard let value = stringAttribute(kAXValueAttribute, from: element) else {
       throw TranslationError.provider("The focused control is not editable.")
     }
@@ -211,6 +237,13 @@ struct AccessibilityService: Sendable {
   }
 
   private func focusedElement() throws -> AXUIElement {
+    try focusedElement(in: applicationElement(for: nil))
+  }
+
+  private func applicationElement(for processIdentifier: pid_t?) throws -> AXUIElement {
+    if let processIdentifier {
+      return AXUIElementCreateApplication(processIdentifier)
+    }
     let systemWide = AXUIElementCreateSystemWide()
     var focusedApplication: CFTypeRef?
     guard
@@ -225,18 +258,7 @@ struct AccessibilityService: Sendable {
       throw TranslationError.provider("No focused application is available.")
     }
 
-    return try focusedElement(
-      in: unsafeDowncast(application, to: AXUIElement.self)
-    )
-  }
-
-  private func focusedElement(in processIdentifier: pid_t?) throws -> AXUIElement {
-    guard let processIdentifier else {
-      return try focusedElement()
-    }
-    return try focusedElement(
-      in: AXUIElementCreateApplication(processIdentifier)
-    )
+    return unsafeDowncast(application, to: AXUIElement.self)
   }
 
   private func focusedElement(in application: AXUIElement) throws -> AXUIElement {
@@ -255,6 +277,132 @@ struct AccessibilityService: Sendable {
     return unsafeDowncast(element, to: AXUIElement.self)
   }
 
+  private func selectionCandidates(
+    focusedElement: AXUIElement?,
+    focusedWindow: AXUIElement?
+  ) -> [AXUIElement] {
+    var candidates: [AXUIElement] = []
+    var candidateBuckets: [CFHashCode: [AXUIElement]] = [:]
+
+    if let focusedElement {
+      appendUnique(focusedElement, to: &candidates, buckets: &candidateBuckets)
+      var current = parent(of: focusedElement)
+      for _ in 0..<Self.maximumParentDepth {
+        guard let element = current else { break }
+        appendUnique(element, to: &candidates, buckets: &candidateBuckets)
+        current = parent(of: element)
+      }
+      appendDescendants(
+        of: focusedElement,
+        to: &candidates,
+        buckets: &candidateBuckets
+      )
+    }
+
+    if let focusedWindow, candidates.count < Self.maximumCandidateCount {
+      appendUnique(focusedWindow, to: &candidates, buckets: &candidateBuckets)
+      appendDescendants(
+        of: focusedWindow,
+        to: &candidates,
+        buckets: &candidateBuckets
+      )
+    }
+    return candidates
+  }
+
+  private func appendDescendants(
+    of root: AXUIElement,
+    to candidates: inout [AXUIElement],
+    buckets: inout [CFHashCode: [AXUIElement]]
+  ) {
+    var queue: [(element: AXUIElement, depth: Int)] = [(root, 0)]
+    var queueIndex = 0
+    var traversalBuckets: [CFHashCode: [AXUIElement]] = [:]
+    insertUnique(root, into: &traversalBuckets)
+
+    while queueIndex < queue.count, candidates.count < Self.maximumCandidateCount {
+      let item = queue[queueIndex]
+      queueIndex += 1
+      guard item.depth < Self.maximumCandidateDepth else { continue }
+
+      for child in children(of: item.element) {
+        guard
+          insertUnique(child, into: &traversalBuckets),
+          !shouldSkipDescendants(of: child)
+        else {
+          continue
+        }
+        appendUnique(child, to: &candidates, buckets: &buckets)
+        queue.append((child, item.depth + 1))
+        if candidates.count >= Self.maximumCandidateCount { break }
+      }
+    }
+  }
+
+  @discardableResult
+  private func appendUnique(
+    _ element: AXUIElement,
+    to elements: inout [AXUIElement],
+    buckets: inout [CFHashCode: [AXUIElement]]
+  ) -> Bool {
+    guard insertUnique(element, into: &buckets) else { return false }
+    elements.append(element)
+    return true
+  }
+
+  @discardableResult
+  private func insertUnique(
+    _ element: AXUIElement,
+    into buckets: inout [CFHashCode: [AXUIElement]]
+  ) -> Bool {
+    let hash = CFHash(element)
+    if buckets[hash]?.contains(where: { CFEqual($0, element) }) == true {
+      return false
+    }
+    buckets[hash, default: []].append(element)
+    return true
+  }
+
+  private func children(of element: AXUIElement) -> [AXUIElement] {
+    guard let rawChildren = attribute(kAXChildrenAttribute, from: element) as? [AnyObject] else {
+      return []
+    }
+    return rawChildren.compactMap { child in
+      let value: CFTypeRef = child
+      guard CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+      return unsafeDowncast(value, to: AXUIElement.self)
+    }
+  }
+
+  private func shouldSkipDescendants(of element: AXUIElement) -> Bool {
+    switch stringAttribute(kAXRoleAttribute, from: element) {
+    case kAXMenuBarRole, kAXMenuRole, kAXMenuItemRole, "AXSecureTextField":
+      true
+    default:
+      false
+    }
+  }
+
+  private func isWithinSecureTextElement(_ element: AXUIElement) -> Bool {
+    var current: AXUIElement? = element
+    for _ in 0..<Self.maximumParentDepth {
+      guard let candidate = current else { break }
+      if stringAttribute(kAXRoleAttribute, from: candidate) == "AXSecureTextField" {
+        return true
+      }
+      current = parent(of: candidate)
+    }
+    return false
+  }
+
+  private func uiElementAttribute(_ name: String, from element: AXUIElement) -> AXUIElement? {
+    guard let value = attribute(name, from: element), CFGetTypeID(value) == AXUIElementGetTypeID()
+    else {
+      return nil
+    }
+    return unsafeDowncast(value, to: AXUIElement.self)
+  }
+
   private func stringAttribute(_ name: String, from element: AXUIElement) -> String? {
     var result: CFTypeRef?
     guard AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success else {
@@ -264,18 +412,23 @@ struct AccessibilityService: Sendable {
   }
 
   private func selectedRange(from element: AXUIElement) -> CFRange? {
-    var result: CFTypeRef?
-    guard
-      AXUIElementCopyAttributeValue(
-        element,
-        kAXSelectedTextRangeAttribute as CFString,
-        &result
-      ) == .success,
-      let value = result,
-      CFGetTypeID(value) == AXValueGetTypeID()
-    else {
-      return nil
+    if let value = attribute(kAXSelectedTextRangeAttribute, from: element),
+      let range = cfRange(from: value)
+    {
+      return range
     }
+
+    guard
+      let values = attribute(kAXSelectedTextRangesAttribute, from: element) as? [AnyObject]
+    else { return nil }
+    return values.lazy.compactMap { value -> CFRange? in
+      let reference: CFTypeRef = value
+      return cfRange(from: reference)
+    }.first(where: { $0.length > 0 })
+  }
+
+  private func cfRange(from value: CFTypeRef) -> CFRange? {
+    guard CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
     let axValue = unsafeDowncast(value, to: AXValue.self)
     guard AXValueGetType(axValue) == .cfRange else { return nil }
     var range = CFRange()
@@ -283,24 +436,18 @@ struct AccessibilityService: Sendable {
     return range
   }
 
-  private func selectionSnapshot(from focusedElement: AXUIElement) -> SelectionSnapshot? {
-    var element: AXUIElement? = focusedElement
+  private func selectionSnapshot(from candidates: [AXUIElement]) -> SelectionSnapshot? {
     var fallbackSnapshot: SelectionSnapshot?
 
-    // Browser content commonly exposes selection through an AXWebArea ancestor rather
-    // than through the focused leaf. Walk only upward so unrelated page text cannot be
-    // mistaken for the user's selection.
-    for _ in 0..<8 {
-      guard let current = element else { break }
-      if let snapshot = rangeSelectionSnapshot(from: current) {
+    for element in candidates {
+      if let snapshot = rangeSelectionSnapshot(from: element) {
         if hasUsefulContext(snapshot) { return snapshot }
         fallbackSnapshot = fallbackSnapshot ?? snapshot
       }
-      if let snapshot = textMarkerSelectionSnapshot(from: current) {
+      if let snapshot = textMarkerSelectionSnapshot(from: element) {
         if hasUsefulContext(snapshot) { return snapshot }
         fallbackSnapshot = fallbackSnapshot ?? snapshot
       }
-      element = parent(of: current)
     }
     return fallbackSnapshot
   }
@@ -316,10 +463,12 @@ struct AccessibilityService: Sendable {
     if !selectedAttribute.isEmpty {
       selectedText = selectedAttribute
     } else if let range, range.length > 0 {
-      selectedText = substring(value, range: range)
+      let rangedValue = substring(value, range: range)
+      selectedText = !rangedValue.isEmpty ? rangedValue : string(for: range, from: element) ?? ""
     } else {
       return nil
     }
+    guard !selectedText.isEmpty else { return nil }
 
     var context = value
     if context.isEmpty, let range {
@@ -347,8 +496,9 @@ struct AccessibilityService: Sendable {
     // trailing side until the request succeeds while preserving the selection.
     while contextRange.length >= minimumLength {
       if let rangeValue = AXValueCreate(.cfRange, &contextRange),
-        let text = parameterizedString(
-          "AXStringForRange",
+        let text = parameterizedText(
+          kAXStringForRangeParameterizedAttribute,
+          fallbackName: kAXAttributedStringForRangeParameterizedAttribute,
           parameter: rangeValue,
           from: element
         ),
@@ -363,21 +513,40 @@ struct AccessibilityService: Sendable {
     return nil
   }
 
+  private func string(for range: CFRange, from element: AXUIElement) -> String? {
+    var range = range
+    guard let rangeValue = AXValueCreate(.cfRange, &range) else { return nil }
+    return parameterizedText(
+      kAXStringForRangeParameterizedAttribute,
+      fallbackName: kAXAttributedStringForRangeParameterizedAttribute,
+      parameter: rangeValue,
+      from: element
+    )
+  }
+
   private func surroundingText(
     matching selectedText: String,
-    from focusedElement: AXUIElement
+    in candidates: [AXUIElement]
   ) -> String? {
-    var element: AXUIElement? = focusedElement
-    for _ in 0..<8 {
-      guard let current = element else { break }
-      if let value = stringAttribute(kAXValueAttribute, from: current),
-        value.range(of: selectedText, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-      {
-        return PromptBuilder.boundedContext(value, around: selectedText)
-      }
-      element = parent(of: current)
+    let segments = candidates.compactMap(readableTextSegment)
+    return SelectionContextMatcher.context(matching: selectedText, in: segments)
+  }
+
+  private func readableTextSegment(from element: AXUIElement) -> String? {
+    switch stringAttribute(kAXRoleAttribute, from: element) {
+    case kAXStaticTextRole, kAXTextAreaRole, kAXTextFieldRole, "AXHeading", "AXLink":
+      break
+    default:
+      return nil
     }
-    return nil
+    guard
+      let value = stringAttribute(kAXValueAttribute, from: element)?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !value.isEmpty
+    else {
+      return nil
+    }
+    return value
   }
 
   private func textMarkerSelectionSnapshot(from element: AXUIElement) -> SelectionSnapshot? {
@@ -389,8 +558,9 @@ struct AccessibilityService: Sendable {
     }
 
     let selectedText =
-      parameterizedString(
-        "AXStringForTextMarkerRange",
+      parameterizedText(
+        kAXStringForTextMarkerRangeParameterizedAttribute,
+        fallbackName: kAXAttributedStringForTextMarkerRangeParameterizedAttribute,
         parameter: selectedMarkerRange,
         from: element
       )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -401,20 +571,41 @@ struct AccessibilityService: Sendable {
     let selectedEnd = AXTextMarkerRangeCopyEndMarker(markerRange)
     let contextStart =
       parameterizedTextMarker(
-        "AXPreviousParagraphStartTextMarkerForTextMarker",
+        kAXPreviousParagraphStartTextMarkerForTextMarkerParameterizedAttribute,
+        parameter: selectedStart,
+        from: element
+      )
+      ?? parameterizedTextMarker(
+        kAXPreviousSentenceStartTextMarkerForTextMarkerParameterizedAttribute,
+        parameter: selectedStart,
+        from: element
+      )
+      ?? parameterizedTextMarker(
+        kAXPreviousLineStartTextMarkerForTextMarkerParameterizedAttribute,
         parameter: selectedStart,
         from: element
       ) ?? selectedStart
     let contextEnd =
       parameterizedTextMarker(
-        "AXNextParagraphEndTextMarkerForTextMarker",
+        kAXNextParagraphEndTextMarkerForTextMarkerParameterizedAttribute,
+        parameter: selectedEnd,
+        from: element
+      )
+      ?? parameterizedTextMarker(
+        kAXNextSentenceEndTextMarkerForTextMarkerParameterizedAttribute,
+        parameter: selectedEnd,
+        from: element
+      )
+      ?? parameterizedTextMarker(
+        kAXNextLineEndTextMarkerForTextMarkerParameterizedAttribute,
         parameter: selectedEnd,
         from: element
       ) ?? selectedEnd
     let contextRange = AXTextMarkerRangeCreate(nil, contextStart, contextEnd)
     let context =
-      parameterizedString(
-        "AXStringForTextMarkerRange",
+      parameterizedText(
+        kAXStringForTextMarkerRangeParameterizedAttribute,
+        fallbackName: kAXAttributedStringForTextMarkerRangeParameterizedAttribute,
         parameter: contextRange,
         from: element
       ) ?? ""
@@ -439,7 +630,7 @@ struct AccessibilityService: Sendable {
 
   private func bounds(forTextMarkerRange range: CFTypeRef, from element: AXUIElement) -> CGRect? {
     parameterizedRect(
-      "AXBoundsForTextMarkerRange",
+      kAXBoundsForTextMarkerRangeParameterizedAttribute,
       parameter: range,
       from: element
     )
@@ -505,7 +696,20 @@ struct AccessibilityService: Sendable {
     return result
   }
 
-  private func parameterizedString(
+  private func parameterizedText(
+    _ name: String,
+    fallbackName: String? = nil,
+    parameter: CFTypeRef,
+    from element: AXUIElement
+  ) -> String? {
+    if let value = parameterizedTextValue(name, parameter: parameter, from: element) {
+      return value
+    }
+    guard let fallbackName else { return nil }
+    return parameterizedTextValue(fallbackName, parameter: parameter, from: element)
+  }
+
+  private func parameterizedTextValue(
     _ name: String,
     parameter: CFTypeRef,
     from element: AXUIElement
@@ -521,7 +725,10 @@ struct AccessibilityService: Sendable {
     else {
       return nil
     }
-    return result as? String
+    if let string = result as? String {
+      return string
+    }
+    return (result as? NSAttributedString)?.string
   }
 
   private func parameterizedTextMarker(
@@ -553,5 +760,81 @@ struct AccessibilityService: Sendable {
       return ""
     }
     return nsValue.substring(with: NSRange(location: range.location, length: range.length))
+  }
+}
+
+enum SelectionContextMatcher {
+  private static let maximumSearchCorpusLength = 100_000
+
+  static func context(matching selection: String, in segments: [String]) -> String? {
+    let normalizedSelection = normalize(selection)
+    guard !normalizedSelection.isEmpty else { return nil }
+
+    var normalizedSegments: [String] = []
+    var corpusLength = 0
+    for segment in segments {
+      let normalized = normalize(segment)
+      guard !normalized.isEmpty, normalizedSegments.last != normalized else { continue }
+      let additionalLength = normalized.count + (normalizedSegments.isEmpty ? 0 : 1)
+      guard corpusLength + additionalLength <= maximumSearchCorpusLength else { break }
+      normalizedSegments.append(normalized)
+      corpusLength += additionalLength
+    }
+
+    let corpus = normalizedSegments.joined(separator: " ")
+    guard let selectionRange = uniqueRange(of: normalizedSelection, in: corpus) else { return nil }
+    let matchedSelection = String(corpus[selectionRange])
+    let context = PromptBuilder.boundedContext(corpus, around: matchedSelection)
+    return PromptBuilder.hasMeaningfulContext(context, for: matchedSelection) ? context : nil
+  }
+
+  static func normalize(_ value: String) -> String {
+    value
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private static func uniqueRange(of needle: String, in haystack: String) -> Range<String.Index>? {
+    var match: Range<String.Index>?
+    var searchStart = haystack.startIndex
+    while searchStart < haystack.endIndex,
+      let range = haystack.range(
+        of: needle,
+        options: [.caseInsensitive, .diacriticInsensitive],
+        range: searchStart..<haystack.endIndex
+      )
+    {
+      if match != nil { return nil }
+      match = range
+      searchStart = range.upperBound
+    }
+    return match
+  }
+}
+
+struct SelectionEvidence: Equatable, Sendable {
+  var text: String
+  var accessibilityMatches: Bool
+}
+
+enum SelectionEvidenceResolver {
+  static func resolve(accessibilityText: String, copiedText: String?) -> SelectionEvidence {
+    let accessibility = accessibilityText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let copied = copiedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+    guard !copied.isEmpty else {
+      return SelectionEvidence(
+        text: accessibility,
+        accessibilityMatches: !accessibility.isEmpty
+      )
+    }
+
+    return SelectionEvidence(
+      text: copied,
+      accessibilityMatches:
+        !accessibility.isEmpty
+        && SelectionContextMatcher.normalize(accessibility)
+          == SelectionContextMatcher.normalize(copied)
+    )
   }
 }
