@@ -15,19 +15,22 @@ enum PromptBuilder {
     let sourceName = source == .auto ? "the detected source language" : source.displayName
     let targetName = target.displayName
     let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let context = boundedContext(selectionContext ?? "", around: cleanText)
 
     guard let mode = action.mode else {
       let role = substitute(
         action.rolePrompt,
         source: sourceName,
         target: targetName,
-        text: cleanText
+        text: cleanText,
+        context: context
       )
       var command = substitute(
         action.commandPrompt,
         source: sourceName,
         target: targetName,
-        text: cleanText
+        text: cleanText,
+        context: context
       )
       if action.outputMarkdown {
         command = "Return valid Markdown.\n\n\(command)"
@@ -35,33 +38,60 @@ enum PromptBuilder {
       return TranslationPrompt(system: role, user: command)
     }
 
-    // Built-ins normally use the generated prompts below. Once a user edits
-    // either prompt, preserve the generated value for any field they left
-    // blank and substitute variables in the field they explicitly changed.
-    if let factory = TranslationAction.factoryBuiltIn(for: action.id),
-      !action.rolePrompt.isEmpty || !action.commandPrompt.isEmpty
-    {
-      let defaultPrompt = build(
-        text: cleanText,
-        source: source,
-        target: target,
-        action: factory,
-        selectionContext: selectionContext,
-        writing: writing
-      )
-      let role = action.rolePrompt.isEmpty
-        ? defaultPrompt.system
-        : substitute(action.rolePrompt, source: sourceName, target: targetName, text: cleanText)
-      var command = action.commandPrompt.isEmpty
-        ? defaultPrompt.user
-        : substitute(action.commandPrompt, source: sourceName, target: targetName, text: cleanText)
-      if action.outputMarkdown
-        && (!action.commandPrompt.isEmpty || action.outputMarkdown != factory.outputMarkdown)
-      {
-        command = "Return valid Markdown.\n\n\(command)"
-      }
-      return TranslationPrompt(system: role, user: command)
+    let defaultPrompt = dynamicPrompt(
+      for: mode,
+      text: text,
+      source: source,
+      target: target,
+      selectionContext: selectionContext,
+      writing: writing
+    )
+
+    // A recognized built-in normally uses the generated prompt above as-is:
+    // its stored rolePrompt/commandPrompt start out identical to the mode's
+    // default template text (`ActionMode.defaultRolePrompt`/
+    // `defaultCommandPrompt`), so leaving a field untouched keeps the mode's
+    // dynamic behavior (e.g. Translate's single-word dictionary lookup).
+    // Editing a field away from that exact text switches it to plain
+    // variable substitution instead.
+    guard let factory = TranslationAction.factoryBuiltIn(for: action.id) else {
+      return defaultPrompt
     }
+    let role = action.rolePrompt == factory.rolePrompt
+      ? defaultPrompt.system
+      : substitute(
+        action.rolePrompt, source: sourceName, target: targetName, text: cleanText, context: context
+      )
+    var command = action.commandPrompt == factory.commandPrompt
+      ? defaultPrompt.user
+      : substitute(
+        action.commandPrompt, source: sourceName, target: targetName, text: cleanText,
+        context: context
+      )
+    if action.outputMarkdown
+      && (action.commandPrompt != factory.commandPrompt
+        || action.outputMarkdown != factory.outputMarkdown)
+    {
+      command = "Return valid Markdown.\n\n\(command)"
+    }
+    return TranslationPrompt(system: role, user: command)
+  }
+
+  /// The mode-specific prompt a built-in action produces before any user
+  /// customization — including branches that can't be expressed as a static
+  /// template, like Translate's single-word dictionary lookup or Explain in
+  /// Context's fallback when no surrounding text was captured.
+  private static func dynamicPrompt(
+    for mode: ActionMode,
+    text: String,
+    source: LanguageCode,
+    target: LanguageCode,
+    selectionContext: String?,
+    writing: Bool
+  ) -> TranslationPrompt {
+    let sourceName = source == .auto ? "the detected source language" : source.displayName
+    let targetName = target.displayName
+    let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
     switch mode {
     case .translate:
@@ -233,12 +263,17 @@ enum PromptBuilder {
     _ template: String,
     source: String,
     target: String,
-    text: String
+    text: String,
+    context: String = ""
   ) -> String {
     template
       .replacingOccurrences(of: "${sourceLang}", with: source)
       .replacingOccurrences(of: "${targetLang}", with: target)
       .replacingOccurrences(of: "${text}", with: text)
+      // The surrounding context is untrusted (it comes from whatever was on
+      // screen around the selection), so it's escaped the same way the
+      // built-in Explain in Context prompt escapes it.
+      .replacingOccurrences(of: "${context}", with: escapePromptData(context))
   }
 
   private static func isLikelySingleWord(_ text: String) -> Bool {

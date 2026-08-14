@@ -268,6 +268,41 @@ final class AppModel: ObservableObject {
     }
   }
 
+  func vocabularyEntry(matching text: String) -> VocabularyEntry? {
+    let word = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !word.isEmpty else { return nil }
+    return vocabulary.first {
+      $0.word.localizedCaseInsensitiveCompare(word) == .orderedSame
+    }
+  }
+
+  var isCurrentWordCollected: Bool {
+    vocabularyEntry(matching: inputText) != nil
+  }
+
+  func toggleCollectCurrentWord() {
+    let word = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !word.isEmpty else { return }
+    if let existing = vocabularyEntry(matching: word) {
+      removeCollectedWord(existing)
+    } else {
+      collectCurrentWord()
+    }
+  }
+
+  private func removeCollectedWord(_ entry: VocabularyEntry) {
+    vocabulary.removeAll { $0.id == entry.id }
+    Task {
+      do {
+        try await library.removeVocabulary(ids: [entry.id])
+        statusMessage = "Removed from vocabulary"
+      } catch {
+        vocabulary.insert(entry, at: 0)
+        errorMessage = error.localizedDescription
+      }
+    }
+  }
+
   func collectCurrentWord() {
     let word = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !word.isEmpty, !outputText.isEmpty else { return }
@@ -413,6 +448,27 @@ final class AppModel: ObservableObject {
     }
     settingsStore.setDefaultAction(id)
     selectedActionID = id
+  }
+
+  /// Arms an action from a surface that holds no binding of its own — the
+  /// Translation menu and its ⌘1…⌘9 shortcuts. Mirrors what the tab bar does
+  /// on click, so a keyboard switch re-runs the same way a click does.
+  func selectAction(_ id: UUID) {
+    guard id != selectedActionID, visibleActions.contains(where: { $0.id == id }) else { return }
+    selectedActionID = id
+    guard settingsStore.settings.autoTranslate,
+      !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return }
+    translate()
+  }
+
+  /// Steps through the visible actions, wrapping at both ends, for ⌘⇧] / ⌘⇧[.
+  func cycleAction(by offset: Int) {
+    let actions = visibleActions
+    guard actions.count > 1 else { return }
+    let current = actions.firstIndex(where: { $0.id == selectedActionID }) ?? 0
+    let next = (current + offset % actions.count + actions.count) % actions.count
+    selectAction(actions[next].id)
   }
 
   func configureHotKeys() {
@@ -771,5 +827,24 @@ enum WindowCoordinator {
     return NSApp.windows.first(where: {
       $0.identifier == mainWindowIdentifier
     })
+  }
+
+  /// The SwiftUI `Settings` scene's window, which macOS may restore or
+  /// auto-present during launch or activation.
+  static func settingsWindow() -> NSWindow? {
+    NSApp.windows.first { window in
+      window.title == "PhraseLens Settings"
+        || (window.identifier?.rawValue.contains("SwiftUI_Settings") ?? false)
+    }
+  }
+
+  /// Dismisses a Settings window that macOS or SwiftUI presented without an
+  /// explicit user action. Settings should only appear on request.
+  static func dismissAutoPresentedSettingsWindow() {
+    guard let window = settingsWindow() else { return }
+    window.isRestorable = false
+    if window.isVisible {
+      window.close()
+    }
   }
 }

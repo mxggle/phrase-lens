@@ -25,12 +25,17 @@ final class SelectionPanelCoordinator {
   private var resignObserver: NSObjectProtocol?
   private var deactivateObserver: NSObjectProtocol?
   private var moveObserver: NSObjectProtocol?
+  /// Where the panel grew from, in the content layer's unit space, so that it
+  /// collapses back into the same point on the way out.
+  private var anchor = PanelMotion.centreAnchor
   private weak var settingsStore: SettingsStore?
 
   private init() {}
 
   func show(model: AppModel) {
-    close()
+    // A replacement pop-up should not cross-fade with the one it replaces:
+    // two stacked panels at the same spot read as a flicker, not a transition.
+    close(animated: false)
 
     let rootView = SelectionTranslationPanelView()
       .environmentObject(model)
@@ -46,7 +51,10 @@ final class SelectionPanelCoordinator {
     panel.contentViewController = hostingController
     panel.isOpaque = false
     panel.backgroundColor = .clear
-    panel.hasShadow = true
+    // The shadow is derived from the window rect until the rounded card has
+    // drawn, which is the frame that appeared a beat before the content. It is
+    // switched on in `present` once there is a shape to cast it.
+    panel.hasShadow = false
     panel.setAccessibilityRole(NSAccessibility.Role.window)
     panel.setAccessibilitySubrole(NSAccessibility.Subrole.floatingWindow)
     panel.setAccessibilityLabel("Selection translation")
@@ -56,7 +64,9 @@ final class SelectionPanelCoordinator {
     panel.becomesKeyOnlyIfNeeded = false
     panel.hidesOnDeactivate = false
     panel.level = .floating
-    panel.animationBehavior = .utilityWindow
+    // The entrance and exit are driven by `PanelMotion` below, so the system
+    // must not layer its own generic window fade on top of them.
+    panel.animationBehavior = .none
     panel.collectionBehavior = [
       .canJoinAllSpaces,
       .fullScreenAuxiliary,
@@ -67,6 +77,10 @@ final class SelectionPanelCoordinator {
     let settings = model.settingsStore.settings
     let pointer = NSEvent.mouseLocation
     let targetFrame: NSRect
+    /// A remembered position has no relationship to the pointer, so the panel
+    /// grows from its own centre there instead of out of a corner the cursor
+    /// is nowhere near.
+    var growsFromPointer = true
     switch settings.selectionPanelPlacement {
     case .nearPointer:
       let visibleFrame = Self.screen(containing: pointer)?.visibleFrame ?? Self.fallbackVisibleFrame
@@ -87,6 +101,7 @@ final class SelectionPanelCoordinator {
           origin: origin,
           visibleFrame: visibleFrame
         )
+        growsFromPointer = false
       } else {
         let visibleFrame = Self.screen(containing: pointer)?.visibleFrame ?? Self.fallbackVisibleFrame
         targetFrame = SelectionPanelGeometry.frameNearPointer(
@@ -103,10 +118,17 @@ final class SelectionPanelCoordinator {
     installDismissalObservers(for: panel)
 
     NSApp.setActivationPolicy(settings.showDockIcon ? .regular : .accessory)
-    panel.makeKeyAndOrderFront(nil)
+    present(
+      panel,
+      anchor: PanelMotion.anchor(
+        panelFrame: targetFrame,
+        pointer: pointer,
+        followsPointer: growsFromPointer
+      )
+    )
   }
 
-  func close() {
+  func close(animated: Bool = true) {
     if let outsideClickMonitor {
       NSEvent.removeMonitor(outsideClickMonitor)
       self.outsideClickMonitor = nil
@@ -127,10 +149,132 @@ final class SelectionPanelCoordinator {
       NotificationCenter.default.removeObserver(moveObserver)
       self.moveObserver = nil
     }
-    panel?.orderOut(nil)
-    panel?.contentViewController = nil
-    panel = nil
+    guard let panel else {
+      settingsStore = nil
+      return
+    }
+    self.panel = nil
     settingsStore = nil
+    dismiss(panel, animated: animated)
+  }
+
+  // MARK: - Presentation
+
+  /// Puts the panel on screen growing out of the edge the pointer is at.
+  ///
+  /// The card is drawn into the backing store *before* the panel is visible.
+  /// Ordering it in first showed the window's own chrome and shadow for a beat
+  /// while SwiftUI was still laying out — the frame that arrived ahead of its
+  /// contents. The motion itself has to live here rather than in SwiftUI,
+  /// because the exit runs after the view tree is gone.
+  private func present(_ panel: SelectionPopoverPanel, anchor: CGPoint) {
+    self.anchor = anchor
+    let content = panel.contentView
+    content?.wantsLayer = true
+    content?.layoutSubtreeIfNeeded()
+    content?.displayIfNeeded()
+
+    guard !PanelMotion.prefersReducedMotion, let layer = content?.layer else {
+      panel.alphaValue = 1
+      panel.hasShadow = true
+      panel.makeKeyAndOrderFront(nil)
+      return
+    }
+
+    let start = PanelMotion.transform(
+      scale: PanelMotion.entryScale,
+      anchor: anchor,
+      size: panel.frame.size
+    )
+    // Set the start state on the layer before the panel is visible, so the
+    // first frame on screen is already the small one.
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    layer.transform = start
+    CATransaction.commit()
+
+    panel.alphaValue = 0
+    panel.hasShadow = true
+    panel.makeKeyAndOrderFront(nil)
+
+    let settle = CASpringAnimation(
+      perceptualDuration: PanelMotion.springDuration,
+      bounce: PanelMotion.springBounce
+    )
+    settle.keyPath = "transform"
+    settle.fromValue = NSValue(caTransform3D: start)
+    settle.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+    // A spring is otherwise clipped at the default 0.25s, which lands the panel
+    // with a visible step instead of letting it settle.
+    settle.duration = settle.settlingDuration
+
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    layer.transform = CATransform3DIdentity
+    layer.add(settle, forKey: PanelMotion.transformKey)
+    CATransaction.commit()
+
+    // The fade is short enough that the card is solid while it is still
+    // growing: it should read as one object arriving, not as two effects.
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = PanelMotion.openDuration
+      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      panel.animator().alphaValue = 1
+    }
+
+    // The shadow is captured from the content as it is ordered in, so it has to
+    // be recomputed once the panel has settled at full size.
+    let settled = settle.settlingDuration
+    Task { @MainActor in
+      try? await Task.sleep(for: .seconds(settled))
+      panel.invalidateShadow()
+    }
+  }
+
+  /// Collapses the panel back towards its anchor, then releases its view tree.
+  ///
+  /// The panel is kept alive by the task rather than by `self`, so a pop-up
+  /// that is dismissed and immediately re-shown never fights with its successor.
+  private func dismiss(_ panel: SelectionPopoverPanel, animated: Bool) {
+    guard animated, !PanelMotion.prefersReducedMotion else {
+      panel.orderOut(nil)
+      panel.contentViewController = nil
+      return
+    }
+
+    if let layer = panel.contentView?.layer {
+      // Dismissing mid-entrance is common — a hotkey pressed twice, a click
+      // straight through the panel — so pick up wherever the spring got to
+      // rather than snapping to full size first.
+      let current = layer.presentation()?.transform ?? layer.transform
+      layer.removeAnimation(forKey: PanelMotion.transformKey)
+      let exit = CABasicAnimation(keyPath: "transform")
+      exit.fromValue = NSValue(caTransform3D: current)
+      exit.toValue = NSValue(
+        caTransform3D: PanelMotion.transform(
+          scale: PanelMotion.exitScale,
+          anchor: anchor,
+          size: panel.frame.size
+        )
+      )
+      exit.duration = PanelMotion.closeDuration
+      exit.timingFunction = CAMediaTimingFunction(name: .easeIn)
+      exit.fillMode = .forwards
+      exit.isRemovedOnCompletion = false
+      layer.add(exit, forKey: PanelMotion.transformKey)
+    }
+
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = PanelMotion.closeDuration
+      context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+      panel.animator().alphaValue = 0
+    }
+
+    Task { @MainActor in
+      try? await Task.sleep(for: .seconds(PanelMotion.closeDuration))
+      panel.orderOut(nil)
+      panel.contentViewController = nil
+    }
   }
 
   private func installDismissalObservers(for panel: NSPanel) {
@@ -196,6 +340,59 @@ final class SelectionPanelCoordinator {
   private static var fallbackVisibleFrame: CGRect {
     NSScreen.main?.visibleFrame
       ?? CGRect(origin: .zero, size: CGSize(width: 480, height: 440))
+  }
+}
+
+/// Timing and transforms for the pop-up's entrance and exit.
+///
+/// One gesture, not a stack of effects: the card grows out of the edge the
+/// pointer is on and snaps to size. Nothing slides, and nothing moves apart
+/// from the scale — a translation on top of the fade was what made the panel
+/// look like it was assembling itself out of a frame.
+enum PanelMotion {
+  static let transformKey = "selectionPanelTransform"
+  static let centreAnchor = CGPoint(x: 0.5, y: 0.5)
+
+  /// Quick and lightly sprung: enough overshoot to feel physical, not enough
+  /// to wobble.
+  static let springDuration: TimeInterval = 0.22
+  static let springBounce: CGFloat = 0.16
+  /// The fade is only there to stop the first frame being a hard cut; the
+  /// scale carries the entrance, so this ends well before the spring does.
+  static let openDuration: TimeInterval = 0.09
+  /// Dismissal is faster than arrival — the pop-up should get out of the way.
+  static let closeDuration: TimeInterval = 0.1
+
+  /// A big enough jump to be worth watching. The card grows from a corner, so
+  /// the travel reads at roughly twice what a centred scale would give.
+  static let entryScale: CGFloat = 0.9
+  static let exitScale: CGFloat = 0.94
+
+  static var prefersReducedMotion: Bool {
+    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+  }
+
+  /// The point the panel grows from, in the content layer's unit space.
+  ///
+  /// The pointer sits just outside the panel, so clamping it into unit space
+  /// lands exactly on the nearest corner or edge — the side the pop-up was
+  /// invoked from.
+  static func anchor(panelFrame: CGRect, pointer: CGPoint, followsPointer: Bool) -> CGPoint {
+    guard followsPointer, panelFrame.width > 0, panelFrame.height > 0 else { return centreAnchor }
+    return CGPoint(
+      x: min(max((pointer.x - panelFrame.minX) / panelFrame.width, 0), 1),
+      y: min(max((pointer.y - panelFrame.minY) / panelFrame.height, 0), 1)
+    )
+  }
+
+  /// Scales about `anchor` without touching the layer's own anchor point,
+  /// which AppKit owns for a layer-backed view and resets on layout.
+  static func transform(scale: CGFloat, anchor: CGPoint, size: CGSize) -> CATransform3D {
+    let dx = (anchor.x - 0.5) * size.width
+    let dy = (anchor.y - 0.5) * size.height
+    var transform = CATransform3DMakeTranslation(dx, dy, 0)
+    transform = CATransform3DScale(transform, scale, scale, 1)
+    return CATransform3DTranslate(transform, -dx, -dy, 0)
   }
 }
 
@@ -283,6 +480,9 @@ private struct SelectionPanelBody: View {
           selection: actionSelection,
           size: .compact
         )
+        // The strip sizes to its content now, so pin it to the leading edge
+        // rather than letting the stack centre a half-width track.
+        .frame(maxWidth: .infinity, alignment: .leading)
         sourceSummary
       }
       .padding(.horizontal, AppSpacing.md)
@@ -411,6 +611,7 @@ private struct SelectionPanelBody: View {
           .frame(maxWidth: .infinity, alignment: .topLeading)
           .padding(.horizontal, AppSpacing.md)
           .padding(.vertical, AppSpacing.md - 2)
+          .overlayScrollers()
         }
         .scrollBounceBehavior(.basedOnSize)
       }
@@ -471,13 +672,13 @@ private struct SelectionPanelBody: View {
 
       IconButton(
         title: isCurrentTextCollected
-          ? "Saved in Vocabulary"
+          ? "Remove from Vocabulary"
           : "Save selected word or phrase to Vocabulary",
         symbol: isCurrentTextCollected ? "bookmark.fill" : "bookmark",
-        isDisabled: !canCollectCurrentText,
+        isDisabled: !isCurrentTextCollected && !canCollectCurrentText,
         isOn: isCurrentTextCollected
       ) {
-        model.collectCurrentWord()
+        model.toggleCollectCurrentWord()
       }
 
       IconButton(
@@ -531,9 +732,6 @@ private struct SelectionPanelBody: View {
   }
 
   private var isCurrentTextCollected: Bool {
-    guard !normalizedInputText.isEmpty else { return false }
-    return model.vocabulary.contains {
-      $0.word.localizedCaseInsensitiveCompare(normalizedInputText) == .orderedSame
-    }
+    model.vocabularyEntry(matching: normalizedInputText) != nil
   }
 }

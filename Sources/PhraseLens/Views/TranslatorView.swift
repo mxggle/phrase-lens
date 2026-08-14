@@ -68,8 +68,7 @@ struct TranslatorView: View {
     HStack(spacing: AppSpacing.sm) {
       ActionTabBar(
         actions: model.visibleActions,
-        selection: actionSelection,
-        iconsOnly: layoutWidth.isCompact
+        selection: actionSelection
       )
       .layoutPriority(1)
 
@@ -274,14 +273,25 @@ struct TranslatorView: View {
 
       PaneFooter {
         Button {
-          model.collectCurrentWord()
+          model.toggleCollectCurrentWord()
         } label: {
-          Label("Collect", systemImage: "bookmark")
-            .labelStyle(.titleAndIcon)
+          Label(
+            model.isCurrentWordCollected ? "Collected" : "Collect",
+            systemImage: model.isCurrentWordCollected ? "bookmark.fill" : "bookmark"
+          )
+          .labelStyle(.titleAndIcon)
+          .contentTransition(.symbolEffect(.replace))
         }
         .appButton(.ghost, size: .sm)
-        .disabled(model.outputText.isEmpty || model.inputText.count > 80)
-        .help("Save this word and its explanation to Vocabulary")
+        .disabled(
+          !model.isCurrentWordCollected
+            && (model.outputText.isEmpty || model.inputText.count > 80)
+        )
+        .help(
+          model.isCurrentWordCollected
+            ? "Remove this word from Vocabulary"
+            : "Save this word and its explanation to Vocabulary"
+        )
 
         Spacer(minLength: AppSpacing.xs)
 

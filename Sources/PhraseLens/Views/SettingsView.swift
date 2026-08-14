@@ -59,6 +59,27 @@ struct SettingsView: View {
     .environmentObject(model)
     .environmentObject(settingsStore)
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
+    // macOS may restore the SwiftUI Settings scene on relaunch. Settings is
+    // only useful when the user asked for it, so keep its window out of
+    // window restoration entirely.
+    .background(SettingsWindowConfig().frame(width: 0, height: 0))
+  }
+}
+
+/// Reaches the window hosting the Settings scene to disable restoration.
+private struct SettingsWindowConfig: NSViewRepresentable {
+  func makeNSView(context _: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    DispatchQueue.main.async { apply(to: view.window) }
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context _: Context) {
+    DispatchQueue.main.async { apply(to: view.window) }
+  }
+
+  private func apply(to window: NSWindow?) {
+    window?.isRestorable = false
   }
 }
 
@@ -902,7 +923,16 @@ private struct AboutSettingsPane: View {
       }
 
       SettingsCard("Project") {
-        SettingsRow("Source", detail: "The project this app is a native port of.") {
+        SettingsRow("Source") {
+          Link(
+            "mxggle/phrase-lens",
+            destination: URL(string: "https://github.com/mxggle/phrase-lens")!
+          )
+          .font(AppFont.bodyMedium)
+          .foregroundStyle(palette.foreground)
+        }
+        Hairline()
+        SettingsRow("Inspiration", detail: "Inspired by the nextai-translator project.") {
           Link(
             "nextai-translator",
             destination: URL(string: "https://github.com/nextai-translator/nextai-translator")!

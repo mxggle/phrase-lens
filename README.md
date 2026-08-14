@@ -57,7 +57,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | ✍️ **In-Place Writing & Rewrite** | Translate or polish text directly inside any active, editable text field and replace it with a single keystroke. |
 | 🗣️ **Dual Speech Synthesizers** | Read source text aloud using high-fidelity **Microsoft Edge Neural TTS** or offline native **macOS System Voices**. |
 | 📚 **History & Vocabulary** | Automatically preserve search histories and manage personal vocabulary collections with quick search and restore. |
-| 🧩 **Custom Prompt Templates** | Create custom AI actions using dynamic variables: `${sourceLang}`, `${targetLang}`, and `${text}`. |
+| 🧩 **Custom Prompt Templates** | Create custom AI actions using dynamic variables: `${sourceLang}`, `${targetLang}`, `${text}`, and `${context}`. Duplicate any built-in action to start from its shipped prompt. |
 | 🎛️ **Menu Bar & Global Hotkeys** | Lightweight `MenuBarExtra` companion, customizable global Carbon shortcuts, and launch-at-login support. |
 
 ---
@@ -70,6 +70,8 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | **Open Full Workspace** | <kbd>⌥</kbd> <kbd>⇧</kbd> <kbd>F</kbd> | None |
 | **Screenshot OCR** | <kbd>⌥</kbd> <kbd>S</kbd> | Screen Recording |
 | **Translate & Replace in Focused Field** | <kbd>⌥</kbd> <kbd>W</kbd> | macOS Accessibility |
+| **Switch Action** *(in-app)* | <kbd>⌘</kbd> <kbd>1</kbd>…<kbd>9</kbd> | None |
+| **Next / Previous Action** *(in-app)* | <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>]</kbd> / <kbd>[</kbd> | None |
 
 > [!NOTE]
 > All shortcuts are fully customizable in **Settings > Shortcuts**. 
@@ -172,6 +174,7 @@ You can expand PhraseLens by defining custom prompt templates in **Settings > Ac
 ${sourceLang} -> Detected or chosen source language
 ${targetLang} -> Target language for output
 ${text}       -> User input or selected text
+${context}    -> Text surrounding the selection, when captured
 ```
 
 Example custom action (Grammar & Style Doctor):

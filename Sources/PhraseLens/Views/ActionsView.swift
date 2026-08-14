@@ -284,6 +284,14 @@ struct ActionsView: View {
         )
         .disabled(settingsStore.settings.defaultActionID == action.wrappedValue.id)
       }
+      Hairline()
+      SettingsRow(
+        "Duplicate action",
+        detail: "Creates a new custom action starting from this one's current prompts."
+      ) {
+        Button("Duplicate") { duplicateAction(action.wrappedValue) }
+          .appButton(.outline, size: .sm)
+      }
     }
 
     SettingsCard(
@@ -313,7 +321,9 @@ struct ActionsView: View {
           Text("Variables")
             .font(AppFont.caption)
             .foregroundStyle(palette.faintForeground)
-          ForEach(["${sourceLang}", "${targetLang}", "${text}"], id: \.self) { variable in
+          ForEach(
+            ["${sourceLang}", "${targetLang}", "${text}", "${context}"], id: \.self
+          ) { variable in
             Text(variable)
               .font(AppFont.monoSmall)
               .foregroundStyle(palette.mutedForeground)
@@ -323,6 +333,7 @@ struct ActionsView: View {
                 palette.muted,
                 in: RoundedRectangle(cornerRadius: AppRadius.xs, style: .continuous)
               )
+              .help(variableHint(variable))
           }
         }
       }
@@ -458,6 +469,43 @@ struct ActionsView: View {
     selectedID = action.id
     if layoutWidth.isCompact {
       showsEditorInCompact = true
+    }
+  }
+
+  /// Copies any action — built-in or custom — into a new, independent custom
+  /// action seeded with its current prompts. The copy always has `mode ==
+  /// nil`, so it no longer inherits a built-in mode's dynamic behavior (e.g.
+  /// Translate's single-word dictionary lookup); its prompts are exactly
+  /// what was visible in the editor at the moment of duplication.
+  private func duplicateAction(_ action: TranslationAction) {
+    let base = action.name.isEmpty ? "Untitled Action" : action.name
+    let copy = TranslationAction(
+      name: "\(base) Copy",
+      rolePrompt: action.rolePrompt,
+      commandPrompt: action.commandPrompt,
+      outputMarkdown: action.outputMarkdown
+    )
+    draftActions.append(copy)
+    var order = settingsStore.settings.actionOrder
+    if let index = order.firstIndex(of: action.id) {
+      order.insert(copy.id, at: index + 1)
+    } else {
+      order.append(copy.id)
+    }
+    settingsStore.settings.actionOrder = order
+    selectedID = copy.id
+    if layoutWidth.isCompact {
+      showsEditorInCompact = true
+    }
+  }
+
+  private func variableHint(_ variable: String) -> String {
+    switch variable {
+    case "${sourceLang}": "The source language, e.g. \"Japanese\"."
+    case "${targetLang}": "The target language, e.g. \"English\"."
+    case "${text}": "The selected or entered text."
+    case "${context}": "Surrounding text captured with the selection, when available."
+    default: variable
     }
   }
 

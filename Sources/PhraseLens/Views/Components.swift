@@ -797,9 +797,12 @@ struct ChipToggleStyle: ToggleStyle {
 
 /// Segmented switcher: a muted track with one raised pill on the armed option.
 ///
-/// The strip scrolls horizontally, so custom actions extend it instead of
-/// squeezing every label, and the armed pill is scrolled back into view
-/// whenever the selection changes from somewhere else.
+/// The strip never scrolls. A 30-pt scroller has no wheel axis, no visible edge
+/// affordance, and clips labels mid-word, so instead the bar renders the widest
+/// variant that fits the space it was offered — every label, then the armed
+/// label with glyphs for the rest, then glyphs alone — and drops to a pull-down
+/// when even glyphs would overflow. Every tab keeps its name in a tooltip and
+/// in its accessibility label, so the narrow variants stay identifiable.
 struct ActionTabBar: View {
   enum Size {
     /// Window chrome.
@@ -827,58 +830,136 @@ struct ActionTabBar: View {
       case .compact: AppSpacing.sm + 1
       }
     }
+
+    var iconSize: CGFloat {
+      switch self {
+      case .regular: 11
+      case .compact: 10
+      }
+    }
+  }
+
+  /// How many names a variant spells out. Ordered widest to narrowest.
+  private enum Labels: String {
+    case all
+    case armedOnly
+    case none
   }
 
   let actions: [TranslationAction]
   @Binding var selection: UUID
   var size: Size = .regular
-  /// Hides labels and shows glyphs only, for narrow containers.
-  var iconsOnly = false
 
   @Environment(\.palette) private var palette
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Namespace private var pill
 
   var body: some View {
-    ScrollViewReader { proxy in
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 2) {
-          ForEach(actions) { action in
-            tab(action).id(action.id)
-          }
-        }
-        .padding(3)
-        .animation(AppMotion.state(reduceMotion: reduceMotion), value: selection)
-      }
-      .frame(height: size.height + 6)
-      .background(
-        palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
-      )
-      .overlay {
-        RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
-          .strokeBorder(palette.border, lineWidth: 1)
-      }
-      .onAppear { proxy.scrollTo(selection, anchor: .center) }
-      .onChange(of: selection) { _, newValue in
-        withAnimation(AppMotion.state(reduceMotion: reduceMotion)) {
-          proxy.scrollTo(newValue, anchor: .center)
-        }
-      }
+    ViewThatFits(in: .horizontal) {
+      strip(labels: .all)
+      strip(labels: .armedOnly)
+      strip(labels: .none)
+      pullDown
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Action")
   }
 
-  private func tab(_ action: TranslationAction) -> some View {
+  private var armedAction: TranslationAction? {
+    actions.first { $0.id == selection } ?? actions.first
+  }
+
+  private func select(_ id: UUID) {
+    guard id != selection else { return }
+    selection = id
+  }
+
+  // MARK: - Variants
+
+  private func strip(labels: Labels) -> some View {
+    HStack(spacing: 2) {
+      ForEach(actions) { action in
+        tab(action, labels: labels)
+      }
+    }
+    .padding(3)
+    .frame(height: size.height + 6)
+    .background(track)
+    .animation(AppMotion.state(reduceMotion: reduceMotion), value: selection)
+  }
+
+  /// Last resort, for a container too narrow for one glyph per action: the
+  /// armed action reads as a pill, and the rest of the list is one click away.
+  private var pullDown: some View {
+    Menu {
+      ForEach(actions) { action in
+        Button {
+          select(action.id)
+        } label: {
+          if action.id == selection {
+            Label(action.name, systemImage: "checkmark")
+          } else {
+            Text(action.name)
+          }
+        }
+      }
+    } label: {
+      HStack(spacing: AppSpacing.xs + 1) {
+        Image(systemName: armedAction?.mode?.symbol ?? "sparkles")
+          .font(.system(size: size.iconSize, weight: .medium))
+          .foregroundStyle(palette.foreground)
+        Text(armedAction?.name ?? "Action")
+          .font(size.font)
+          .foregroundStyle(palette.foreground)
+          .lineLimit(1)
+          .truncationMode(.tail)
+        Image(systemName: "chevron.up.chevron.down")
+          .font(.system(size: 8, weight: .semibold))
+          .foregroundStyle(palette.faintForeground)
+      }
+      .padding(.horizontal, size.horizontalPadding)
+      .frame(height: size.height)
+      .background { armedPill }
+      .contentShape(Rectangle())
+      .padding(3)
+      .frame(height: size.height + 6)
+      .background(track)
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .help(armedAction.map { "Action: \($0.name)" } ?? "Action")
+  }
+
+  // MARK: - Parts
+
+  private var track: some View {
+    RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
+      .fill(palette.muted)
+      .overlay {
+        RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
+          .strokeBorder(palette.border, lineWidth: 1)
+      }
+  }
+
+  /// The raised surface under the armed option.
+  private var armedPill: some View {
+    let shape = RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+    return shape
+      .fill(palette.surfaceElevated)
+      .overlay { shape.strokeBorder(palette.borderStrong, lineWidth: 1) }
+      .shadow(color: palette.shadow, radius: 1.5, y: 1)
+  }
+
+  private func tab(_ action: TranslationAction, labels: Labels) -> some View {
     let isSelected = action.id == selection
+    let showsName = labels == .all || (labels == .armedOnly && isSelected)
     return Button {
-      guard action.id != selection else { return }
-      selection = action.id
+      select(action.id)
     } label: {
       HStack(spacing: AppSpacing.xs + 1) {
         Image(systemName: action.mode?.symbol ?? "sparkles")
-          .font(.system(size: size == .regular ? 11 : 10, weight: .medium))
-        if !iconsOnly {
+          .font(.system(size: size.iconSize, weight: .medium))
+        if showsName {
           Text(action.name)
             .font(size.font)
             .lineLimit(1)
@@ -890,14 +971,10 @@ struct ActionTabBar: View {
       .frame(height: size.height)
       .background {
         if isSelected {
-          RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
-            .fill(palette.surfaceElevated)
-            .overlay {
-              RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
-                .strokeBorder(palette.borderStrong, lineWidth: 1)
-            }
-            .shadow(color: palette.shadow, radius: 1.5, y: 1)
-            .matchedGeometryEffect(id: "armedActionTab", in: pill)
+          // One geometry group per variant: `ViewThatFits` builds all of them
+          // to measure, and a shared id would put several sources in one group.
+          armedPill
+            .matchedGeometryEffect(id: "armedActionTab-\(labels.rawValue)", in: pill)
         }
       }
       .contentShape(Rectangle())
@@ -1274,6 +1351,55 @@ extension View {
         .clipShape(shape)
         .overlay { shape.strokeBorder(palette.borderStrong, lineWidth: 1) }
     }
+  }
+}
+
+// MARK: - Scroller chrome
+
+/// Reaches the enclosing `NSScrollView` from inside its content.
+///
+/// SwiftUI has no scroller-style API, so a Mac set to "Show scroll bars:
+/// Always" hands every pane a legacy scroller: an opaque track that claims
+/// layout width and runs straight into a floating panel's rounded corner.
+/// Overlay scrollers are drawn on top of the content and fade out when the
+/// pane is idle, which is what a reading surface wants.
+private struct OverlayScrollerChrome: NSViewRepresentable {
+  let insets: NSEdgeInsets
+
+  func makeNSView(context _: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    DispatchQueue.main.async { apply(from: view) }
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context _: Context) {
+    DispatchQueue.main.async { apply(from: view) }
+  }
+
+  private func apply(from view: NSView) {
+    guard let scrollView = view.enclosingScrollView else { return }
+    scrollView.scrollerStyle = .overlay
+    scrollView.autohidesScrollers = true
+    scrollView.scrollerInsets = insets
+    scrollView.verticalScroller?.controlSize = .small
+    scrollView.horizontalScroller?.controlSize = .small
+  }
+}
+
+extension View {
+  /// Gives the surrounding scroll view thin, self-hiding overlay scrollers.
+  ///
+  /// Apply this to the scroll view's *content*, not to the `ScrollView`
+  /// itself: it finds the scroll view by walking up from where it is planted,
+  /// and from outside it would find the wrong one, or none.
+  func overlayScrollers(
+    insets: NSEdgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 4)
+  ) -> some View {
+    background(
+      OverlayScrollerChrome(insets: insets)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    )
   }
 }
 

@@ -56,6 +56,23 @@ struct PhraseLensApp: App {
         Button("Stop") { model.stopTranslation() }
           .keyboardShortcut(".", modifiers: [.command])
         Divider()
+        // The tab bar shows glyphs alone once the window is narrow, so the
+        // actions also need a keyboard route that names them.
+        Menu("Action") {
+          ForEach(Array(model.visibleActions.enumerated()), id: \.element.id) { index, action in
+            Button(action.name) { model.selectAction(action.id) }
+              .keyboardShortcut(
+                index < 9
+                  ? KeyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command])
+                  : nil
+              )
+          }
+        }
+        Button("Next Action") { model.cycleAction(by: 1) }
+          .keyboardShortcut("]", modifiers: [.command, .shift])
+        Button("Previous Action") { model.cycleAction(by: -1) }
+          .keyboardShortcut("[", modifiers: [.command, .shift])
+        Divider()
         Button("Copy Result") { model.copyOutput() }
           .keyboardShortcut("c", modifiers: [.command, .shift])
         Button("Speak Source") { model.speakInput() }
@@ -105,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     DispatchQueue.main.async {
       WindowCoordinator.tagMainWindowIfNeeded()
       WindowCoordinator.revalidateMainWindowLayout()
+      WindowCoordinator.dismissAutoPresentedSettingsWindow()
     }
   }
 
@@ -123,6 +141,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     _: NSApplication,
     hasVisibleWindows _: Bool
   ) -> Bool {
+    WindowCoordinator.dismissAutoPresentedSettingsWindow()
+    // If the user closed the last main window, let SwiftUI recreate the scene
+    // window itself. Racing it with our own ordering calls can leave two main
+    // windows behind.
+    guard WindowCoordinator.mainWindow() != nil else { return false }
     WindowCoordinator.showMain()
     return true
   }
