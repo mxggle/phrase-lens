@@ -35,7 +35,7 @@ accessibility.
 
 ## Tokens
 
-`Sources/NextAITranslatorNative/Views/DesignSystem.swift`
+`Sources/PhraseLens/Views/DesignSystem.swift`
 
 - `AppPalette` — the semantic color roles, in four resolved variants (Light,
   Dark, and an Increased Contrast pair). Published through
@@ -52,7 +52,7 @@ accessibility.
 
 ## Components
 
-`Sources/NextAITranslatorNative/Views/Components.swift`
+`Sources/PhraseLens/Views/Components.swift`
 
 | Component | Role |
 | --- | --- |

@@ -6,4 +6,4 @@ source "${SCRIPT_DIR}/toolchain-env.sh"
 cd "${SCRIPT_DIR:h}"
 
 swift build --disable-sandbox -Xswiftc -warnings-as-errors
-swift run --disable-sandbox NextAITranslatorNative --self-test
+swift run --disable-sandbox PhraseLens --self-test

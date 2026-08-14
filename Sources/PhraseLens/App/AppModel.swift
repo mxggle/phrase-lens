@@ -507,10 +507,7 @@ final class AppModel: ObservableObject {
         statusMessage = "Ready"
         selectDefaultAction()
         if compact {
-          SelectionPanelCoordinator.shared.show(
-            model: self,
-            anchorScreenRect: snapshot.screenRect
-          )
+          SelectionPanelCoordinator.shared.show(model: self)
         } else {
           WindowCoordinator.showMain()
         }
@@ -521,6 +518,8 @@ final class AppModel: ObservableObject {
         guard selectionCaptureID == activeCapture else { return }
         // No text selected: skip silently instead of showing an error dialog.
         if let error = error as? TranslationError, error == .selectionUnavailable {
+          inputSource = .manual
+          statusMessage = "Ready"
           return
         }
         statusMessage = "Selection unavailable"
@@ -696,7 +695,7 @@ final class AppModel: ObservableObject {
 @MainActor
 enum WindowCoordinator {
   static let mainWindowIdentifier = NSUserInterfaceItemIdentifier(
-    "NextAITranslatorNative.MainWindow"
+    "PhraseLens.MainWindow"
   )
 
   static func showMain() {

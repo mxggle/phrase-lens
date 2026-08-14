@@ -24,10 +24,12 @@ final class SelectionPanelCoordinator {
   private var escapeKeyMonitor: Any?
   private var resignObserver: NSObjectProtocol?
   private var deactivateObserver: NSObjectProtocol?
+  private var moveObserver: NSObjectProtocol?
+  private weak var settingsStore: SettingsStore?
 
   private init() {}
 
-  func show(model: AppModel, anchorScreenRect: CGRect? = nil) {
+  func show(model: AppModel) {
     close()
 
     let rootView = SelectionTranslationPanelView()
@@ -62,14 +64,44 @@ final class SelectionPanelCoordinator {
       .ignoresCycle,
     ]
 
-    let anchor =
-      anchorScreenRect.flatMap(Self.appKitScreenRect(from:))
-      ?? NSRect(origin: NSEvent.mouseLocation, size: .zero)
-    panel.setFrame(Self.frame(for: contentSize, near: anchor), display: false)
+    let settings = model.settingsStore.settings
+    let pointer = NSEvent.mouseLocation
+    let targetFrame: NSRect
+    switch settings.selectionPanelPlacement {
+    case .nearPointer:
+      let visibleFrame = Self.screen(containing: pointer)?.visibleFrame ?? Self.fallbackVisibleFrame
+      targetFrame = SelectionPanelGeometry.frameNearPointer(
+        size: contentSize,
+        pointer: pointer,
+        visibleFrame: visibleFrame
+      )
+    case .fixed:
+      if let remembered = settings.selectionPanelPosition {
+        let origin = CGPoint(x: remembered.x, y: remembered.y)
+        let intendedFrame = NSRect(origin: origin, size: contentSize)
+        let visibleFrame = Self.screen(intersecting: intendedFrame)?.visibleFrame
+          ?? NSScreen.main?.visibleFrame
+          ?? Self.fallbackVisibleFrame
+        targetFrame = SelectionPanelGeometry.frameAtRememberedOrigin(
+          size: contentSize,
+          origin: origin,
+          visibleFrame: visibleFrame
+        )
+      } else {
+        let visibleFrame = Self.screen(containing: pointer)?.visibleFrame ?? Self.fallbackVisibleFrame
+        targetFrame = SelectionPanelGeometry.frameNearPointer(
+          size: contentSize,
+          pointer: pointer,
+          visibleFrame: visibleFrame
+        )
+      }
+    }
+    panel.setFrame(targetFrame, display: false)
     self.panel = panel
+    settingsStore = model.settingsStore
+    rememberCurrentPosition()
     installDismissalObservers(for: panel)
 
-    let settings = model.settingsStore.settings
     NSApp.setActivationPolicy(settings.showDockIcon ? .regular : .accessory)
     panel.makeKeyAndOrderFront(nil)
   }
@@ -91,9 +123,14 @@ final class SelectionPanelCoordinator {
       NotificationCenter.default.removeObserver(deactivateObserver)
       self.deactivateObserver = nil
     }
+    if let moveObserver {
+      NotificationCenter.default.removeObserver(moveObserver)
+      self.moveObserver = nil
+    }
     panel?.orderOut(nil)
     panel?.contentViewController = nil
     panel = nil
+    settingsStore = nil
   }
 
   private func installDismissalObservers(for panel: NSPanel) {
@@ -128,50 +165,89 @@ final class SelectionPanelCoordinator {
         SelectionPanelCoordinator.shared.close()
       }
     }
+    moveObserver = NotificationCenter.default.addObserver(
+      forName: NSWindow.didMoveNotification,
+      object: panel,
+      queue: .main
+    ) { _ in
+      Task { @MainActor in
+        SelectionPanelCoordinator.shared.rememberCurrentPosition()
+      }
+    }
   }
 
-  private static func frame(for size: CGSize, near anchor: NSRect) -> NSRect {
-    let screen =
-      NSScreen.screens.first(where: { $0.frame.intersects(anchor) })
-      ?? NSScreen.screens.first(where: { $0.frame.contains(anchor.origin) })
-      ?? NSScreen.main
-    let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: size.width, height: size.height)
-    let gap: CGFloat = 12
-    let horizontalInset: CGFloat = 10
-    let verticalInset: CGFloat = 10
-
-    var x = anchor.midX - size.width / 2
-    var y = anchor.maxY + gap
-    if y + size.height > visible.maxY - verticalInset {
-      y = anchor.minY - size.height - gap
-    }
-    if y < visible.minY + verticalInset {
-      y = min(
-        max(anchor.midY - size.height / 2, visible.minY + verticalInset),
-        visible.maxY - size.height - verticalInset)
-    }
-    x = min(max(x, visible.minX + horizontalInset), visible.maxX - size.width - horizontalInset)
-    return NSRect(origin: CGPoint(x: x, y: y), size: size)
+  private func rememberCurrentPosition() {
+    guard let origin = panel?.frame.origin, let settingsStore else { return }
+    let position = SelectionPanelPosition(x: origin.x, y: origin.y)
+    guard settingsStore.settings.selectionPanelPosition != position else { return }
+    settingsStore.settings.selectionPanelPosition = position
   }
 
-  /// Accessibility rectangles use the Core Graphics top-left coordinate system.
-  /// Convert within the matching display so multi-monitor placement stays correct.
-  private static func appKitScreenRect(from accessibilityRect: CGRect) -> CGRect? {
-    for screen in NSScreen.screens {
-      guard
-        let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
-          as? NSNumber
-      else { continue }
-      let displayBounds = CGDisplayBounds(CGDirectDisplayID(number.uint32Value))
-      guard displayBounds.intersects(accessibilityRect) else { continue }
-      return CGRect(
-        x: screen.frame.minX + accessibilityRect.minX - displayBounds.minX,
-        y: screen.frame.maxY - (accessibilityRect.maxY - displayBounds.minY),
-        width: accessibilityRect.width,
-        height: accessibilityRect.height
-      )
+  private static func screen(containing point: CGPoint) -> NSScreen? {
+    NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) }
+  }
+
+  private static func screen(intersecting frame: CGRect) -> NSScreen? {
+    NSScreen.screens.max { first, second in
+      first.visibleFrame.intersection(frame).area < second.visibleFrame.intersection(frame).area
+    }.flatMap { $0.visibleFrame.intersects(frame) ? $0 : nil }
+  }
+
+  private static var fallbackVisibleFrame: CGRect {
+    NSScreen.main?.visibleFrame
+      ?? CGRect(origin: .zero, size: CGSize(width: 480, height: 440))
+  }
+}
+
+enum SelectionPanelGeometry {
+  private static let gap: CGFloat = 12
+  private static let inset: CGFloat = 10
+
+  static func frameNearPointer(size: CGSize, pointer: CGPoint, visibleFrame: CGRect) -> CGRect {
+    var x = pointer.x + gap
+    if x + size.width > visibleFrame.maxX - inset {
+      x = pointer.x - size.width - gap
     }
-    return nil
+
+    // Prefer below the pointer in screen-reading order, then flip above it.
+    var y = pointer.y - size.height - gap
+    if y < visibleFrame.minY + inset {
+      y = pointer.y + gap
+    }
+    return clampedFrame(size: size, origin: CGPoint(x: x, y: y), visibleFrame: visibleFrame)
+  }
+
+  static func frameAtRememberedOrigin(
+    size: CGSize,
+    origin: CGPoint,
+    visibleFrame: CGRect
+  ) -> CGRect {
+    clampedFrame(size: size, origin: origin, visibleFrame: visibleFrame)
+  }
+
+  private static func clampedFrame(
+    size: CGSize,
+    origin: CGPoint,
+    visibleFrame: CGRect
+  ) -> CGRect {
+    let minX = visibleFrame.minX + inset
+    let minY = visibleFrame.minY + inset
+    let maxX = max(minX, visibleFrame.maxX - size.width - inset)
+    let maxY = max(minY, visibleFrame.maxY - size.height - inset)
+    return CGRect(
+      origin: CGPoint(
+        x: min(max(origin.x, minX), maxX),
+        y: min(max(origin.y, minY), maxY)
+      ),
+      size: size
+    )
+  }
+}
+
+private extension CGRect {
+  var area: CGFloat {
+    guard !isNull, !isInfinite else { return 0 }
+    return width * height
   }
 }
 
@@ -309,7 +385,9 @@ private struct SelectionPanelBody: View {
   @ViewBuilder
   private var result: some View {
     Group {
-      if let error = model.errorMessage {
+      if model.isAccessibilityPermissionError {
+        accessibilityPermissionMessage
+      } else if let error = model.errorMessage {
         message(error, symbol: "exclamationmark.triangle.fill", tint: palette.warning)
       } else if model.outputText.isEmpty, model.isTranslating {
         message("Translating…", symbol: "ellipsis", tint: palette.mutedForeground)
@@ -348,6 +426,25 @@ private struct SelectionPanelBody: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 
+  private var accessibilityPermissionMessage: some View {
+    VStack(alignment: .leading, spacing: AppSpacing.md) {
+      Label(
+        "PhraseLens needs Accessibility access to read selected text.",
+        systemImage: "exclamationmark.triangle.fill"
+      )
+      .font(AppFont.body)
+      .foregroundStyle(palette.warning)
+
+      Button("Open Accessibility Settings") {
+        model.openAccessibilitySettings()
+      }
+      .appButton(.secondary, size: .sm)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, AppSpacing.md)
+    .padding(.vertical, AppSpacing.md - 2)
+  }
+
   private func message(_ text: String, symbol: String, tint: Color) -> some View {
     Label(text, systemImage: symbol)
       .font(AppFont.body)
@@ -379,6 +476,17 @@ private struct SelectionPanelBody: View {
       )
 
       Spacer(minLength: AppSpacing.xs)
+
+      IconButton(
+        title: isCurrentTextCollected
+          ? "Saved in Vocabulary"
+          : "Save selected word or phrase to Vocabulary",
+        symbol: isCurrentTextCollected ? "bookmark.fill" : "bookmark",
+        isDisabled: !canCollectCurrentText,
+        isOn: isCurrentTextCollected
+      ) {
+        model.collectCurrentWord()
+      }
 
       IconButton(
         title: model.speech.isSpeaking ? "Stop speaking" : "Speak selected text",
@@ -418,5 +526,22 @@ private struct SelectionPanelBody: View {
     .padding(.horizontal, AppSpacing.md)
     .frame(height: AppMetrics.paneFooterHeight + 6)
     .background(palette.chrome)
+  }
+
+  private var normalizedInputText: String {
+    model.inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var canCollectCurrentText: Bool {
+    !normalizedInputText.isEmpty
+      && !model.outputText.isEmpty
+      && normalizedInputText.count <= 80
+  }
+
+  private var isCurrentTextCollected: Bool {
+    guard !normalizedInputText.isEmpty else { return false }
+    return model.vocabulary.contains {
+      $0.word.localizedCaseInsensitiveCompare(normalizedInputText) == .orderedSame
+    }
   }
 }

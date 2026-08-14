@@ -148,7 +148,9 @@ enum SelfTestRunner {
       check(
         migrated.actionOrder == TranslationAction.defaultOrder
           && migrated.hiddenActionIDs.isEmpty
-          && migrated.builtInActionOverrides.isEmpty,
+          && migrated.builtInActionOverrides.isEmpty
+          && migrated.selectionPanelPlacement == .nearPointer
+          && migrated.selectionPanelPosition == nil,
         "legacy settings did not receive safe action-presentation defaults",
         failures: &failures
       )
@@ -160,6 +162,8 @@ enum SelfTestRunner {
       )
 
       var persisted = migrated
+      persisted.selectionPanelPlacement = .fixed
+      persisted.selectionPanelPosition = SelectionPanelPosition(x: 320, y: 180)
       persisted.actionOrder = [legacyCustomID, translateAction.id]
       persisted.hiddenActionIDs = [
         TranslationAction.builtIns.first { $0.mode == .polishing }!.id
@@ -186,6 +190,24 @@ enum SelfTestRunner {
     } catch {
       failures.append("action settings migration or round trip threw: \(error)")
     }
+    let visibleFrame = CGRect(x: 0, y: 0, width: 1_440, height: 900)
+    let panelSize = CGSize(width: 480, height: 440)
+    let pointerFrame = SelectionPanelGeometry.frameNearPointer(
+      size: panelSize,
+      pointer: CGPoint(x: 1_430, y: 890),
+      visibleFrame: visibleFrame
+    )
+    let restoredFrame = SelectionPanelGeometry.frameAtRememberedOrigin(
+      size: panelSize,
+      origin: CGPoint(x: 2_000, y: -500),
+      visibleFrame: visibleFrame
+    )
+    check(
+      visibleFrame.insetBy(dx: 10, dy: 10).contains(pointerFrame)
+        && visibleFrame.insetBy(dx: 10, dy: 10).contains(restoredFrame),
+      "selection pop-up placement escaped the visible display",
+      failures: &failures
+    )
     let fragmentedContext = SelectionContextMatcher.context(
       matching: "selected phrase",
       in: ["The paragraph starts before the selected", "phrase and continues after it."]

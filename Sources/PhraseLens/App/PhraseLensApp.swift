@@ -3,7 +3,7 @@ import Darwin
 import SwiftUI
 
 @main
-struct NextAITranslatorNativeApp: App {
+struct PhraseLensApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @StateObject private var model: AppModel
 

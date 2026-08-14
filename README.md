@@ -88,9 +88,9 @@ Create the app, ZIP archive, and DMG installer:
 The outputs are written to `.build/`:
 
 ```text
-.build/PhraseLens.app
-.build/PhraseLens.zip
-.build/PhraseLens.dmg
+dist/PhraseLens.app
+dist/PhraseLens.zip
+dist/PhraseLens.dmg
 ```
 
 For a direct release build with warnings treated as errors:
@@ -118,7 +118,7 @@ with sensitive text.
 ## Project structure
 
 ```text
-Sources/NextAITranslatorNative/
+Sources/PhraseLens/
 ├── App/          Application lifecycle and shared model
 ├── Models/       Settings, providers, actions, and persisted data models
 ├── Services/     Translation, Accessibility, OCR, TTS, storage, and hotkeys

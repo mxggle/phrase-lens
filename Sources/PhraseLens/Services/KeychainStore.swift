@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 struct KeychainStore: Sendable {
-  private let service = "com.harry.nextai-translator-native"
+  private let service = "com.harry.phraselens"
 
   func apiKey(for provider: ProviderKind) throws -> String {
     var query = baseQuery(account: provider.rawValue)

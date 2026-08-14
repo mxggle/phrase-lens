@@ -3,6 +3,10 @@ import Foundation
 
 @MainActor
 final class SettingsStore: ObservableObject {
+  private static let settingsKey = "app-settings-v1"
+  private static let providerConfigurationsKey = "provider-configurations-v1"
+  private static let selectionCopyMigrationKey = "selection-copy-fallback-v1"
+
   @Published var settings: AppSettings {
     didSet { persist() }
   }
@@ -14,9 +18,6 @@ final class SettingsStore: ObservableObject {
 
   private let defaults: UserDefaults
   private let keychain: KeychainStore
-  private let settingsKey = "app-settings-v1"
-  private let providerConfigurationsKey = "provider-configurations-v1"
-  private let selectionCopyMigrationKey = "selection-copy-fallback-v1"
   private var providerConfigurations: [ProviderKind: ProviderConfiguration]
   private var keyLoadID = UUID()
   private var keySaveID = UUID()
@@ -24,7 +25,7 @@ final class SettingsStore: ObservableObject {
   init(defaults: UserDefaults = .standard, keychain: KeychainStore = KeychainStore()) {
     self.defaults = defaults
     self.keychain = keychain
-    if let data = defaults.data(forKey: providerConfigurationsKey),
+    if let data = defaults.data(forKey: Self.providerConfigurationsKey),
       let decoded = try? JSONDecoder().decode(
         [ProviderKind: ProviderConfiguration].self,
         from: data
@@ -34,7 +35,7 @@ final class SettingsStore: ObservableObject {
     } else {
       providerConfigurations = [:]
     }
-    if let data = defaults.data(forKey: settingsKey),
+    if let data = defaults.data(forKey: Self.settingsKey),
       let decoded = try? JSONDecoder().decode(AppSettings.self, from: data)
     {
       settings = decoded
@@ -42,9 +43,9 @@ final class SettingsStore: ObservableObject {
       settings = AppSettings()
     }
     providerConfigurations[settings.provider.provider] = settings.provider
-    if defaults.object(forKey: selectionCopyMigrationKey) == nil {
+    if defaults.object(forKey: Self.selectionCopyMigrationKey) == nil {
       settings.useClipboardFallback = true
-      defaults.set(true, forKey: selectionCopyMigrationKey)
+      defaults.set(true, forKey: Self.selectionCopyMigrationKey)
     }
     loadAPIKey()
   }
@@ -129,7 +130,7 @@ final class SettingsStore: ObservableObject {
 
   func reset() {
     providerConfigurations = [:]
-    defaults.removeObject(forKey: providerConfigurationsKey)
+    defaults.removeObject(forKey: Self.providerConfigurationsKey)
     settings = AppSettings()
     providerConfigurations[settings.provider.provider] = settings.provider
     loadAPIKey()
@@ -137,11 +138,12 @@ final class SettingsStore: ObservableObject {
 
   private func persist() {
     guard let data = try? JSONEncoder().encode(settings) else { return }
-    defaults.set(data, forKey: settingsKey)
+    defaults.set(data, forKey: Self.settingsKey)
   }
 
   private func persistProviderConfigurations() {
     guard let data = try? JSONEncoder().encode(providerConfigurations) else { return }
-    defaults.set(data, forKey: providerConfigurationsKey)
+    defaults.set(data, forKey: Self.providerConfigurationsKey)
   }
+
 }

@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
-APP_PATH="${PROJECT_DIR}/.build/PhraseLens.app"
-EXECUTABLE_PATH="${APP_PATH}/Contents/MacOS/NextAITranslatorNative"
+APP_PATH="${PROJECT_DIR}/dist/PhraseLens.app"
+EXECUTABLE_PATH="${APP_PATH}/Contents/MacOS/PhraseLens"
 
 # Accessibility consent is tied to the application's signed code identity.
 # Running SwiftPM's raw executable creates a separate, disposable identity that

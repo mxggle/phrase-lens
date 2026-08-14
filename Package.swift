@@ -3,19 +3,19 @@
 import PackageDescription
 
 let package = Package(
-  name: "NextAITranslatorNative",
+  name: "PhraseLens",
   platforms: [
     .macOS(.v14)
   ],
   products: [
     .executable(
-      name: "NextAITranslatorNative",
-      targets: ["NextAITranslatorNative"]
+      name: "PhraseLens",
+      targets: ["PhraseLens"]
     )
   ],
   targets: [
     .executableTarget(
-      name: "NextAITranslatorNative"
+      name: "PhraseLens"
     )
   ]
 )

@@ -213,6 +213,21 @@ private struct GeneralSettingsPane: View {
           isOn: $settingsStore.settings.useCompactSelectionPreview
         )
         Hairline()
+        SettingsRow(
+          "Pop-up position",
+          detail: settingsStore.settings.selectionPanelPlacement == .nearPointer
+            ? "Opens beside the pointer on the active display."
+            : "Drag the pop-up once; future pop-ups return to that position."
+        ) {
+          AppSelect(
+            title: "Pop-up position",
+            selection: $settingsStore.settings.selectionPanelPlacement,
+            options: SelectionPanelPlacementMode.allCases,
+            label: { $0.displayName }
+          )
+          .disabled(!settingsStore.settings.useCompactSelectionPreview)
+        }
+        Hairline()
         switchRow(
           "Copy as a fallback",
           detail:

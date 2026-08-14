@@ -12,7 +12,7 @@ final class JSONFileStore<Value: Codable & Sendable>: @unchecked Sendable {
       in: .userDomainMask
     )[0]
     directoryURL = appSupport.appendingPathComponent(
-      "NextAITranslatorNative",
+      "PhraseLens",
       isDirectory: true
     )
     fileURL = directoryURL.appendingPathComponent(filename)

@@ -93,6 +93,7 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
   case analyze
   case explainContext
   case explainCode
+  case compareSynonyms
 
   var id: String { rawValue }
 
@@ -104,6 +105,7 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case .analyze: "Analyze"
     case .explainContext: "Explain in Context"
     case .explainCode: "Explain Code"
+    case .compareSynonyms: "Compare Synonyms"
     }
   }
 
@@ -115,6 +117,7 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case .analyze: "chart.bar.doc.horizontal"
     case .explainContext: "book.pages"
     case .explainCode: "chevron.left.forwardslash.chevron.right"
+    case .compareSynonyms: "arrow.triangle.2.circlepath"
     }
   }
 }
@@ -148,7 +151,7 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
       id: UUID(uuidString: Self.stableUUID(for: mode))!,
       name: mode.title,
       mode: mode,
-      outputMarkdown: [.analyze, .explainContext, .explainCode].contains(mode)
+      outputMarkdown: [.analyze, .explainContext, .explainCode, .compareSynonyms].contains(mode)
     )
   }
 
@@ -170,6 +173,7 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
     case .analyze: "00000000-0000-4000-8000-000000000004"
     case .explainContext: "00000000-0000-4000-8000-000000000005"
     case .explainCode: "00000000-0000-4000-8000-000000000006"
+    case .compareSynonyms: "00000000-0000-4000-8000-000000000007"
     }
   }
 }
@@ -323,6 +327,25 @@ enum TTSProvider: String, Codable, CaseIterable, Identifiable, Sendable {
   }
 }
 
+enum SelectionPanelPlacementMode: String, Codable, CaseIterable, Identifiable, Sendable {
+  case nearPointer
+  case fixed
+
+  var id: String { rawValue }
+
+  var displayName: String {
+    switch self {
+    case .nearPointer: "Near pointer"
+    case .fixed: "Last position"
+    }
+  }
+}
+
+struct SelectionPanelPosition: Codable, Equatable, Sendable {
+  var x: Double
+  var y: Double
+}
+
 struct ShortcutSettings: Codable, Equatable, Sendable {
   var translateSelection = "⌥F"
   var showWindow = "⌥⇧F"
@@ -360,6 +383,8 @@ struct AppSettings: Codable, Equatable, Sendable {
   var launchAtLogin = false
   var showDockIcon = true
   var useCompactSelectionPreview = true
+  var selectionPanelPlacement: SelectionPanelPlacementMode = .nearPointer
+  var selectionPanelPosition: SelectionPanelPosition?
   var useClipboardFallback = true
   var theme: AppTheme = .system
   var fontSize = 15.0
@@ -390,6 +415,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     case launchAtLogin
     case showDockIcon
     case useCompactSelectionPreview
+    case selectionPanelPlacement
+    case selectionPanelPosition
     case useClipboardFallback
     case theme
     case fontSize
@@ -436,6 +463,11 @@ struct AppSettings: Codable, Equatable, Sendable {
     useCompactSelectionPreview =
       try container.decodeIfPresent(Bool.self, forKey: .useCompactSelectionPreview)
       ?? true
+    selectionPanelPlacement =
+      try container.decodeIfPresent(SelectionPanelPlacementMode.self, forKey: .selectionPanelPlacement)
+      ?? .nearPointer
+    selectionPanelPosition =
+      try container.decodeIfPresent(SelectionPanelPosition.self, forKey: .selectionPanelPosition)
     useClipboardFallback =
       try container.decodeIfPresent(Bool.self, forKey: .useClipboardFallback)
       ?? true
