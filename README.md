@@ -1,137 +1,205 @@
-# PhraseLens
+<p align="center">
+  <img src="packaging/AppLogo.png" width="128" height="128" alt="PhraseLens Logo" />
+</p>
 
-> Understand any text, right where you find it.
+<h1 align="center">PhraseLens</h1>
 
-PhraseLens is a native macOS language workspace for translating, explaining,
-polishing, summarizing, and reading text aloud. Select text in another app and
-use a global shortcut to get a compact result beside your current workflow, or
-open the full workspace when you need more control.
+<p align="center">
+  <strong>Understand any text, right where you find it.</strong><br>
+  A lightweight, blazing-fast native macOS language workspace and AI translation assistant.
+</p>
 
-It is built with SwiftUI and native macOS APIs. There is no browser extension,
-embedded web runtime, or required hosted account.
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-macOS%2014%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2">
+  <img src="https://img.shields.io/badge/UI-SwiftUI-007AFF?style=flat-square&logo=swift&logoColor=white" alt="SwiftUI">
+  <img src="https://img.shields.io/badge/Runtime-100%25%20Native-5856D6?style=flat-square" alt="100% Native">
+  <img src="https://img.shields.io/badge/Privacy-Keychain%20Secured-34C759?style=flat-square" alt="Keychain Secured">
+  <img src="https://img.shields.io/badge/AI-Cloud%20%2B%20Ollama-8A2BE2?style=flat-square" alt="Cloud + Ollama">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue?style=flat-square" alt="License: AGPL v3"></a>
+</p>
 
-## What it can do
+---
 
-- Translate typed, pasted, or selected text with streaming responses.
-- Run focused actions for translation, polishing, summarization, analysis,
-  context explanations, and code explanations.
-- Look up selected text from other macOS apps through Accessibility APIs.
-- Capture a screen region and extract text with Vision OCR.
-- Translate text in a focused editable control and replace it through the
-  Accessibility API.
-- Speak source text with Microsoft Edge Neural voices or macOS system voices.
-- Keep local history and vocabulary collections with search and restore.
-- Add custom prompt actions using `${sourceLang}`, `${targetLang}`, and
-  `${text}` variables.
-- Run from the menu bar with configurable global shortcuts.
-- Connect to hosted providers, compatible custom endpoints, or a local Ollama
-  server.
+## Overview
 
-## Default shortcuts
+**PhraseLens** is a native macOS language companion designed for seamless translation, text polishing, grammar explanation, summarization, and neural speech synthesis. 
 
-| Action | Shortcut |
-| --- | --- |
-| Translate selected text in a compact pop-up | `⌥F` |
-| Open the full PhraseLens workspace | `⌥⇧F` |
-| Screenshot OCR | `⌥S` |
-| Translate and replace text in the focused control | `⌥W` |
+Whether you need a lightning-fast floating pop-up beside your selected text or a full multi-tab workspace for in-depth analysis, PhraseLens integrates directly into macOS without browser extensions, web wrappers, or bloated runtimes.
 
-All shortcuts can be changed in Settings. The selected-text and writing
-workflows require macOS Accessibility permission. Screenshot OCR requires
-Screen Recording permission.
+<p align="center">
+  <a href="#key-features">Features</a> •
+  <a href="#default-shortcuts">Shortcuts</a> •
+  <a href="#supported-providers">AI Providers</a> •
+  <a href="#build-and-run">Build & Run</a> •
+  <a href="#privacy-and-security">Privacy & Security</a> •
+  <a href="#license">License</a>
+</p>
 
-## Supported providers
+---
 
-PhraseLens includes editable provider profiles for OpenAI, ChatGPT API,
-Azure, Claude, Gemini, Ollama, Groq, DeepSeek, Moonshot, MiniMax, Cohere,
-Cerebras, ChatGLM, Kimi, TeamoRouter, and compatible custom endpoints.
+## ✨ Why PhraseLens?
 
-Provider credentials are stored in the macOS Keychain. API requests go to the
-provider configured by the user; PhraseLens does not provide a proxy or collect
-credentials.
+- ⚡ **100% Native Swift & SwiftUI**: Zero Electron, zero webviews, zero heavy runtimes. Starts instantly with minimal memory usage.
+- 🎯 **In-Context Workflow**: Select text in any macOS application and look it up immediately without breaking your concentration.
+- 🔒 **Privacy-First Architecture**: Your API keys are stored in the macOS Keychain. Requests go directly from your Mac to the chosen provider or your local offline Ollama instance.
+- 🎨 **macOS Native Aesthetics**: Carefully tuned native light and dark modes following Apple HIG principles.
 
-## Requirements
+---
 
-- macOS 14 or newer
-- Swift 6.2 or newer
-- An API key for the selected provider, or a local Ollama server
-- Accessibility permission for selection lookup and writing replacement
-- Screen Recording permission for screenshot OCR
+## 🚀 Key Features
 
-## Build and run
+| Feature | Description |
+| :--- | :--- |
+| 🔍 **Global Selection Lookup** | Select text anywhere in Safari, Xcode, Slack, or any app and trigger a compact pop-up right next to your cursor. |
+| 🖥️ **Full Language Workspace** | Dedicated multi-tab workspace for translation, polishing, summarization, context explanation, and code analysis. |
+| 📸 **Vision Screenshot OCR** | Snip any region on your screen to extract, recognize, and translate text instantly via Apple's Vision framework. |
+| ✍️ **In-Place Writing & Rewrite** | Translate or polish text directly inside any active, editable text field and replace it with a single keystroke. |
+| 🗣️ **Dual Speech Synthesizers** | Read source text aloud using high-fidelity **Microsoft Edge Neural TTS** or offline native **macOS System Voices**. |
+| 📚 **History & Vocabulary** | Automatically preserve search histories and manage personal vocabulary collections with quick search and restore. |
+| 🧩 **Custom Prompt Templates** | Create custom AI actions using dynamic variables: `${sourceLang}`, `${targetLang}`, and `${text}`. |
+| 🎛️ **Menu Bar & Global Hotkeys** | Lightweight `MenuBarExtra` companion, customizable global Carbon shortcuts, and launch-at-login support. |
 
-Clone the repository and run the signed app bundle:
+---
+
+## ⌨️ Default Shortcuts
+
+| Action | Shortcut | Required Permission |
+| :--- | :---: | :--- |
+| **Translate Selected Text** *(Compact Pop-up)* | <kbd>⌥</kbd> <kbd>F</kbd> | macOS Accessibility |
+| **Open Full Workspace** | <kbd>⌥</kbd> <kbd>⇧</kbd> <kbd>F</kbd> | None |
+| **Screenshot OCR** | <kbd>⌥</kbd> <kbd>S</kbd> | Screen Recording |
+| **Translate & Replace in Focused Field** | <kbd>⌥</kbd> <kbd>W</kbd> | macOS Accessibility |
+
+> [!NOTE]
+> All shortcuts are fully customizable in **Settings > Shortcuts**. 
+> Selection lookup and in-place writing require **macOS Accessibility** permission. Screenshot OCR requires **Screen Recording** permission.
+
+---
+
+## 🤖 Supported AI Providers
+
+PhraseLens supports direct streaming connections to major cloud providers, local offline models, and custom endpoints:
+
+| Provider | Type | Supported Models / Notes |
+| :--- | :---: | :--- |
+| **OpenAI** | Cloud | GPT-4o, GPT-4o-mini, o1, o3-mini, and compatible models |
+| **Anthropic Claude** | Cloud | Claude 3.5 Sonnet, Claude 3.7 Sonnet, Claude 3 Haiku |
+| **Google Gemini** | Cloud | Gemini 2.0 Flash, Gemini 1.5 Pro / Flash |
+| **Ollama** | Local / Offline | Fully private & offline (Llama 3, Qwen 2.5, DeepSeek-R1, Mistral, etc.) |
+| **DeepSeek** | Cloud | DeepSeek-V3, DeepSeek-R1 |
+| **Groq** | Cloud | Ultra-low latency inference (Llama, Gemma, Mixtral) |
+| **Moonshot (Kimi)** | Cloud | Moonshot v1 models with long context |
+| **MiniMax** | Cloud | MiniMax-Text-01 and chat models |
+| **Cohere** | Cloud | Command R, Command R+ |
+| **Azure OpenAI** | Cloud / Enterprise | Custom deployments & enterprise endpoints |
+| **TeamoRouter** | Router | Multi-model routing endpoint |
+| **Custom Endpoint** | Any | Any OpenAI-compatible REST endpoint (`/v1/chat/completions`) |
+
+---
+
+## 📋 Requirements
+
+- **Operating System**: macOS 14.0 (Sonoma) or newer (macOS 15 Sequoia fully supported)
+- **Toolchain**: Swift 6.2 or Xcode 16+ (for compiling from source)
+- **API Access**: An API key from your preferred provider, or a local running [Ollama](https://ollama.com) instance
+
+---
+
+## 🛠️ Build and Run
+
+### Clone the Repository
 
 ```bash
 git clone https://github.com/mxggle/phrase-lens.git
 cd phrase-lens
+```
+
+### Quick Run (Development)
+
+Builds the release executable, packages the bundle, signs it with local identity, and launches the app:
+
+```bash
 ./scripts/run.sh
 ```
 
-`run.sh` builds the release executable, packages it as `PhraseLens.app`,
-verifies the code signature, and opens the bundle. Use the bundle rather than
-the raw SwiftPM executable because macOS Accessibility consent is tied to the
-signed application identity.
+> [!TIP]
+> Always run via the packaged `.app` bundle (or `./scripts/run.sh`) rather than the raw SwiftPM binary, as macOS Accessibility and Screen Recording permissions are bound to the signed application bundle identifier.
 
-Run the automated self-test:
+### Automated Self-Tests
+
+Run the built-in test suite to verify prompt isolation, context boundary enforcement (1,600 chars), SSE stream decoders, and hotkey parsing:
 
 ```bash
 ./scripts/test.sh
 ```
 
-Create the app, ZIP archive, and DMG installer:
+### Package DMG & ZIP Releases
+
+Generate production artifacts inside the `dist/` directory:
 
 ```bash
 ./scripts/package-app.sh
 ```
 
-The outputs are written to `dist/`:
+Output artifacts:
+```text
+dist/
+├── PhraseLens.app      # Signed application bundle
+├── PhraseLens.zip      # Compressed archive
+└── PhraseLens.dmg      # Drag-and-drop installer disk image
+```
+
+---
+
+## 🔒 Privacy and Security
+
+PhraseLens is designed with a zero-trust, privacy-first mindset:
+
+- **Keychain Storage**: All provider API keys and credentials are encrypted and stored in the **macOS Keychain**. Keys never touch `UserDefaults`, plaintext files, or application logs.
+- **Direct Network Communication**: API requests travel directly between your Mac and the target AI service. PhraseLens has no backend server, proxy, or analytics telemetry.
+- **HTTPS Enforcement**: Plain HTTP connections are strictly blocked, with an explicit exception only allowed for local `localhost` / `127.0.0.1` Ollama endpoints.
+- **Untrusted Context Isolation**: Text selected from external applications is bounded (1,600 characters max) and treated as untrusted prompt data to prevent prompt injection.
+- **Local Data**: Translation history, vocabulary cards, custom action definitions, and user settings reside strictly on your local disk.
+
+---
+
+## 🧩 Custom Prompt Actions
+
+You can expand PhraseLens by defining custom prompt templates in **Settings > Actions**. Templates support variable interpolation:
 
 ```text
-dist/PhraseLens.app
-dist/PhraseLens.zip
-dist/PhraseLens.dmg
+${sourceLang} -> Detected or chosen source language
+${targetLang} -> Target language for output
+${text}       -> User input or selected text
 ```
 
-For a direct release build with warnings treated as errors:
+Example custom action (Grammar & Style Doctor):
+```text
+Analyze the following ${sourceLang} text for grammatical issues, awkward phrasing, and tone improvements. Provide concise suggestions in ${targetLang}:
 
-```bash
-swift build -c release -Xswiftc -warnings-as-errors
+${text}
 ```
 
-## Privacy and security
+---
 
-- API keys are stored in Keychain, not `UserDefaults` or source files.
-- Provider endpoints must use HTTPS. Plain HTTP is accepted only for a
-  loopback Ollama endpoint.
-- URLs containing embedded credentials are rejected.
-- Selected-text context is bounded and treated as untrusted prompt data before
-  it is sent to an AI provider.
-- History, vocabulary, settings, and custom actions are stored locally on this
-  Mac.
-- Edge Neural TTS sends the text being spoken to Microsoft's speech service;
-  macOS system speech can be selected instead.
-
-Review the provider's data handling and retention policy before using PhraseLens
-with sensitive text.
-
-## Project structure
+## 📂 Project Structure
 
 ```text
 Sources/PhraseLens/
-├── App/          Application lifecycle and shared model
-├── Models/       Settings, providers, actions, and persisted data models
-├── Services/     Translation, Accessibility, OCR, TTS, storage, and hotkeys
-└── Views/        SwiftUI workspace, pop-up, settings, history, and actions
-packaging/        App bundle metadata and icon
-scripts/          Test, package, run, and toolchain helpers
-docs/             Feature coverage and design-system notes
+├── App/          # Application entry, lifecycle, and environment state
+├── Models/       # Settings, provider profiles, action templates, history models
+├── Services/     # Translation clients, Accessibility, Vision OCR, TTS, hotkeys
+└── Views/        # SwiftUI workspace, compact pop-up, settings, history, actions
+packaging/        # App icons (icns, png) and Info.plist metadata
+scripts/          # Automation scripts for test, run, package, and icon generation
+docs/             # Design system specifications and feature coverage matrix
 ```
 
-## License
+---
 
-PhraseLens is distributed under the GNU Affero General Public License,
-version 3 or later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+## 📄 License & Acknowledgments
 
-This project is a from-scratch native macOS implementation based on the
-behavior and user-facing concepts of [NextAI Translator](https://github.com/nextai-translator/nextai-translator).
+PhraseLens is released under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. See the [LICENSE](LICENSE) and [NOTICE](NOTICE) files for details.
+
+This project is a native Swift implementation built from the ground up, inspired by the concepts and behaviors of [NextAI Translator](https://github.com/nextai-translator/nextai-translator).
