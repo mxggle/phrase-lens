@@ -1276,3 +1276,59 @@ extension View {
     }
   }
 }
+
+// MARK: - App Logo
+
+/// Renders the PhraseLens brand application icon.
+///
+/// Resolves the bundled high-resolution logo resources or falls back to
+/// the running application icon (`NSApp.applicationIconImage`).
+struct AppLogo: View {
+  var size: CGFloat = 26
+  var cornerRadius: CGFloat? = nil
+
+  var body: some View {
+    if let image = Self.logoImage {
+      Image(nsImage: image)
+        .resizable()
+        .interpolation(.high)
+        .aspectRatio(contentMode: .fit)
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    } else {
+      RoundedRectangle(cornerRadius: cornerRadius ?? (size * 0.22), style: .continuous)
+        .fill(Color(nsColor: NSColor(red: 0.14, green: 0.14, blue: 0.14, alpha: 1.0)))
+        .frame(width: size, height: size)
+        .overlay {
+          Image(systemName: "character.bubble.fill")
+            .font(.system(size: size * 0.46, weight: .semibold))
+            .foregroundStyle(.white)
+        }
+        .accessibilityHidden(true)
+    }
+  }
+
+  private static let logoImage: NSImage? = {
+    // 1. Bundle resources: AppLogo-tight.png (clean squircle without outer shadow padding)
+    if let path = Bundle.main.path(forResource: "AppLogo-tight", ofType: "png"),
+       let image = NSImage(contentsOfFile: path) {
+      return image
+    }
+    // 2. Bundle resources: AppLogo.png (full icon with shadow)
+    if let path = Bundle.main.path(forResource: "AppLogo", ofType: "png"),
+       let image = NSImage(contentsOfFile: path) {
+      return image
+    }
+    // 3. Bundle resources: AppIcon.icns
+    if let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
+       let image = NSImage(contentsOfFile: path) {
+      return image
+    }
+    // 4. Running application icon
+    if let appIcon = NSApp?.applicationIconImage, appIcon.isValid {
+      return appIcon
+    }
+    return nil
+  }()
+}
+

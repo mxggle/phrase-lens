@@ -881,21 +881,16 @@ private struct AboutSettingsPane: View {
       SettingsCard("PhraseLens") {
         SettingsBlock {
           HStack(alignment: .top, spacing: AppSpacing.lg) {
-            RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
-              .fill(palette.primary)
-              .frame(width: 56, height: 56)
-              .overlay {
-                Image(systemName: "character.bubble.fill")
-                  .font(.system(size: 24, weight: .semibold))
-                  .foregroundStyle(palette.primaryForeground)
-              }
-              .accessibilityHidden(true)
+            AppLogo(size: 56)
 
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
               HStack(spacing: AppSpacing.sm) {
                 Text("PhraseLens")
                   .font(AppFont.display)
-                Badge(text: "0.1.0", variant: .outline)
+                Badge(
+                  text: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.0",
+                  variant: .outline
+                )
               }
               Text("A native SwiftUI language workspace for macOS.")
                 .font(AppFont.body)

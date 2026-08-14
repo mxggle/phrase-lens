@@ -39,6 +39,11 @@ fi
 if [[ -f "${PROJECT_DIR}/packaging/AppIcon.icns" ]]; then
     cp "${PROJECT_DIR}/packaging/AppIcon.icns" "${APP_PATH}/Contents/Resources/AppIcon.icns"
 fi
+for logo in AppLogo.png AppLogo-tight.png; do
+    if [[ -f "${PROJECT_DIR}/packaging/${logo}" ]]; then
+        cp "${PROJECT_DIR}/packaging/${logo}" "${APP_PATH}/Contents/Resources/${logo}"
+    fi
+done
 
 SIGNING_IDENTITY="${CODE_SIGN_IDENTITY:-}"
 if [[ -z "${SIGNING_IDENTITY}" ]]; then

@@ -85,7 +85,7 @@ Create the app, ZIP archive, and DMG installer:
 ./scripts/package-app.sh
 ```
 
-The outputs are written to `.build/`:
+The outputs are written to `dist/`:
 
 ```text
 dist/PhraseLens.app

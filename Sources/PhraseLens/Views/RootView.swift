@@ -247,15 +247,7 @@ private struct SidebarView: View {
 
   private var brand: some View {
     HStack(spacing: AppSpacing.sm) {
-      RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
-        .fill(palette.primary)
-        .frame(width: 26, height: 26)
-        .overlay {
-          Image(systemName: "character.bubble.fill")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(palette.primaryForeground)
-        }
-        .accessibilityHidden(true)
+      AppLogo(size: 26)
 
       if !isCollapsed {
         VStack(alignment: .leading, spacing: 0) {

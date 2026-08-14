@@ -309,15 +309,7 @@ private struct SelectionPanelBody: View {
   /// to dismiss it. Everything else is a command and belongs in the footer.
   private var header: some View {
     HStack(spacing: AppSpacing.sm) {
-      RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
-        .fill(palette.primary)
-        .frame(width: 20, height: 20)
-        .overlay {
-          Image(systemName: "character.bubble.fill")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(palette.primaryForeground)
-        }
-        .accessibilityHidden(true)
+      AppLogo(size: 20)
 
       Text("Selection")
         .font(AppFont.bodyMedium)
