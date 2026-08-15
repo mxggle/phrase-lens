@@ -7,6 +7,17 @@ enum HotKeyAction: UInt32, CaseIterable, Sendable {
   case showWindow = 2
   case screenshotOCR = 3
   case writing = 5
+
+  /// Mirrors the row titles in the shortcut settings pane, so a reported clash
+  /// names the row the user has to change.
+  var displayName: String {
+    switch self {
+    case .translateSelection: "Selection pop-up"
+    case .showWindow: "Full translator window"
+    case .screenshotOCR: "Screenshot OCR"
+    case .writing: "Translate focused input"
+    }
+  }
 }
 
 @MainActor
@@ -15,6 +26,10 @@ final class GlobalHotKeyManager {
 
   private var handler: (@MainActor @Sendable (HotKeyAction, pid_t?) -> Void)?
   private var references: [EventHotKeyRef] = []
+  /// The bindings last handed to `register`, whether or not they took. The
+  /// recorder consults these to name a clash with another action while the user
+  /// is still pressing keys, instead of letting Carbon reduce it to an OSStatus.
+  private var requestedShortcuts: [(action: HotKeyAction, shortcut: String)] = []
   private var eventHandler: EventHandlerRef?
   private let signature: OSType = 0x4E_41_54_49
 
@@ -73,8 +88,11 @@ final class GlobalHotKeyManager {
       (.screenshotOCR, shortcuts.screenshotOCR),
       (.writing, shortcuts.writing),
     ]
+    requestedShortcuts = definitions
     var errors: [String] = []
-    for (action, shortcut) in definitions {
+    // An unbound action is a deliberate state, not a failure: an empty shortcut
+    // simply gets no hot key, rather than a parse error the user cannot clear.
+    for (action, shortcut) in definitions where !shortcut.isEmpty {
       do {
         try register(action: action, shortcut: shortcut)
       } catch {
@@ -82,6 +100,14 @@ final class GlobalHotKeyManager {
       }
     }
     return errors
+  }
+
+  /// The action already holding `shortcut`, if any. `ownShortcut` is the
+  /// recording row's current binding, since re-recording a row's own
+  /// combination replaces it rather than colliding with it.
+  func conflictingAction(for shortcut: String, ignoring ownShortcut: String) -> HotKeyAction? {
+    guard !shortcut.isEmpty, shortcut != ownShortcut else { return nil }
+    return requestedShortcuts.first { $0.shortcut == shortcut }?.action
   }
 
   func unregisterAll() {
@@ -138,6 +164,11 @@ enum HotKeyParser {
     "]": 30, "O": 31, "U": 32, "[": 33, "I": 34, "P": 35, "L": 37,
     "J": 38, "'": 39, "K": 40, ";": 41, "\\": 42, ",": 43, "/": 44,
     "N": 45, "M": 46, ".": 47, "SPACE": 49,
+    "F1": 122, "F2": 120, "F3": 99, "F4": 118, "F5": 96, "F6": 97,
+    "F7": 98, "F8": 100, "F9": 101, "F10": 109, "F11": 103, "F12": 111,
+    "F13": 105, "F14": 107, "F15": 113, "F16": 106, "F17": 64, "F18": 79,
+    "F19": 80, "F20": 90,
+    "←": 123, "→": 124, "↓": 125, "↑": 126,
   ]
 }
 
@@ -148,7 +179,12 @@ enum HotKeyError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .unsupportedShortcut(let value): "Unsupported shortcut \(value)"
-    case .registrationFailed(let status): "Registration failed (\(status))"
+    case .registrationFailed(let status):
+      // The one status a user can act on: something outside this app, macOS
+      // itself included, already owns the combination.
+      status == OSStatus(eventHotKeyExistsErr)
+        ? "Another app already uses this shortcut."
+        : "Registration failed (\(status))"
     }
   }
 }
