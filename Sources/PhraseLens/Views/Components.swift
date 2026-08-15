@@ -38,6 +38,17 @@ extension View {
     }
   }
 
+  /// `focusRing` for a control whose focus belongs to an enclosing `Button`.
+  ///
+  /// A `Button` is its own focus scope, so its chrome cannot be handed a
+  /// `FocusState` the way a text field can. Reading `isFocused` from the
+  /// environment picks the state up instead — which only works from *inside*
+  /// the button's label, so this has to be applied there and not on the
+  /// `Button` itself.
+  func ambientFocusRing(_ palette: AppPalette, radius: CGFloat) -> some View {
+    modifier(AmbientFocusRing(palette: palette, radius: radius))
+  }
+
   /// Swaps the pointer while it is over a control that resizes something.
   func resizeCursor(horizontal: Bool) -> some View {
     onHover { inside in
@@ -47,6 +58,17 @@ extension View {
         NSCursor.pop()
       }
     }
+  }
+}
+
+private struct AmbientFocusRing: ViewModifier {
+  let palette: AppPalette
+  let radius: CGFloat
+
+  @Environment(\.isFocused) private var isFocused
+
+  func body(content: Content) -> some View {
+    content.focusRing(palette, isFocused: isFocused, radius: radius)
   }
 }
 
@@ -180,6 +202,7 @@ struct AppButtonStyle: ButtonStyle {
           }
         }
         .contentShape(shape)
+        .ambientFocusRing(palette, radius: size.radius)
         .opacity(isEnabled ? 1 : 0.42)
         .scaleEffect(configuration.isPressed && isEnabled ? 0.975 : 1)
         .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isHovering)
@@ -725,6 +748,7 @@ struct AppSwitchStyle: ToggleStyle {
               .padding(.horizontal, 2.5)
           }
           .contentShape(Capsule(style: .continuous))
+          .ambientFocusRing(palette, radius: AppRadius.pill)
       }
       .buttonStyle(.plain)
       .opacity(isEnabled ? 1 : 0.42)
@@ -774,6 +798,7 @@ struct ChipToggleStyle: ToggleStyle {
           }
         }
         .contentShape(Capsule(style: .continuous))
+        .ambientFocusRing(palette, radius: AppRadius.pill)
       }
       .buttonStyle(.plain)
       .onHover { isHovering = $0 }
@@ -978,6 +1003,7 @@ struct ActionTabBar: View {
         }
       }
       .contentShape(Rectangle())
+      .ambientFocusRing(palette, radius: AppRadius.md)
     }
     .buttonStyle(.plain)
     .help(action.name)
@@ -1037,6 +1063,7 @@ struct NavRow: View {
       .frame(maxWidth: .infinity, alignment: collapsed ? .center : .leading)
       .background(fill, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
       .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+      .ambientFocusRing(palette, radius: AppRadius.md)
     }
     .buttonStyle(.plain)
     .onHover { isHovering = $0 }
