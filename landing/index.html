@@ -1,0 +1,1873 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PhraseLens — Understand any text, right where you find it</title>
+<meta name="description" content="Select a word in any macOS app. Press ⌥F. Get the meaning, the nuance, and the translation without leaving what you're reading. Native Swift, bring your own key, open source.">
+<link rel="icon" href="assets/logo.png">
+<meta property="og:title" content="PhraseLens — Understand any text, right where you find it">
+<meta property="og:description" content="A native macOS comprehension layer. Select text anywhere, press ⌥F, get an answer where you are.">
+<meta property="og:image" content="assets/logo.png">
+<meta property="og:type" content="website">
+<style>
+/* ============================================================
+   TOKENS — lifted from Sources/PhraseLens/Views/DesignSystem.swift
+   ============================================================ */
+:root{
+  --bg:#09090B; --surface:#131316; --elev:#232329; --chrome:#0C0C0E;
+  --muted:#1C1C20; --muted-hover:#26262B;
+  --fg:#FAFAFA; --fg2:#D4D4D8; --fg3:#8A8A93; --fg4:#5F5F68;
+  --border:#27272A; --border2:#3F3F46;
+  --accent:#BCE01E; --accent-ink:#BCE01E; --accent-fg:#0B0B0C;
+  --accent-dim:rgba(188,224,30,.13); --accent-glow:rgba(188,224,30,.30);
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 30px rgba(0,0,0,.45);
+  --shadow-lg:0 2px 6px rgba(0,0,0,.5),0 30px 80px rgba(0,0,0,.6);
+  --r-ctl:8px; --r-card:14px; --r-panel:18px;
+  --sp:4px;
+  --ease:cubic-bezier(.22,1,.36,1);
+  --spring:cubic-bezier(.34,1.4,.64,1);
+  --maxw:1120px;
+}
+/* dark is the brand ground above; light applies on an explicit choice…  */
+:root[data-theme="light"]{
+  --bg:#F7F7F8; --surface:#FFFFFF; --elev:#FFFFFF; --chrome:#FAFAFA;
+  --muted:#F4F4F5; --muted-hover:#ECECEE;
+  --fg:#09090B; --fg2:#3F3F46; --fg3:#71717A; --fg4:#A1A1AA;
+  --border:#E4E4E7; --border2:#D4D4D8;
+  --accent:#A8C915; --accent-ink:#5E7A00; --accent-fg:#0B0B0C;
+  --accent-dim:rgba(120,155,0,.12); --accent-glow:rgba(120,155,0,.22);
+  --shadow:0 1px 2px rgba(9,9,11,.06),0 8px 24px rgba(9,9,11,.07);
+  --shadow-lg:0 2px 6px rgba(9,9,11,.08),0 30px 70px rgba(9,9,11,.14);
+}
+/* …and on a light OS preference, unless the viewer explicitly chose dark. */
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+  --bg:#F7F7F8; --surface:#FFFFFF; --elev:#FFFFFF; --chrome:#FAFAFA;
+  --muted:#F4F4F5; --muted-hover:#ECECEE;
+  --fg:#09090B; --fg2:#3F3F46; --fg3:#71717A; --fg4:#A1A1AA;
+  --border:#E4E4E7; --border2:#D4D4D8;
+  --accent:#A8C915; --accent-ink:#5E7A00; --accent-fg:#0B0B0C;
+  --accent-dim:rgba(120,155,0,.12); --accent-glow:rgba(120,155,0,.22);
+  --shadow:0 1px 2px rgba(9,9,11,.06),0 8px 24px rgba(9,9,11,.07);
+  --shadow-lg:0 2px 6px rgba(9,9,11,.08),0 30px 70px rgba(9,9,11,.14);
+  }
+}
+
+/* ============================================================ RESET */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,system-ui,sans-serif;
+  font-size:16px;line-height:1.5;letter-spacing:-.011em;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+  transition:background .3s var(--ease),color .3s var(--ease);
+}
+img{max-width:100%;display:block}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;letter-spacing:inherit}
+a{color:inherit;text-decoration:none}
+h1,h2,h3,h4,h5{margin:0;font-weight:640;letter-spacing:-.03em;line-height:1.08}
+p{margin:0}
+code,kbd,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace}
+::selection{background:var(--accent-glow);color:var(--fg)}
+
+/* ============================================================ PRIMITIVES */
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+section{position:relative}
+.sec{padding:104px 0}
+.sec-head{max-width:660px;margin:0 0 44px}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:11.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--fg3);margin-bottom:18px;
+}
+.eyebrow::before{content:"";width:16px;height:1px;background:var(--accent)}
+h2.h{font-size:clamp(30px,4.4vw,46px);margin-bottom:14px}
+.sub{color:var(--fg3);font-size:17px;line-height:1.5;max-width:56ch}
+.lime{color:var(--accent-ink)}
+.hair{height:1px;background:var(--border);border:0;margin:0}
+
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:9px;
+  height:46px;padding:0 22px;border-radius:var(--r-ctl);
+  font-size:14.5px;font-weight:580;white-space:nowrap;
+  transition:transform .16s var(--spring),background .16s var(--ease),border-color .16s var(--ease),box-shadow .2s var(--ease);
+}
+.btn:active{transform:scale(.975)}
+.btn-primary{background:var(--accent);color:var(--accent-fg);font-weight:640}
+.btn-primary:hover{box-shadow:0 0 0 1px var(--accent),0 8px 28px var(--accent-glow);transform:translateY(-1px)}
+.btn-ghost{border:1px solid var(--border2);color:var(--fg2)}
+.btn-ghost:hover{background:var(--muted);border-color:var(--fg4);color:var(--fg)}
+.btn-sm{height:36px;padding:0 15px;font-size:13px}
+
+kbd,.kbd{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:24px;height:24px;padding:0 7px;
+  background:var(--elev);border:1px solid var(--border2);
+  border-bottom-width:2px;border-radius:6px;
+  font-size:12px;font-weight:600;color:var(--fg2);
+  transition:transform .1s var(--ease),background .1s var(--ease),border-color .1s;
+}
+.kbd.hit{transform:translateY(2px);border-bottom-width:1px;background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.pillchip{
+  display:inline-flex;align-items:center;gap:6px;
+  height:28px;padding:0 12px;border-radius:999px;
+  border:1px solid var(--border);background:var(--muted);
+  font-size:12.5px;color:var(--fg3);
+}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card)}
+
+/* reveal on scroll */
+.rv{opacity:0;transform:translateY(16px)}
+.rv.in{opacity:1;transform:none;transition:opacity .6s var(--ease),transform .7s var(--ease)}
+.rv.d1{transition-delay:.07s}.rv.d2{transition-delay:.14s}.rv.d3{transition-delay:.21s}.rv.d4{transition-delay:.28s}
+
+/* ============================================================ NAV */
+.nav{
+  position:fixed;inset:0 0 auto;z-index:80;height:60px;
+  display:flex;align-items:center;
+  transition:background .25s var(--ease),border-color .25s,backdrop-filter .25s;
+  border-bottom:1px solid transparent;
+}
+.nav.stuck{background:color-mix(in srgb,var(--bg) 78%,transparent);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);border-bottom-color:var(--border)}
+.nav .wrap{display:flex;align-items:center;gap:10px;width:100%}
+.brand{display:flex;align-items:center;gap:9px;font-weight:640;font-size:15px;letter-spacing:-.02em}
+.brand img{width:26px;height:26px;border-radius:7px}
+.nav-links{display:flex;gap:4px;margin-left:22px}
+.nav-links a{padding:7px 11px;border-radius:7px;font-size:13.5px;color:var(--fg3);transition:color .15s,background .15s}
+.nav-links a:hover{color:var(--fg);background:var(--muted)}
+.nav-sp{flex:1}
+.icon-btn{
+  width:34px;height:34px;border-radius:8px;border:1px solid var(--border);
+  display:grid;place-items:center;color:var(--fg3);transition:.15s var(--ease);
+}
+.icon-btn:hover{background:var(--muted);color:var(--fg);border-color:var(--border2)}
+/* the icon shows the theme you would switch *to*, in all three root states */
+.ico-sun{display:block}.ico-moon{display:none}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]) .ico-sun{display:none}
+  :root:not([data-theme="dark"]) .ico-moon{display:block}
+}
+:root[data-theme="light"] .ico-sun{display:none}
+:root[data-theme="light"] .ico-moon{display:block}
+:root[data-theme="dark"] .ico-sun{display:block}
+:root[data-theme="dark"] .ico-moon{display:none}
+
+/* ============================================================ HERO */
+.hero{padding:132px 0 76px;position:relative;overflow:hidden}
+.hero::before{
+  content:"";position:absolute;top:-260px;left:50%;transform:translateX(-50%);
+  width:900px;height:640px;pointer-events:none;
+  background:radial-gradient(closest-side,var(--accent-dim),transparent 72%);
+  opacity:.85;
+}
+.hero-grid{display:grid;grid-template-columns:minmax(0,.86fr) minmax(0,1.14fr);gap:56px;align-items:center}
+h1.h1{font-size:clamp(38px,5.1vw,62px);line-height:1.02;letter-spacing:-.04em;margin-bottom:20px}
+h1.h1 .w{display:inline-block;opacity:0;transform:translateY(14px)}
+h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transform .6s var(--ease)}
+.hero-sub{font-size:17.5px;color:var(--fg2);line-height:1.55;max-width:44ch;margin-bottom:26px}
+.hero-cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.hero-meta{margin-top:14px;font-size:12.5px;color:var(--fg4)}
+.hero-pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}
+
+/* ---- mock macOS window ---- */
+.stage{position:relative}
+.mock{
+  position:relative;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-panel);box-shadow:var(--shadow-lg);overflow:hidden;
+  min-height:474px;
+}
+.mock-bar{
+  display:flex;align-items:center;gap:10px;height:42px;padding:0 14px;
+  background:var(--chrome);border-bottom:1px solid var(--border);
+}
+.lights{display:flex;gap:7px}
+.lights i{width:11px;height:11px;border-radius:50%;display:block}
+.lights i:nth-child(1){background:#FF5F57}.lights i:nth-child(2){background:#FEBC2E}.lights i:nth-child(3){background:#28C840}
+.urlbar{
+  flex:1;height:24px;border-radius:6px;background:var(--muted);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  font-size:11.5px;color:var(--fg4);max-width:290px;margin:0 auto;
+}
+.article{padding:26px 30px 30px;cursor:text}
+.article .kicker{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg4);margin-bottom:10px}
+.article h3{font-size:20px;margin-bottom:14px;letter-spacing:-.028em;max-width:15ch}
+/* the column stays narrow so the panel lands beside the prose, not on top of it */
+.article p{font-size:14.5px;line-height:1.8;color:var(--fg2);max-width:24ch}
+.article .w{
+  cursor:pointer;position:relative;border-bottom:1px dashed var(--border2);
+  transition:color .15s,border-color .15s;
+}
+.article .w:hover{color:var(--fg);border-bottom-color:var(--accent)}
+.article .w.sel{color:var(--fg);border-bottom-color:transparent}
+.article .w.sel::before{
+  content:"";position:absolute;inset:-3px -4px;border-radius:5px;z-index:-1;
+  background:var(--accent-glow);transform-origin:left;
+  animation:wipe .28s var(--ease) both;
+}
+@keyframes wipe{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.ghost-cursor{
+  position:absolute;width:15px;height:22px;pointer-events:none;opacity:0;z-index:5;
+  transition:opacity .3s,transform .62s var(--ease);
+}
+.ghost-cursor svg{filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+.keyhint{
+  position:absolute;right:16px;bottom:14px;display:flex;gap:6px;align-items:center;
+  opacity:0;transition:opacity .25s;z-index:6;
+}
+.keyhint.on{opacity:1}
+.hint-chip{
+  position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
+  display:inline-flex;align-items:center;gap:8px;z-index:6;
+  height:30px;padding:0 14px;border-radius:999px;
+  background:color-mix(in srgb,var(--elev) 92%,transparent);backdrop-filter:blur(8px);
+  border:1px solid var(--border2);font-size:12.5px;color:var(--fg3);
+  box-shadow:var(--shadow);transition:opacity .3s,transform .3s var(--ease);
+}
+.hint-chip.gone{opacity:0;transform:translate(-50%,8px);pointer-events:none}
+.hint-chip b{color:var(--fg)}
+
+/* ---- the panel (mirrors SelectionTranslationPanel) ---- */
+.panel{
+  position:absolute;width:306px;z-index:10;
+  background:color-mix(in srgb,var(--elev) 96%,transparent);
+  backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
+  border:1px solid var(--border2);border-radius:var(--r-panel);
+  box-shadow:var(--shadow-lg);overflow:hidden;
+  display:flex;flex-direction:column;max-height:366px;
+  opacity:0;transform:scale(.92) translateY(8px);pointer-events:none;
+}
+.panel.on{opacity:1;transform:none;pointer-events:auto;transition:opacity .2s var(--ease),transform .32s var(--spring)}
+.panel-head{display:flex;align-items:center;gap:8px;padding:9px 11px;border-bottom:1px solid var(--border)}
+.panel-head .mk{width:15px;height:15px;border-radius:5px;flex:none}
+.panel-title{font-size:12px;font-weight:600;color:var(--fg2)}
+.langpair{
+  margin-left:auto;display:inline-flex;align-items:center;gap:5px;
+  font-size:11px;color:var(--fg3);background:var(--muted);
+  border:1px solid var(--border);border-radius:999px;padding:2px 8px;
+}
+.panel-x{width:20px;height:20px;border-radius:5px;color:var(--fg4);font-size:12px;line-height:1}
+.panel-x:hover{background:var(--muted);color:var(--fg)}
+.panel-tabs{position:relative;display:flex;gap:2px;padding:7px 8px;border-bottom:1px solid var(--border)}
+.panel-tabs .armed{
+  position:absolute;top:7px;height:24px;border-radius:6px;background:var(--accent);
+  transition:transform .32s var(--spring),width .32s var(--spring);z-index:0;
+}
+.panel-tabs button{
+  position:relative;z-index:1;height:24px;padding:0 9px;border-radius:6px;
+  font-size:11.5px;font-weight:560;color:var(--fg3);transition:color .2s;
+}
+.panel-tabs button.act{color:var(--accent-fg)}
+.panel-src{padding:9px 12px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--muted) 60%,transparent)}
+.panel-src .lab{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg4);display:block;margin-bottom:3px}
+.panel-src p{font-size:13px;color:var(--fg);font-weight:560;word-break:break-word}
+.panel-body{flex:1;overflow:auto;padding:12px;min-height:120px;scrollbar-width:thin}
+.panel-foot{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid var(--border)}
+.mini{height:26px;padding:0 9px;border-radius:6px;border:1px solid var(--border);font-size:11.5px;color:var(--fg3)}
+.mini:hover{background:var(--muted);color:var(--fg)}
+.mini.pri{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:600;margin-left:auto}
+
+/* streamed result typography */
+.res-hw{font-size:14px;margin-bottom:8px;color:var(--fg)}
+.res-hw b{font-weight:660}
+.ipa{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--fg3)}
+.tag{display:inline-block;padding:1px 6px;border-radius:4px;background:var(--accent-dim);color:var(--accent-ink);font-size:10.5px;font-weight:600}
+.res{font-size:12.8px;line-height:1.62;color:var(--fg2);margin-bottom:7px}
+.res b{color:var(--fg);font-weight:600}
+.res.muted{color:var(--fg4);font-size:11.8px}
+.res-ex{border-left:2px solid var(--accent);padding-left:9px;margin:0 0 7px;font-size:12.2px;line-height:1.55;color:var(--fg3)}
+.res-ex .zh{color:var(--fg2)}
+.res-card{border:1px solid var(--border);border-radius:10px;padding:9px 11px;margin:0 0 8px;background:color-mix(in srgb,var(--muted) 55%,transparent)}
+.res-card h5{font-size:12.8px;margin-bottom:6px;color:var(--fg)}
+.res-card h5 span{font-weight:400;color:var(--fg3);font-size:11.5px}
+.res-card ul{margin:0;padding-left:14px}
+.res-card li{font-size:12px;line-height:1.55;color:var(--fg2);margin-bottom:4px}
+.res-card li b{color:var(--accent-ink);font-weight:600}
+.guide{border:1px dashed var(--border2);border-radius:10px;padding:9px 11px;background:var(--accent-dim)}
+.guide b.gt{display:block;font-size:11.5px;margin-bottom:6px;color:var(--fg)}
+.guide p{font-size:12px;line-height:1.7;color:var(--fg2)}
+.guide code{background:var(--elev);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:11.5px;color:var(--accent-ink)}
+.pending{display:none}
+.caret{display:inline-block;width:6px;height:13px;background:var(--accent);margin-left:1px;vertical-align:-2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ============================================================ PROOF BAR */
+.proof{border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--chrome)}
+.proof .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border)}
+.proof .cell{background:var(--chrome);padding:26px 20px;text-align:center}
+.proof .n{font-size:29px;font-weight:660;letter-spacing:-.035em;color:var(--fg)}
+.proof .n small{font-size:17px;color:var(--accent-ink)}
+.proof .l{font-size:12.5px;color:var(--fg3);margin-top:3px}
+
+/* ============================================================ PIPELINE */
+.pipe{position:relative;margin-top:56px}
+.pipe-track{position:absolute;top:112px;left:9%;right:9%;height:2px;background:var(--border)}
+.pipe-fill{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,var(--accent),var(--accent));box-shadow:0 0 14px var(--accent-glow)}
+.pipe-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:26px;position:relative}
+.pipe-step{text-align:center}
+.vign{
+  height:98px;border-radius:var(--r-card);border:1px solid var(--border);background:var(--surface);
+  display:grid;place-items:center;margin-bottom:18px;overflow:hidden;position:relative;
+  transition:border-color .4s var(--ease),background .4s;
+}
+.pipe-step.act .vign{border-color:var(--accent);background:color-mix(in srgb,var(--accent-dim) 60%,var(--surface))}
+.node{
+  width:26px;height:26px;border-radius:50%;margin:0 auto 14px;
+  background:var(--surface);border:2px solid var(--border);
+  display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--fg4);
+  position:relative;z-index:2;transition:.35s var(--spring);
+}
+.pipe-step.act .node{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);transform:scale(1.15)}
+.pipe-step h4{font-size:15.5px;margin-bottom:5px}
+.pipe-step p{font-size:13px;color:var(--fg3)}
+.pipe-note{
+  display:inline-flex;align-items:center;gap:7px;margin-top:30px;
+  font-size:12px;color:var(--fg3);border:1px dashed var(--border2);
+  border-radius:999px;padding:6px 14px;background:var(--muted);
+}
+/* vignette internals */
+.v-sel{font-size:14px;color:var(--fg2);position:relative;padding:2px 4px}
+.v-sel::after{content:"";position:absolute;inset:0;background:var(--accent-glow);border-radius:4px;transform-origin:left;transform:scaleX(0)}
+.pipe-step.act .v-sel::after{animation:wipe .5s var(--ease) .1s both}
+.v-keys{display:flex;gap:6px}
+.pipe-step.act .v-keys .kbd{animation:tap .5s var(--ease) both}
+.pipe-step.act .v-keys .kbd:nth-child(2){animation-delay:.09s}
+@keyframes tap{0%{transform:translateY(0)}35%{transform:translateY(3px);background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}100%{transform:translateY(0)}}
+.v-lines{width:78%;display:flex;flex-direction:column;gap:7px}
+.v-lines i{height:7px;border-radius:4px;background:var(--muted);display:block;position:relative;overflow:hidden}
+.v-lines i::after{content:"";position:absolute;inset:0;width:0;background:var(--fg4);border-radius:4px}
+.pipe-step.act .v-lines i::after{animation:fill .6s var(--ease) forwards}
+.pipe-step.act .v-lines i:nth-child(2)::after{animation-delay:.14s}
+.pipe-step.act .v-lines i:nth-child(3)::after{animation-delay:.28s}
+@keyframes fill{to{width:100%}}
+.pipe-step.act .v-lines i:nth-child(3)::after{background:var(--accent)}
+
+/* ============================================================ LENSES */
+.lens-card{overflow:hidden}
+.lens-src{padding:22px 24px;border-bottom:1px solid var(--border);background:var(--chrome)}
+.lens-src .lab{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg4);display:block;margin-bottom:7px}
+.lens-src p{font-size:17px;line-height:1.55;color:var(--fg)}
+.lens-tabs{position:relative;display:flex;gap:3px;padding:10px 12px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.lens-tabs::-webkit-scrollbar{display:none}
+.lens-tabs .armed{position:absolute;top:10px;height:32px;border-radius:8px;background:var(--accent);transition:transform .34s var(--spring),width .34s var(--spring)}
+.lens-tabs button{position:relative;z-index:1;height:32px;padding:0 13px;border-radius:8px;font-size:13px;font-weight:550;color:var(--fg3);white-space:nowrap;display:flex;align-items:center;gap:6px;transition:color .2s}
+.lens-tabs button.act{color:var(--accent-fg)}
+.lens-tabs button svg{width:13px;height:13px}
+.lens-out{padding:22px 24px;min-height:190px}
+.lens-out.swap{animation:swapout .14s var(--ease) both}
+@keyframes swapout{to{opacity:0;transform:translateY(6px);filter:blur(3px)}}
+.lens-hint{display:flex;align-items:center;gap:10px;padding:11px 24px;border-top:1px solid var(--border);font-size:12px;color:var(--fg4);background:var(--chrome)}
+
+/* ============================================================ SYNONYM SPOTLIGHT */
+.syn-wrap{display:grid;grid-template-columns:minmax(0,.82fr) minmax(0,1.18fr);gap:52px;align-items:center}
+.syn-stage{position:relative}
+.syn-head{
+  background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);
+  border-radius:var(--r-card);padding:18px 20px;box-shadow:var(--shadow);position:relative;z-index:3;
+}
+.syn-head .hw{font-size:23px;font-weight:660;letter-spacing:-.03em}
+.syn-head .meta{font-size:12.5px;color:var(--fg3);margin-top:4px}
+.syn-head .nuance{font-size:14px;color:var(--fg2);margin-top:10px;line-height:1.55}
+.fan{margin-top:14px;display:grid;gap:12px}
+.fan .f{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);
+  padding:15px 18px;box-shadow:var(--shadow);
+  opacity:0;transform:translateY(-22px) rotate(var(--rot,0deg)) scale(.97);
+}
+.syn-stage.in .fan .f{opacity:1;transform:translateY(0) rotate(var(--rot,0deg));transition:opacity .5s var(--ease),transform .6s var(--spring)}
+.syn-stage.in .fan .f:nth-child(1){transition-delay:.1s}
+.syn-stage.in .fan .f:nth-child(2){transition-delay:.19s}
+.syn-stage.in .fan .f:nth-child(3){transition-delay:.28s}
+.fan .f:nth-child(1){--rot:-1.1deg}.fan .f:nth-child(2){--rot:.7deg}.fan .f:nth-child(3){--rot:-.5deg}
+.fan .f:hover{transform:translateY(-3px) rotate(0deg) !important;border-color:var(--border2);box-shadow:var(--shadow-lg);z-index:4;position:relative}
+.fan h5{font-size:15px;margin-bottom:9px}
+.fan h5 span{font-weight:400;color:var(--fg3);font-size:12.5px}
+.fan .row{display:flex;gap:9px;font-size:12.8px;line-height:1.55;color:var(--fg2);margin-bottom:6px}
+.fan .row b{color:var(--accent-ink);font-weight:600;flex:none;min-width:52px}
+.guide-big{margin-top:14px;border:1px dashed var(--border2);border-radius:var(--r-card);padding:16px 18px;background:var(--accent-dim)}
+.guide-big .gt{font-size:13px;font-weight:640;margin-bottom:9px}
+.guide-big .g{display:flex;align-items:center;gap:9px;font-size:13.2px;color:var(--fg2);padding:4px 0;line-height:1.5}
+.guide-big .g .arw{transition:transform .2s var(--ease),color .2s;color:var(--fg4)}
+.guide-big .g:hover .arw{transform:translateX(6px);color:var(--accent-ink)}
+.guide-big code{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:2px 7px;font-size:12.5px;color:var(--accent-ink);font-weight:600}
+.langswitch{display:inline-flex;gap:3px;padding:3px;border-radius:9px;background:var(--muted);border:1px solid var(--border);margin-top:22px}
+.langswitch button{height:29px;padding:0 13px;border-radius:6px;font-size:12.5px;color:var(--fg3);transition:.18s}
+.langswitch button.act{background:var(--surface);color:var(--fg);box-shadow:var(--shadow);font-weight:560}
+
+/* ============================================================ CONTEXT SPLIT */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.ctx{padding:20px 22px}
+.ctx .src{font-size:14.5px;line-height:1.75;color:var(--fg3)}
+.ctx .src mark{
+  background:none;color:var(--fg);font-weight:640;position:relative;padding:1px 3px;border-radius:4px;
+}
+.ctx .src mark::before{
+  content:"";position:absolute;inset:-2px -4px;border-radius:5px;background:var(--accent-glow);z-index:-1;
+}
+.ctx.in .src mark::after{
+  content:"";position:absolute;inset:-2px -4px;border-radius:5px;border:1px solid var(--accent);
+  animation:halo 2.1s var(--ease) infinite;
+}
+@keyframes halo{0%{transform:scale(1);opacity:.9}70%{transform:scale(1.85);opacity:0}100%{opacity:0}}
+.ctx .arrowdown{display:flex;align-items:center;gap:9px;margin:16px 0 12px;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--fg4)}
+.ctx .arrowdown::after{content:"";flex:1;height:1px;background:var(--border)}
+.ctx .out{border:1px solid var(--border);border-radius:10px;padding:13px 15px;background:var(--chrome);min-height:92px}
+.ctx-caption{text-align:center;margin-top:26px;font-size:14px;color:var(--fg3)}
+.ctx-caption b{color:var(--fg)}
+
+/* ============================================================ BENTO */
+.bento{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.tile{
+  padding:22px;position:relative;overflow:hidden;min-height:186px;
+  display:flex;flex-direction:column;justify-content:flex-end;
+  transition:border-color .25s var(--ease),transform .25s var(--ease),box-shadow .25s;
+}
+.tile:hover{border-color:var(--border2);transform:translateY(-2px);box-shadow:var(--shadow)}
+.tile.big{grid-column:span 2}
+.tile h4{font-size:16px;margin-bottom:5px}
+.tile .t-sub{font-size:12.8px;color:var(--fg3);display:flex;align-items:center;gap:8px}
+.tile .viz{position:absolute;inset:16px 16px auto;height:86px;pointer-events:none}
+/* OCR */
+.ocr-box{position:absolute;inset:8px 22px 10px;border:1.5px dashed var(--accent);border-radius:8px;opacity:0;background:var(--accent-dim)}
+.tile:hover .ocr-box,.tile.in .ocr-box{animation:ocrdraw 2.6s var(--ease) infinite}
+@keyframes ocrdraw{0%{opacity:0;transform:scale(.9)}18%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}}
+.ocr-scan{position:absolute;left:22px;right:22px;height:2px;background:var(--accent);box-shadow:0 0 12px var(--accent);opacity:0;top:8px}
+.tile:hover .ocr-scan,.tile.in .ocr-scan{animation:scan 2.6s var(--ease) infinite}
+@keyframes scan{0%,15%{opacity:0;top:10px}25%{opacity:1}70%{opacity:1;top:74px}100%{opacity:0;top:74px}}
+.ocr-glyphs{position:absolute;left:30px;top:22px;display:flex;flex-direction:column;gap:7px}
+.ocr-glyphs i{height:7px;border-radius:3px;background:var(--fg4);display:block;opacity:.45}
+.ocr-glyphs i:nth-child(1){width:104px}.ocr-glyphs i:nth-child(2){width:78px}.ocr-glyphs i:nth-child(3){width:92px}
+.tile:hover .ocr-glyphs i,.tile.in .ocr-glyphs i{animation:lift 2.6s var(--ease) infinite}
+.tile.in .ocr-glyphs i:nth-child(2){animation-delay:.1s}.tile.in .ocr-glyphs i:nth-child(3){animation-delay:.2s}
+@keyframes lift{0%,45%{opacity:.45;background:var(--fg4);transform:none}65%,92%{opacity:1;background:var(--accent);transform:translateY(-3px)}100%{opacity:.45;background:var(--fg4);transform:none}}
+/* replace-in-place */
+.rp-field{position:absolute;inset:14px 22px auto;height:60px;border:1px solid var(--border2);border-radius:8px;background:var(--muted);padding:9px 11px;font-size:12.5px;color:var(--fg3);line-height:1.5;overflow:hidden}
+.rp-field .cur{display:inline-block;width:1.5px;height:12px;background:var(--accent);vertical-align:-2px;animation:blink 1s steps(1) infinite}
+/* waveform */
+.wave{position:absolute;left:22px;top:26px;display:flex;align-items:flex-end;gap:5px;height:48px}
+.wave i{width:5px;border-radius:3px;background:var(--border2);height:9px;display:block}
+.tile:hover .wave i,.tile.in .wave i{background:var(--accent);animation:eq .9s ease-in-out infinite alternate}
+.tile.in .wave i:nth-child(2){animation-delay:.1s}.tile.in .wave i:nth-child(3){animation-delay:.2s}
+.tile.in .wave i:nth-child(4){animation-delay:.3s}.tile.in .wave i:nth-child(5){animation-delay:.15s}
+@keyframes eq{from{height:9px}to{height:42px}}
+/* vocab */
+.vocab{position:absolute;left:22px;top:22px;display:flex;flex-direction:column;gap:6px}
+.vocab .vc{padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:var(--muted);font-size:11.5px;color:var(--fg3)}
+.tile:hover .vocab .vc:first-child,.tile.in .vocab .vc:first-child{animation:fly 2.4s var(--ease) infinite;border-color:var(--accent);color:var(--accent-ink)}
+@keyframes fly{0%{transform:translate(38px,-14px) scale(1.04);opacity:0}25%{transform:none;opacity:1}100%{transform:none;opacity:1}}
+/* history */
+.hist{position:absolute;left:22px;right:22px;top:20px;display:flex;flex-direction:column;gap:6px}
+.hist .hr{height:15px;border-radius:5px;background:var(--muted);border:1px solid var(--border)}
+.tile:hover .hist .hr,.tile.in .hist .hr{animation:cascade .5s var(--ease) both}
+.tile.in .hist .hr:nth-child(2){animation-delay:.07s}.tile.in .hist .hr:nth-child(3){animation-delay:.14s}
+.tile.in .hist .hr:nth-child(4){animation-delay:.21s}
+@keyframes cascade{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+/* menubar */
+.mbar{position:absolute;left:22px;right:22px;top:18px}
+.mbar .strip{height:16px;border-radius:5px;background:var(--muted);border:1px solid var(--border);display:flex;align-items:center;justify-content:flex-end;padding:0 6px;gap:5px}
+.mbar .strip i{width:8px;height:8px;border-radius:2px;background:var(--border2);display:block}
+.mbar .strip i.on{background:var(--accent)}
+.mbar .drop{margin:5px 0 0 auto;width:74px;border-radius:7px;border:1px solid var(--border);background:var(--surface);padding:5px;transform-origin:top right;transform:scaleY(.4);opacity:0}
+.tile:hover .mbar .drop,.tile.in .mbar .drop{animation:unfurl 2.4s var(--ease) infinite}
+@keyframes unfurl{0%{transform:scaleY(.4);opacity:0}20%,80%{transform:scaleY(1);opacity:1}100%{transform:scaleY(.4);opacity:0}}
+.mbar .drop i{display:block;height:5px;border-radius:3px;background:var(--muted);margin-bottom:4px}
+.mbar .drop i:last-child{margin:0;width:60%}
+
+/* ============================================================ PROVIDERS */
+.prov-wrap{display:grid;grid-template-columns:minmax(0,1fr) 344px;gap:44px;align-items:center}
+.rail{overflow:hidden;position:relative;padding:10px 0;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+.rail-track{display:flex;gap:10px;width:max-content;animation:marq 42s linear infinite}
+.rail:hover .rail-track{animation-play-state:paused}
+@keyframes marq{to{transform:translateX(-50%)}}
+.pchip{
+  display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 16px;border-radius:999px;
+  border:1px solid var(--border);background:var(--surface);color:var(--fg3);
+  font-size:13.5px;white-space:nowrap;transition:.2s var(--ease);
+}
+.pchip:hover{border-color:var(--border2);color:var(--fg)}
+.pchip.act{border-color:var(--accent);color:var(--fg);background:var(--accent-dim)}
+.pchip .d{width:6px;height:6px;border-radius:50%;background:var(--fg4)}
+.pchip.act .d{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.prov-panel{padding:20px}
+.prov-panel .row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border);font-size:13px}
+.prov-panel .row:last-child{border:0}
+.prov-panel .row span:first-child{color:var(--fg3)}
+.prov-panel .row b{font-weight:560}
+.netviz{display:flex;align-items:center;gap:10px;padding:16px 0 6px}
+.netviz .nd{flex:none;width:46px;height:46px;border-radius:12px;border:1px solid var(--border2);background:var(--muted);display:grid;place-items:center;font-size:18px}
+.netviz .link{flex:1;height:2px;background:var(--border2);position:relative;border-radius:2px}
+.netviz .link::after{content:"";position:absolute;top:-2px;width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);animation:pkt 1.9s linear infinite}
+@keyframes pkt{from{left:-3px}to{left:calc(100% - 3px)}}
+.offline .netviz .link{background:repeating-linear-gradient(90deg,var(--border2) 0 5px,transparent 5px 10px)}
+.offline .netviz .link::after{display:none}
+.offline .netviz .nd.cloud{opacity:.32;filter:grayscale(1)}
+.offbadge{
+  display:none;align-items:center;gap:7px;margin-top:6px;
+  font-size:12px;font-weight:600;color:var(--accent-ink);
+  border:1px solid var(--accent);background:var(--accent-dim);
+  border-radius:999px;padding:5px 12px;width:max-content;
+}
+.offline .offbadge{display:inline-flex;animation:stamp .35s var(--spring) both}
+@keyframes stamp{from{transform:scale(1.3);opacity:0}to{transform:none;opacity:1}}
+
+/* ============================================================ PRIVACY */
+.privacy-diagram{padding:34px 30px;text-align:center}
+.pd-flow{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap}
+.pd-node{
+  min-width:172px;padding:16px 20px;border-radius:var(--r-card);
+  border:1px solid var(--border2);background:var(--surface);
+}
+.pd-node .ic{font-size:22px;margin-bottom:6px}
+.pd-node .t{font-size:14px;font-weight:600}
+.pd-node .s{font-size:11.5px;color:var(--fg3);margin-top:2px}
+.pd-line{position:relative;height:2px;flex:1;min-width:110px;max-width:210px;background:var(--border2)}
+.pd-line::after{content:"";position:absolute;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);animation:pkt 2.2s linear infinite}
+.pd-label{position:absolute;top:-24px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--fg4);white-space:nowrap}
+.pd-ghost{
+  margin:26px auto 0;max-width:250px;padding:13px 18px;border-radius:var(--r-card);
+  border:1px dashed var(--border2);color:var(--fg4);position:relative;font-size:13.5px;
+}
+.pd-ghost::after{
+  content:"";position:absolute;left:14%;right:14%;top:50%;height:1.5px;background:#DC2626;
+  transform:scaleX(0);transform-origin:left;
+}
+.privacy-diagram.in .pd-ghost::after{animation:strike .5s var(--ease) .3s forwards}
+@keyframes strike{to{transform:scaleX(1)}}
+.pd-drop{font-size:11px;color:var(--fg4);margin-top:6px}
+.priv-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:20px}
+.priv-card{padding:17px 19px;display:flex;gap:13px;align-items:flex-start;transition:border-color .2s}
+.priv-card:hover{border-color:var(--border2)}
+.priv-card .ic{font-size:17px;line-height:1.2;flex:none}
+.priv-card h4{font-size:14px;margin-bottom:4px}
+.priv-card p{font-size:12.8px;color:var(--fg3);line-height:1.55}
+.priv-card .reveal{
+  display:inline-block;margin-top:7px;font-family:ui-monospace,Menlo,monospace;font-size:11px;
+  color:var(--accent-ink);background:var(--accent-dim);border:1px solid var(--border);
+  border-radius:5px;padding:2px 7px;opacity:0;transform:translateY(-3px);transition:.25s var(--ease);
+}
+.priv-card:hover .reveal{opacity:1;transform:none}
+
+/* ============================================================ NATIVE */
+.native{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;align-items:center}
+.bars{display:flex;flex-direction:column;gap:20px}
+.bar-row .bl{display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px}
+.bar-row .bl b{font-weight:560}
+.bar-row .bl span{color:var(--fg4);font-size:12px}
+.bar{height:14px;border-radius:7px;background:var(--muted);overflow:hidden;position:relative}
+.bar i{display:block;height:100%;border-radius:7px;width:0;transition:width 1s var(--ease)}
+.bars.in .bar i{width:var(--w)}
+.bar.lime i{background:var(--accent)}
+.bar.grey i{background:repeating-linear-gradient(45deg,var(--border2) 0 7px,var(--muted-hover) 7px 14px)}
+.stack-list{display:grid;gap:10px;margin-top:6px}
+.stack-list .sl{display:flex;align-items:center;gap:11px;font-size:14px;color:var(--fg2);padding:11px 15px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.stack-list .sl .x{color:var(--accent-ink);font-weight:700}
+
+/* ============================================================ CUSTOM ACTIONS */
+.tmpl{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.tmpl-edit{padding:22px 24px;border-right:1px solid var(--border)}
+.tmpl-prev{padding:22px 24px;background:var(--chrome)}
+.tmpl .lab{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg4);margin-bottom:11px;display:block}
+.tmpl-body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.85;color:var(--fg2)}
+.vchip{
+  display:inline-block;padding:1px 7px;border-radius:6px;cursor:default;
+  background:var(--accent-dim);border:1px solid var(--accent);color:var(--accent-ink);
+  font-size:12.5px;transition:background .2s var(--ease),color .2s;
+}
+.vchip:hover{background:var(--accent);color:var(--accent-fg)}
+.vchip .resolved{display:none}
+.vchip.res .raw{display:none}
+.vchip.res .resolved{display:inline}
+.tmpl-out{font-size:13.5px;line-height:1.65;color:var(--fg2)}
+.preset-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.preset{height:30px;padding:0 13px;border-radius:8px;border:1px solid var(--border);font-size:12.5px;color:var(--fg3);transition:.18s}
+.preset:hover{border-color:var(--border2);color:var(--fg)}
+.preset.act{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:560}
+
+/* ============================================================ SHORTCUTS */
+.keys-wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:44px;align-items:center}
+.kbd-map{padding:22px;display:grid;gap:8px}
+.kbd-row{display:flex;gap:7px;justify-content:center}
+.key{
+  height:38px;min-width:38px;padding:0 11px;border-radius:8px;
+  background:var(--muted);border:1px solid var(--border);border-bottom-width:2px;
+  display:grid;place-items:center;font-size:12px;color:var(--fg4);
+  transition:.14s var(--ease);
+}
+.key.wide{min-width:80px}.key.xwide{min-width:132px}
+.key.lit{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);transform:translateY(2px);border-bottom-width:1px;box-shadow:0 0 20px var(--accent-glow)}
+.sc-list{display:grid;gap:2px}
+.sc{display:flex;align-items:center;gap:14px;padding:13px 14px;border-radius:10px;transition:background .18s;cursor:default}
+.sc:hover{background:var(--muted)}
+.sc .combo{display:flex;gap:5px;flex:none;min-width:118px}
+.sc .txt{font-size:14px;color:var(--fg2)}
+.sc:hover .txt{color:var(--fg)}
+
+/* ============================================================ OSS + FAQ */
+.oss{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:44px;align-items:center}
+.term{background:#0A0A0C;border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden}
+.term-bar{display:flex;align-items:center;gap:7px;padding:10px 13px;border-bottom:1px solid var(--border);background:#0E0E11}
+.term-body{padding:16px 18px;font-family:ui-monospace,Menlo,monospace;font-size:12.8px;line-height:1.5}
+.tline{display:flex;align-items:center;gap:9px;padding:5px 0;color:#D4D4D8}
+.tline .p{color:var(--accent);flex:none}
+.tline .c{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tline .cp{opacity:0;font-size:11px;color:#8A8A93;border:1px solid #27272A;border-radius:5px;padding:2px 7px;transition:.18s;flex:none}
+.tline:hover .cp{opacity:1}
+.tline .cp:hover{color:#FAFAFA;border-color:#3F3F46}
+.tline .cp.done{color:var(--accent);border-color:var(--accent);opacity:1}
+.badges{display:flex;gap:9px;flex-wrap:wrap;margin-top:20px}
+
+.faq{max-width:760px;margin:0 auto}
+.q{border-bottom:1px solid var(--border)}
+.q summary{
+  list-style:none;cursor:pointer;padding:19px 2px;display:flex;align-items:center;gap:14px;
+  font-size:16px;font-weight:550;transition:color .18s;
+}
+.q summary::-webkit-details-marker{display:none}
+.q summary:hover{color:var(--accent-ink)}
+.q .chev{margin-left:auto;color:var(--fg4);transition:transform .28s var(--spring);flex:none}
+.q[open] .chev{transform:rotate(90deg);color:var(--accent-ink)}
+.q .a{padding:0 2px 20px 0;font-size:14.5px;line-height:1.62;color:var(--fg3);max-width:64ch;animation:qopen .3s var(--ease)}
+@keyframes qopen{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.q .a code{background:var(--muted);border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:12.8px}
+
+/* ============================================================ FINAL + FOOTER */
+.final{text-align:center;padding:112px 0 96px;position:relative;overflow:hidden}
+.final::before{
+  content:"";position:absolute;bottom:-320px;left:50%;transform:translateX(-50%);
+  width:860px;height:620px;background:radial-gradient(closest-side,var(--accent-dim),transparent 70%);
+}
+.final img{width:74px;height:74px;border-radius:19px;margin:0 auto 26px;box-shadow:var(--shadow-lg);animation:breathe 4.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.028)}}
+.final h2{font-size:clamp(32px,4.6vw,50px);margin-bottom:14px}
+.final .sub{margin:0 auto 30px;text-align:center}
+footer{border-top:1px solid var(--border);padding:30px 0}
+.foot{display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--fg4)}
+.foot a:hover{color:var(--fg2)}
+.foot .sp{flex:1}
+
+/* ============================================================ RESPONSIVE */
+@media (max-width:1000px){
+  .hero-grid,.syn-wrap,.prov-wrap,.native,.keys-wrap,.oss{grid-template-columns:1fr;gap:40px}
+  .split,.priv-grid,.tmpl{grid-template-columns:1fr}
+  .tmpl-edit{border-right:0;border-bottom:1px solid var(--border)}
+  .bento{grid-template-columns:repeat(2,1fr)}
+  .nav-links{display:none}
+  .sec{padding:76px 0}
+  .hero{padding:104px 0 60px}
+}
+@media (max-width:820px){
+  .panel{position:static !important;width:auto;max-height:none;margin:0;border-radius:0;border-width:1px 0 0;box-shadow:none;backdrop-filter:none}
+  .panel.on{transform:none}
+  .mock{min-height:0}
+  .ghost-cursor,.keyhint{display:none}
+  .proof .wrap{grid-template-columns:repeat(2,1fr)}
+  .pipe-track{display:none}
+  .pipe-grid{grid-template-columns:1fr;gap:14px}
+  .pipe-step{display:grid;grid-template-columns:70px 1fr;gap:16px;align-items:center;text-align:left;
+    border:1px solid var(--border);border-radius:var(--r-card);padding:14px;background:var(--surface)}
+  .vign{height:62px;margin:0}
+  .node{margin:0 0 6px}
+  .pipe-step > div:last-child{grid-column:2}
+  .bento{grid-template-columns:1fr}
+  .tile.big{grid-column:span 1}
+  .sec{padding:60px 0}
+  .wrap{padding:0 18px}
+  /* the key map is hover-driven and wider than a phone; the list says the same thing */
+  .kbd-map{display:none}
+  .sc{gap:10px;padding:12px 10px}
+  .sc .combo{min-width:0}
+  .lens-src p{font-size:15px}
+  .syn-head .hw{font-size:20px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
+  .rv{opacity:1;transform:none}
+  h1.h1 .w{opacity:1;transform:none}
+  .fan .f{opacity:1;transform:none}
+  .bars.in .bar i{width:var(--w)}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ NAV ═══════════════════════════ -->
+<nav class="nav" id="nav">
+  <div class="wrap">
+    <a href="#top" class="brand"><img src="assets/logo.png" alt=""> PhraseLens</a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#providers">Providers</a>
+      <a href="#privacy">Privacy</a>
+    </div>
+    <div class="nav-sp"></div>
+    <button class="icon-btn" id="themeBtn" aria-label="Toggle color theme" title="Toggle theme">
+      <svg class="ico-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="ico-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <a class="icon-btn" href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener" aria-label="View source on GitHub" title="GitHub">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+    </a>
+    <a class="btn btn-primary btn-sm" href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">Download</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════ HERO ═══════════════════════════ -->
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow">Native macOS · Bring your own key · Open source</div>
+      <h1 class="h1" id="h1">Understand any text, right where you find it.</h1>
+      <p class="hero-sub">
+        Select a word in any app. Press <kbd id="kAlt">⌥</kbd><kbd id="kF">F</kbd>. Get the meaning,
+        the nuance, and the translation — without leaving what you're reading.
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.5c-.02-2.27 1.85-3.36 1.93-3.41-1.05-1.54-2.69-1.75-3.27-1.77-1.39-.14-2.72.82-3.43.82-.71 0-1.8-.8-2.96-.78-1.52.02-2.92.88-3.7 2.24-1.58 2.73-.4 6.78 1.13 9 .75 1.08 1.64 2.3 2.81 2.25 1.13-.05 1.55-.73 2.92-.73 1.36 0 1.75.73 2.94.71 1.21-.02 1.98-1.1 2.72-2.19.86-1.25 1.21-2.47 1.23-2.53-.03-.01-2.36-.91-2.38-3.61zM14.8 5.6c.62-.76 1.04-1.8.93-2.85-.9.04-1.98.6-2.62 1.35-.58.67-1.08 1.74-.95 2.76 1 .08 2.02-.51 2.64-1.26z"/></svg>
+          Download for macOS
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener">View source</a>
+      </div>
+      <div class="hero-meta">macOS 14+ · Apple Silicon &amp; Intel · Free and open source (AGPL-3.0)</div>
+      <div class="hero-pills">
+        <span class="pillchip">No account</span>
+        <span class="pillchip">No telemetry</span>
+        <span class="pillchip">No Electron</span>
+      </div>
+    </div>
+
+    <!-- ── THE LIVE SELECTION PLAYGROUND ── -->
+    <div class="stage">
+      <div class="mock" id="mock">
+        <div class="mock-bar">
+          <div class="lights"><i></i><i></i><i></i></div>
+          <div class="urlbar">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            example.com/the-committee-statement
+          </div>
+        </div>
+
+        <div class="article" id="article">
+          <div class="kicker">Longform · 6 min read</div>
+          <h3>The committee that said nothing, carefully</h3>
+          <p>
+            The statement was deliberately <span class="w" data-w="ambiguous">ambiguous</span>. Its authors were
+            <span class="w" data-w="candid">candid</span> about that in private: vague wording kept every option
+            open, and made the group <span class="w" data-w="resilient">resilient</span> to criticism it could not
+            yet answer. Detractors called it <span class="w" data-w="obfuscation">obfuscation</span>. Either way the
+            <span class="w" data-w="bank">bank</span> approved the transfer on Friday, and the team
+            <span class="w" data-w="shipped">shipped</span>.
+          </p>
+        </div>
+
+        <div class="ghost-cursor" id="ghost">
+          <svg width="15" height="22" viewBox="0 0 15 22" fill="#FAFAFA" stroke="#09090B" stroke-width="1"><path d="M1 1l12.5 12.5H7.8l-2.2 6.3L1 1z"/></svg>
+        </div>
+
+        <div class="keyhint" id="keyhint"><span class="kbd" id="hk1">⌥</span><span class="kbd" id="hk2">F</span></div>
+
+        <div class="hint-chip" id="hintChip">Select any word above — or press <b>⌥F</b></div>
+
+        <!-- the floating panel -->
+        <div class="panel" id="panel" role="dialog" aria-label="PhraseLens selection panel">
+          <div class="panel-head">
+            <img class="mk" src="assets/logo.png" alt="">
+            <span class="panel-title">PhraseLens</span>
+            <span class="langpair">EN
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              简体中文</span>
+            <button class="panel-x" id="panelX" aria-label="Close">✕</button>
+          </div>
+          <div class="panel-tabs" id="panelTabs" role="tablist">
+            <span class="armed" id="panelArmed"></span>
+            <button data-tab="translate" class="act">Translate</button>
+            <button data-tab="context">In Context</button>
+            <button data-tab="synonyms">Synonyms</button>
+            <button data-tab="analyze">Analyze</button>
+          </div>
+          <div class="panel-src">
+            <span class="lab">Selection</span>
+            <p id="panelSrc">ambiguous</p>
+          </div>
+          <div class="panel-body" id="panelBody"></div>
+          <div class="panel-foot">
+            <button class="mini" aria-label="Speak">🔊</button>
+            <button class="mini" aria-label="Save to vocabulary">★ Save</button>
+            <button class="mini pri">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════ PROOF BAR ═══════════════════════════ -->
+<section class="proof">
+  <div class="wrap">
+    <div class="cell"><div class="n" data-count="21">0</div><div class="l">languages</div></div>
+    <div class="cell"><div class="n" data-count="12">0</div><div class="l">AI providers</div></div>
+    <div class="cell"><div class="n" data-count="7">0</div><div class="l">built-in actions</div></div>
+    <div class="cell"><div class="n" data-count="0">0</div><div class="l">servers of ours</div></div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ PIPELINE ═══════════════════════════ -->
+<section class="sec" id="how">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">How it works</div>
+      <h2 class="h">Three keystrokes from confusion to clarity.</h2>
+      <p class="sub">No copying. No tab-switching. No losing your place.</p>
+    </div>
+
+    <div class="pipe" id="pipe">
+      <div class="pipe-track"><div class="pipe-fill" id="pipeFill"></div></div>
+      <div class="pipe-grid">
+        <div class="pipe-step" data-step="0">
+          <div class="vign"><span class="v-sel">obfuscation</span></div>
+          <div class="node">1</div>
+          <div><h4>Select</h4><p>Any text, in any macOS app.</p></div>
+        </div>
+        <div class="pipe-step" data-step="1">
+          <div class="vign"><div class="v-keys"><span class="kbd">⌥</span><span class="kbd">F</span></div></div>
+          <div class="node">2</div>
+          <div><h4>Press ⌥F</h4><p>A panel opens right at your cursor.</p></div>
+        </div>
+        <div class="pipe-step" data-step="2">
+          <div class="vign"><div class="v-lines"><i></i><i></i><i></i></div></div>
+          <div class="node">3</div>
+          <div><h4>Read</h4><p>The answer streams in, word by word.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:center">
+      <span class="pipe-note rv">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v5M12 16h.01"/><circle cx="12" cy="12" r="9"/></svg>
+        Step 2 also captures up to 1,600 characters around your selection — that's how it knows what you meant.
+      </span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ SEVEN LENSES ═══════════════════════════ -->
+<section class="sec" id="features" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">One selection, seven lenses</div>
+      <h2 class="h">The same sentence, seven ways.</h2>
+      <p class="sub">Switch with <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd>. Your selection stays put.</p>
+    </div>
+
+    <div class="card lens-card rv" id="lensCard">
+      <div class="lens-src">
+        <span class="lab">Source</span>
+        <p>Given the constraints we're operating under, it would probably be best if we circled back on this next week.</p>
+      </div>
+      <div class="lens-tabs" id="lensTabs" role="tablist">
+        <span class="armed" id="lensArmed"></span>
+        <button data-l="translate" class="act">Translate</button>
+        <button data-l="polish">Polish</button>
+        <button data-l="summarize">Summarize</button>
+        <button data-l="analyze">Analyze</button>
+        <button data-l="context">In Context</button>
+        <button data-l="code">Explain Code</button>
+        <button data-l="synonyms">Compare Synonyms</button>
+      </div>
+      <div class="lens-out" id="lensOut"></div>
+      <div class="lens-hint">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+        Try pressing <kbd>⌘</kbd><kbd>1</kbd> – <kbd>⌘</kbd><kbd>7</kbd> right now — the same keys work in the app.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ COMPARE SYNONYMS ═══════════════════════════ -->
+<section class="sec" style="padding-top:0">
+  <div class="wrap syn-wrap">
+    <div class="rv">
+      <div class="eyebrow">Compare Synonyms</div>
+      <h2 class="h">Stop guessing which word is right.</h2>
+      <p class="sub">
+        Pick a word. See the two or three it gets confused with — what each one uniquely emphasizes,
+        when to reach for it, and how natives actually collocate it.
+      </p>
+      <div class="langswitch" id="langSwitch" role="tablist">
+        <button data-lang="zh" class="act">EN → 简体中文</button>
+        <button data-lang="ja">EN → 日本語</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--fg4);margin-top:14px">
+        Not a thesaurus dump. A decision.
+      </p>
+    </div>
+
+    <div class="syn-stage rv" id="synStage">
+      <div class="syn-head">
+        <div class="hw">resilient <span style="font-size:13px;color:var(--fg3);font-weight:400">/rɪˈzɪliənt/ adj.</span></div>
+        <div class="meta" id="synMeta">有韧性的 · 中性偏褒 · 书面与口语皆可</div>
+        <div class="nuance" id="synNuance">核心不是「不受伤」，而是<b>受挫之后能弹回来</b>。重点落在恢复力，不在硬度。</div>
+      </div>
+      <div class="fan" id="synFan"></div>
+      <div class="guide-big" id="synGuide"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ CONTEXT SPLIT ═══════════════════════════ -->
+<section class="sec" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head rv" style="max-width:700px">
+      <div class="eyebrow">Context-aware</div>
+      <h2 class="h">It knows which “bank” you meant.</h2>
+      <p class="sub">PhraseLens reads the text around your selection — so the ambiguity resolves itself, before you ask.</p>
+    </div>
+    <div class="split">
+      <div class="card ctx rv" data-ctx>
+        <p class="src">…she sat on the grassy <mark>bank</mark> and watched the river slide past the mill.</p>
+        <div class="arrowdown">Result</div>
+        <div class="out" data-out="river"></div>
+      </div>
+      <div class="card ctx rv d2" data-ctx>
+        <p class="src">…the <mark>bank</mark> declined the transfer twice before anyone thought to call.</p>
+        <div class="arrowdown">Result</div>
+        <div class="out" data-out="money"></div>
+      </div>
+    </div>
+    <p class="ctx-caption rv">Same word. Same shortcut. <b>Different answer.</b></p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ BENTO ═══════════════════════════ -->
+<section class="sec" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Everything else it does</div>
+      <h2 class="h">Built for how you actually read and write.</h2>
+    </div>
+    <div class="bento">
+      <div class="card tile big rv" data-viz>
+        <div class="viz">
+          <div class="ocr-glyphs"><i></i><i></i><i></i></div>
+          <div class="ocr-box"></div><div class="ocr-scan"></div>
+        </div>
+        <h4>Snip it. Read it.</h4>
+        <div class="t-sub">Screenshot OCR via Apple Vision <span class="kbd">⌥</span><span class="kbd">S</span></div>
+      </div>
+
+      <div class="card tile big rv d1" data-viz>
+        <div class="viz">
+          <div class="rp-field" id="rpField">we should probably maybe try to fix this thing<span class="cur"></span></div>
+        </div>
+        <h4>Rewrite in place.</h4>
+        <div class="t-sub">Translate or polish inside any text field <span class="kbd">⌥</span><span class="kbd">W</span></div>
+      </div>
+
+      <div class="card tile rv" data-viz>
+        <div class="viz"><div class="wave"><i></i><i></i><i></i><i></i><i></i></div></div>
+        <h4>Hear it spoken.</h4>
+        <div class="t-sub">Edge Neural or macOS voices</div>
+      </div>
+
+      <div class="card tile rv d1" data-viz>
+        <div class="viz"><div class="vocab">
+          <span class="vc">resilient</span><span class="vc">obfuscation</span>
+        </div></div>
+        <h4>Keep the word.</h4>
+        <div class="t-sub">Vocabulary collection, searchable</div>
+      </div>
+
+      <div class="card tile rv d2" data-viz>
+        <div class="viz"><div class="hist"><div class="hr"></div><div class="hr"></div><div class="hr"></div><div class="hr"></div></div></div>
+        <h4>Every lookup, kept.</h4>
+        <div class="t-sub">Local history with search &amp; favorites</div>
+      </div>
+
+      <div class="card tile rv d3" data-viz>
+        <div class="viz"><div class="mbar">
+          <div class="strip"><i></i><i class="on"></i><i></i></div>
+          <div class="drop"><i></i><i></i><i></i></div>
+        </div></div>
+        <h4>Always one key away.</h4>
+        <div class="t-sub">Menu bar, global hotkeys, launch at login</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ PROVIDERS ═══════════════════════════ -->
+<section class="sec" id="providers" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Providers</div>
+      <h2 class="h">Your key. Your model. Your call.</h2>
+      <p class="sub">Twelve providers, any OpenAI-compatible endpoint, or fully offline with Ollama. Switch whenever the bill or the mood changes.</p>
+    </div>
+    <div class="rail rv" id="rail"><div class="rail-track" id="railTrack"></div></div>
+    <div class="prov-wrap" style="margin-top:34px">
+      <div class="rv">
+        <div class="stack-list">
+          <div class="sl"><span class="x">→</span> Keys stay in the macOS Keychain, never in a config file</div>
+          <div class="sl"><span class="x">→</span> Streaming responses decoded per-provider, so it feels live everywhere</div>
+          <div class="sl"><span class="x">→</span> Point it at any <code style="font-size:12.5px">/v1/chat/completions</code> endpoint you run yourself</div>
+        </div>
+      </div>
+      <div class="card prov-panel rv d2" id="provPanel">
+        <div class="netviz">
+          <div class="nd">💻</div>
+          <div class="link"></div>
+          <div class="nd cloud" id="provIcon">☁️</div>
+        </div>
+        <span class="offbadge">✈️ Airplane-safe · nothing leaves this Mac</span>
+        <div style="margin-top:10px">
+          <div class="row"><span>Provider</span><b id="pvName">OpenAI</b></div>
+          <div class="row"><span>Model</span><b id="pvModel">gpt-4o-mini</b></div>
+          <div class="row"><span>Type</span><b id="pvType">Cloud · streaming</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ PRIVACY ═══════════════════════════ -->
+<section class="sec" id="privacy" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head rv" style="max-width:720px">
+      <div class="eyebrow">Privacy</div>
+      <h2 class="h">There is no server. There's nothing to trust us with.</h2>
+      <p class="sub">PhraseLens has no backend. Your text goes from your Mac to the provider you picked, and nowhere else.</p>
+    </div>
+
+    <div class="card privacy-diagram rv" id="pd">
+      <div class="pd-flow">
+        <div class="pd-node">
+          <div class="ic">💻</div><div class="t">Your Mac</div><div class="s">PhraseLens.app</div>
+        </div>
+        <div class="pd-line"><span class="pd-label">direct HTTPS</span></div>
+        <div class="pd-node">
+          <div class="ic">🤖</div><div class="t">The provider you chose</div><div class="s">or localhost Ollama</div>
+        </div>
+      </div>
+      <div class="pd-ghost">Our servers</div>
+      <div class="pd-drop">There aren't any. That's the whole architecture.</div>
+    </div>
+
+    <div class="priv-grid">
+      <div class="card priv-card rv"><div class="ic">🔑</div><div>
+        <h4>Keys live in the Keychain</h4>
+        <p>Never <code style="font-size:11.5px">UserDefaults</code>, never a plaintext file, never a log line.</p>
+      </div></div>
+      <div class="card priv-card rv d1"><div class="ic">🚫</div><div>
+        <h4>Plain HTTP is blocked</h4>
+        <p>One exception, and only one: your own <code style="font-size:11.5px">localhost</code> Ollama.</p>
+      </div></div>
+      <div class="card priv-card rv d2"><div class="ic">🛡️</div><div>
+        <h4>Selected text is untrusted</h4>
+        <p>Whatever was on screen gets bounded, escaped, and fenced off — never treated as an instruction.</p>
+        <span class="reveal">&lt;untrusted-context&gt;…&lt;/untrusted-context&gt;</span>
+      </div></div>
+      <div class="card priv-card rv d3"><div class="ic">💾</div><div>
+        <h4>History stays on your disk</h4>
+        <p>Lookups, vocabulary and custom actions are local JSON. Delete the folder and it's gone.</p>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ NATIVE ═══════════════════════════ -->
+<section class="sec" style="padding-top:0">
+  <div class="wrap native">
+    <div class="rv">
+      <div class="eyebrow">Native</div>
+      <h2 class="h">It's a Mac app. Actually.</h2>
+      <p class="sub">
+        Swift and SwiftUI, top to bottom. No bundled browser engine, no JavaScript runtime shipped
+        alongside a dictionary, no background daemon idling in your menu bar for no reason.
+      </p>
+      <div class="stack-list" style="margin-top:24px">
+        <div class="sl"><span class="x">✓</span> SwiftUI views, AppKit windows, real macOS focus &amp; accessibility</div>
+        <div class="sl"><span class="x">✓</span> Apple's Vision framework for OCR — on-device, no upload</div>
+        <div class="sl"><span class="x">✓</span> System light &amp; dark, Increased Contrast, and Reduce Motion honored</div>
+      </div>
+    </div>
+    <div class="bars rv d2" id="bars">
+      <div class="bar-row">
+        <div class="bl"><b>PhraseLens</b><span>Swift + SwiftUI</span></div>
+        <div class="bar lime"><i style="--w:26%"></i></div>
+      </div>
+      <div class="bar-row">
+        <div class="bl"><b style="color:var(--fg3)">A typical Electron translator</b><span>app + Chromium + Node</span></div>
+        <div class="bar grey"><i style="--w:100%"></i></div>
+      </div>
+      <p style="font-size:12px;color:var(--fg4);line-height:1.55;margin-top:2px">
+        Illustrative, not benchmarked — it's the shape of the difference, not a measurement.
+        What is exact: PhraseLens ships zero webviews and zero bundled runtimes.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ CUSTOM ACTIONS ═══════════════════════════ -->
+<section class="sec" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Custom actions</div>
+      <h2 class="h">Not the prompt you wanted? Rewrite it.</h2>
+      <p class="sub">Duplicate any built-in action and edit its prompt, or write one from scratch. Hover a variable to see what it becomes.</p>
+    </div>
+    <div class="card tmpl rv">
+      <div class="tmpl-edit">
+        <span class="lab">Prompt template</span>
+        <div class="tmpl-body" id="tmplBody"></div>
+        <div class="preset-row" id="presets">
+          <button class="preset act" data-p="0">Grammar Doctor</button>
+          <button class="preset" data-p="1">Tone Shifter</button>
+          <button class="preset" data-p="2">ELI5</button>
+        </div>
+      </div>
+      <div class="tmpl-prev">
+        <span class="lab">What the model receives</span>
+        <div class="tmpl-out" id="tmplOut"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ SHORTCUTS ═══════════════════════════ -->
+<section class="sec" style="padding-top:0">
+  <div class="wrap keys-wrap">
+    <div class="rv">
+      <div class="eyebrow">Shortcuts</div>
+      <h2 class="h">Six keys. That's the whole product.</h2>
+      <p class="sub" style="margin-bottom:22px">Hover a row to see it on the keyboard. All of them remappable in Settings.</p>
+      <div class="sc-list" id="scList">
+        <div class="sc" data-keys="alt,f"><span class="combo"><kbd>⌥</kbd><kbd>F</kbd></span><span class="txt">Look up the selection</span></div>
+        <div class="sc" data-keys="alt,shift,f"><span class="combo"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>F</kbd></span><span class="txt">Open the full workspace</span></div>
+        <div class="sc" data-keys="alt,s"><span class="combo"><kbd>⌥</kbd><kbd>S</kbd></span><span class="txt">Screenshot OCR</span></div>
+        <div class="sc" data-keys="alt,w"><span class="combo"><kbd>⌥</kbd><kbd>W</kbd></span><span class="txt">Translate &amp; replace in place</span></div>
+        <div class="sc" data-keys="cmd,1"><span class="combo"><kbd>⌘</kbd><kbd>1–9</kbd></span><span class="txt">Jump to an action</span></div>
+        <div class="sc" data-keys="cmd,shift,bracket"><span class="combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>[ ]</kbd></span><span class="txt">Cycle through actions</span></div>
+      </div>
+    </div>
+    <div class="card kbd-map rv d2" id="kbdMap">
+      <div class="kbd-row">
+        <div class="key" data-k="1">1</div><div class="key" data-k="2">2</div><div class="key" data-k="3">3</div>
+        <div class="key" data-k="4">4</div><div class="key" data-k="5">5</div><div class="key" data-k="6">6</div>
+        <div class="key" data-k="7">7</div><div class="key" data-k="8">8</div><div class="key" data-k="9">9</div>
+      </div>
+      <div class="kbd-row">
+        <div class="key" data-k="q">Q</div><div class="key" data-k="w">W</div><div class="key" data-k="e">E</div>
+        <div class="key" data-k="r">R</div><div class="key" data-k="t">T</div><div class="key" data-k="y">Y</div>
+        <div class="key" data-k="u">U</div><div class="key" data-k="i">I</div><div class="key" data-k="bracket">[ ]</div>
+      </div>
+      <div class="kbd-row">
+        <div class="key" data-k="a">A</div><div class="key" data-k="s">S</div><div class="key" data-k="d">D</div>
+        <div class="key" data-k="f">F</div><div class="key" data-k="g">G</div><div class="key" data-k="h">H</div>
+        <div class="key" data-k="j">J</div><div class="key" data-k="k">K</div>
+      </div>
+      <div class="kbd-row">
+        <div class="key wide" data-k="shift">⇧ shift</div>
+        <div class="key" data-k="z">Z</div><div class="key" data-k="x">X</div><div class="key" data-k="c">C</div>
+        <div class="key" data-k="v">V</div><div class="key" data-k="b">B</div>
+      </div>
+      <div class="kbd-row">
+        <div class="key" data-k="ctrl">⌃</div>
+        <div class="key" data-k="alt">⌥ option</div>
+        <div class="key wide" data-k="cmd">⌘ command</div>
+        <div class="key xwide" data-k="space"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ OPEN SOURCE ═══════════════════════════ -->
+<section class="sec" style="padding-top:0">
+  <div class="wrap oss">
+    <div class="rv">
+      <div class="eyebrow">Open source</div>
+      <h2 class="h">Read every line before you run it.</h2>
+      <p class="sub">
+        That's the point of shipping a privacy tool under AGPL-3.0. Clone it, build it, run the
+        self-tests — they cover prompt isolation, the context bound, stream decoding and hotkey parsing.
+      </p>
+      <div class="badges">
+        <span class="pillchip">AGPL-3.0</span>
+        <span class="pillchip">Swift 6.2</span>
+        <span class="pillchip">macOS 14+</span>
+        <span class="pillchip">No dependencies</span>
+      </div>
+    </div>
+    <div class="term rv d2">
+      <div class="term-bar"><div class="lights"><i></i><i></i><i></i></div></div>
+      <div class="term-body">
+        <div class="tline"><span class="p">$</span><span class="c">git clone https://github.com/mxggle/phrase-lens.git</span><button class="cp">copy</button></div>
+        <div class="tline"><span class="p">$</span><span class="c">./scripts/run.sh</span><button class="cp">copy</button></div>
+        <div class="tline"><span class="p">$</span><span class="c">./scripts/test.sh</span><button class="cp">copy</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ FAQ ═══════════════════════════ -->
+<section class="sec" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head rv" style="margin:0 auto 34px;text-align:center;max-width:600px">
+      <h2 class="h">Questions worth answering</h2>
+    </div>
+    <div class="faq rv">
+      <details class="q"><summary>Do I need an API key?<span class="chev">›</span></summary>
+        <div class="a">Yes — your own, from whichever provider you like. PhraseLens doesn't resell tokens, so you pay the provider directly and nothing to us. Or run Ollama locally and pay nobody.</div></details>
+      <details class="q"><summary>Is it free?<span class="chev">›</span></summary>
+        <div class="a">The app is free and open source under AGPL-3.0. Your only cost is your provider's usage, which for word lookups is measured in fractions of a cent.</div></details>
+      <details class="q"><summary>Does it work offline?<span class="chev">›</span></summary>
+        <div class="a">Completely, with <a href="https://ollama.com" target="_blank" rel="noopener" style="color:var(--accent-ink)">Ollama</a>. Screenshot OCR and macOS system voices are on-device regardless of provider.</div></details>
+      <details class="q"><summary>Why does it want Accessibility permission?<span class="chev">›</span></summary>
+        <div class="a">That's the only macOS API that can read the text you've selected in another app, and write a replacement back into a focused field. It's what makes <code>⌥F</code> and <code>⌥W</code> possible. Skip it and the workspace, OCR, and manual input all still work.</div></details>
+      <details class="q"><summary>Is my text sent to you?<span class="chev">›</span></summary>
+        <div class="a">There is no "us" in the network path. Requests go straight from your Mac to your provider. No analytics, no crash reporting, no backend to send anything to.</div></details>
+      <details class="q"><summary>Which Macs are supported?<span class="chev">›</span></summary>
+        <div class="a">macOS 14 Sonoma or newer, Apple Silicon and Intel.</div></details>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ FINAL CTA ═══════════════════════════ -->
+<section class="final">
+  <div class="wrap">
+    <img src="assets/logo.png" alt="PhraseLens">
+    <h2>Understand everything. Everywhere.</h2>
+    <p class="sub">One shortcut, and the word you didn't know stops being in your way.</p>
+    <div class="hero-cta" style="justify-content:center">
+      <a class="btn btn-primary" href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">Download for macOS</a>
+      <a class="btn btn-ghost" href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener">View source</a>
+    </div>
+    <div class="hero-meta">macOS 14+ · Free · Open source · No account</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <span>PhraseLens</span>
+    <span class="sp"></span>
+    <a href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/mxggle/phrase-lens/blob/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>
+    <a href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">Releases</a>
+  </div>
+</footer>
+
+<script>
+(() => {
+"use strict";
+const $ = (s,r=document) => r.querySelector(s);
+const $$ = (s,r=document) => [...r.querySelectorAll(s)];
+const RM = window.matchMedia('(prefers-reduced-motion: reduce)');
+const reduce = () => RM.matches;
+const narrow = () => window.matchMedia('(max-width: 820px)').matches;
+
+/* ───────────── theme ───────────── */
+const saved = localStorage.getItem('pl-theme');
+if (saved) document.documentElement.dataset.theme = saved;
+$('#themeBtn').addEventListener('click', () => {
+  /* with no stamp the effective theme comes from the OS, not from the attribute */
+  const now = document.documentElement.dataset.theme
+    || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  const next = now === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('pl-theme', next);
+});
+
+/* ───────────── nav + reveal ───────────── */
+const nav = $('#nav');
+addEventListener('scroll', () => nav.classList.toggle('stuck', scrollY > 12), {passive:true});
+
+const revealer = new IntersectionObserver((es) => {
+  es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); revealer.unobserve(e.target); } });
+}, {rootMargin:'0px 0px -12% 0px', threshold:.12});
+$$('.rv, .syn-stage, .ctx, .bars, .privacy-diagram, [data-viz]').forEach(el => revealer.observe(el));
+
+/* h1 word stagger */
+const h1 = $('#h1');
+h1.innerHTML = h1.textContent.trim().split(/\s+/)
+  .map((w,i) => `<span class="w" style="transition-delay:${i*40}ms">${w}</span>`).join(' ');
+requestAnimationFrame(() => h1.classList.add('on'));
+
+/* count-up */
+$$('.proof .n').forEach(el => {
+  new IntersectionObserver((es,o) => es.forEach(e => {
+    if (!e.isIntersecting) return; o.unobserve(el);
+    const t = +el.dataset.count;
+    if (reduce() || t === 0) { el.innerHTML = t + (t===12?'<small>+</small>':''); return; }
+    const t0 = performance.now(), d = 650;
+    const step = (n) => {
+      const p = Math.min(1,(n-t0)/d), v = Math.round(t*(1-Math.pow(1-p,3)));
+      el.innerHTML = v + (p===1 && t===12 ? '<small>+</small>' : '');
+      if (p<1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }), {threshold:.6}).observe(el);
+});
+
+/* ═════════════ STREAMING ENGINE ═════════════ */
+let streamToken = 0;
+function stream(container, html, cps = 150) {
+  const token = ++streamToken;
+  container.innerHTML = html;
+  const tops = [...container.children];
+  if (reduce()) return;
+  tops.forEach(el => el.classList.add('pending'));
+
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  const items = [];
+  while (walker.nextNode()) {
+    const n = walker.currentNode;
+    if (!n.data.trim()) continue;
+    let top = n; while (top.parentNode !== container) top = top.parentNode;
+    items.push({n, full:n.data, top});
+    n.data = '';
+  }
+  if (!items.length) { tops.forEach(el => el.classList.remove('pending')); return; }
+
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  let i = 0, chars = 0, last = performance.now(), acc = 0;
+
+  const place = () => {
+    const it = items[i];
+    it.top.classList.remove('pending');
+    it.n.parentNode.insertBefore(caret, it.n.nextSibling);
+  };
+  place();
+
+  const tick = (now) => {
+    if (token !== streamToken) { caret.remove(); return; }
+    acc += (now - last) / 1000 * cps; last = now;
+    let budget = Math.floor(acc);
+    if (budget > 0) {
+      acc -= budget;
+      while (budget > 0 && i < items.length) {
+        const it = items[i];
+        const take = Math.min(budget, it.full.length - chars);
+        chars += take; budget -= take;
+        it.n.data = it.full.slice(0, chars);
+        if (chars >= it.full.length) {
+          i++; chars = 0;
+          if (i < items.length) place();
+        }
+      }
+      /* deliberately no auto-scroll: the headword stays put while the rest fills in */
+    }
+    if (i < items.length) requestAnimationFrame(tick);
+    else setTimeout(() => caret.remove(), 500);
+  };
+  requestAnimationFrame(tick);
+}
+
+/* ═════════════ PLAYGROUND CONTENT ═════════════ */
+const G = {
+  ambiguous: {
+    translate:`<div class="res-hw"><b>ambiguous</b> <span class="ipa">/æmˈbɪɡjuəs/</span> <span class="tag">adj.</span></div>
+<p class="res"><b>1.</b> 模棱两可的；含糊不清的 —— 可以有两种以上解释</p>
+<p class="res"><b>2.</b> 界限不清的；难以归类的</p>
+<div class="res-ex">an ambiguous reply<br><span class="zh">一个模棱两可的答复</span></div>
+<div class="res-ex">The ending is deliberately ambiguous.<br><span class="zh">结局是刻意留白的。</span></div>
+<p class="res muted">词源：拉丁语 ambiguus「游移不定」← ambigere「来回走」</p>`,
+    context:`<p class="res"><b>在这句话里：</b>指声明「刻意含糊」—— 不是写得差，而是有意不把话说死。</p>
+<p class="res">作者用 <b>deliberately</b> 修饰它，把缺点转成了策略：措辞留有余地，各方都能各取所需。</p>
+<p class="res muted">上下文线索：vague wording kept every option open</p>`,
+    synonyms:`<div class="res-hw"><b>ambiguous</b> · <span class="ipa">书面 / 中性</span></div>
+<p class="res">核心：<b>有多种解释</b>，重点在「歧义」本身，不含褒贬。</p>
+<div class="res-card"><h5>vague <span>（笼统的）</span></h5><ul>
+<li><b>差异</b>：不是有两种意思，而是根本没说清。</li>
+<li><b>何时用</b>：内容空泛、缺少细节时。</li>
+<li><b>搭配</b>：a vague promise 空泛的承诺</li></ul></div>
+<div class="res-card"><h5>equivocal <span>（含糊其辞的）</span></h5><ul>
+<li><b>差异</b>：带贬义，暗示说话人在<b>刻意回避表态</b>。</li>
+<li><b>何时用</b>：批评对方装傻、打太极时。</li>
+<li><b>搭配</b>：an equivocal answer 支支吾吾的回答</li></ul></div>
+<div class="guide"><b class="gt">⚡️ 快速决策</b>
+<p>有两种解释 👉 <code>ambiguous</code></p>
+<p>说了等于没说 👉 <code>vague</code></p>
+<p>刻意躲闪表态 👉 <code>equivocal</code></p></div>`,
+    analyze:`<p class="res"><b>译文：</b>这份声明是刻意含糊的。</p>
+<p class="res"><b>结构：</b>was + deliberately(副词) + ambiguous(表语形容词)，系表结构；副词前置强调「有意为之」。</p>
+<p class="res"><b>语域：</b>正式书面。deliberately 在此带轻微批评意味。</p>`
+  },
+  candid: {
+    translate:`<div class="res-hw"><b>candid</b> <span class="ipa">/ˈkændɪd/</span> <span class="tag">adj.</span></div>
+<p class="res"><b>1.</b> 坦率的；直言不讳的 —— 尤指说出别人不爱听的实情</p>
+<p class="res"><b>2.</b>（照片）抓拍的；未摆拍的</p>
+<div class="res-ex">to be candid with you…<br><span class="zh">跟你说实话吧……</span></div>
+<p class="res muted">词源：拉丁语 candidus「洁白的、纯粹的」</p>`,
+    context:`<p class="res"><b>在这句话里：</b>指作者们<b>私下里承认</b>了这份含糊是故意的。</p>
+<p class="res">关键在 <b>in private</b> —— candid 的坦率是对内的，对外仍然含糊，这层反差正是句子的讽刺所在。</p>`,
+    synonyms:`<div class="res-hw"><b>candid</b> · <span class="ipa">中性偏褒</span></div>
+<p class="res">核心：<b>愿意说出不方便说的实话</b>，语气是诚恳而非冒犯。</p>
+<div class="res-card"><h5>frank <span>（坦白的）</span></h5><ul>
+<li><b>差异</b>：更中性、更常用，不必然涉及难以启齿的内容。</li>
+<li><b>搭配</b>：a frank discussion 一次坦诚的讨论</li></ul></div>
+<div class="res-card"><h5>blunt <span>（直白到不客气）</span></h5><ul>
+<li><b>差异</b>：同样直接，但<b>不顾及对方感受</b>，常含贬义。</li>
+<li><b>搭配</b>：to be blunt 说难听点</li></ul></div>
+<div class="guide"><b class="gt">⚡️ 快速决策</b>
+<p>诚恳说出实情 👉 <code>candid</code></p>
+<p>只是直说 👉 <code>frank</code></p>
+<p>直得有点伤人 👉 <code>blunt</code></p></div>`,
+    analyze:`<p class="res"><b>译文：</b>作者们私下对此相当坦率。</p>
+<p class="res"><b>结构：</b>be candid <b>about</b> sth 是固定搭配，about 后接坦率谈论的对象。</p>`
+  },
+  resilient: {
+    translate:`<div class="res-hw"><b>resilient</b> <span class="ipa">/rɪˈzɪliənt/</span> <span class="tag">adj.</span></div>
+<p class="res"><b>1.</b> 有韧性的；能迅速恢复的 —— 受挫后能弹回来</p>
+<p class="res"><b>2.</b>（材料）有回弹力的</p>
+<div class="res-ex">a resilient economy<br><span class="zh">一个韧性强的经济体</span></div>
+<div class="res-ex">Children are remarkably resilient.<br><span class="zh">孩子的恢复能力惊人。</span></div>
+<p class="res muted">词源：拉丁语 resilire「回弹」← re-「回」+ salire「跳」</p>`,
+    context:`<p class="res"><b>在这句话里：</b>指这个小组<b>扛得住批评</b> —— 因为话没说死，批评就不容易落到实处。</p>
+<p class="res">注意 <b>resilient to criticism</b>：这里强调的不是坚强，而是「不容易被打中」。</p>`,
+    synonyms:`<div class="res-hw"><b>resilient</b> · <span class="ipa">中性偏褒</span></div>
+<p class="res">核心不是「不受伤」，而是<b>受挫之后能弹回来</b>。</p>
+<div class="res-card"><h5>tough <span>（坚韧的）</span></h5><ul>
+<li><b>差异</b>：强调<b>硬</b>、能扛，不强调恢复过程。口语感更强。</li>
+<li><b>搭配</b>：a tough negotiator 强硬的谈判者</li></ul></div>
+<div class="res-card"><h5>robust <span>（强健的）</span></h5><ul>
+<li><b>差异</b>：强调<b>本身结构结实</b>、不易出问题，多用于系统、数据、论证。</li>
+<li><b>搭配</b>：a robust system 一个稳健的系统</li></ul></div>
+<div class="guide"><b class="gt">⚡️ 快速决策</b>
+<p>能从打击中恢复 👉 <code>resilient</code></p>
+<p>本身就扛揍 👉 <code>tough</code></p>
+<p>结构稳、不易崩 👉 <code>robust</code></p></div>`,
+    analyze:`<p class="res"><b>译文：</b>……使这个小组对批评有很强的抵抗力。</p>
+<p class="res"><b>结构：</b>made + 宾语 + 形容词补语（made the group resilient），这是 make sb/sth + adj. 的复合宾语结构。</p>`
+  },
+  obfuscation: {
+    translate:`<div class="res-hw"><b>obfuscation</b> <span class="ipa">/ˌɒbfʌˈskeɪʃn/</span> <span class="tag">n.</span></div>
+<p class="res"><b>1.</b> 故意把事情说得让人看不懂；混淆视听</p>
+<p class="res"><b>2.</b>（技术）代码混淆</p>
+<div class="res-ex">a masterpiece of obfuscation<br><span class="zh">一份把话说糊涂的典范之作</span></div>
+<p class="res muted">词源：拉丁语 obfuscare「使变暗」← ob- + fuscus「深色的」</p>`,
+    context:`<p class="res"><b>在这句话里：</b>是<b>批评者的用词</b>，指责这份含糊不是策略，而是刻意蒙人。</p>
+<p class="res">与前文的 ambiguous 形成对照：同一件事，中性说法是「含糊」，敌意说法就是「混淆视听」。</p>`,
+    synonyms:`<div class="res-hw"><b>obfuscation</b> · <span class="ipa">正式 / 明确贬义</span></div>
+<p class="res">核心：<b>故意制造看不懂</b>，目的是遮蔽而非表达。</p>
+<div class="res-card"><h5>obscurity <span>（晦涩）</span></h5><ul>
+<li><b>差异</b>：可能只是难懂，<b>不一定是故意的</b>。</li>
+<li><b>搭配</b>：academic obscurity 学术上的晦涩</li></ul></div>
+<div class="res-card"><h5>deception <span>（欺骗）</span></h5><ul>
+<li><b>差异</b>：直接说假话；obfuscation 则是<b>句句属实但让你看不懂</b>。</li>
+<li><b>搭配</b>：outright deception 赤裸裸的欺骗</li></ul></div>
+<div class="guide"><b class="gt">⚡️ 快速决策</b>
+<p>故意让人看不懂 👉 <code>obfuscation</code></p>
+<p>就是难懂 👉 <code>obscurity</code></p>
+<p>说的根本是假话 👉 <code>deception</code></p></div>`,
+    analyze:`<p class="res"><b>译文：</b>批评者称之为混淆视听。</p>
+<p class="res"><b>结构：</b>call + 宾语 + 名词补语（called it obfuscation）。</p>
+<p class="res"><b>语域：</b>正式、书面，带明确谴责意味。</p>`
+  },
+  bank: {
+    translate:`<div class="res-hw"><b>bank</b> <span class="ipa">/bæŋk/</span> <span class="tag">n. / v.</span></div>
+<p class="res"><b>1.</b> 银行；金融机构</p>
+<p class="res"><b>2.</b> 河岸；堤岸</p>
+<p class="res"><b>3.</b> 一排、一组（bank of screens 一排屏幕）</p>
+<div class="res-ex">The bank declined the transfer.<br><span class="zh">银行拒绝了这笔转账。</span></div>
+<p class="res muted">两个义项同形不同源：「河岸」来自古北欧语，「银行」经意大利语 banca「长凳」而来。</p>`,
+    context:`<p class="res"><b>在这句话里：金融机构。</b></p>
+<p class="res">判断依据来自上下文，而不是词本身：<b>approved the transfer</b>（批准转账）只能与金融义项搭配 —— 河岸不会批准任何东西。</p>
+<p class="res muted">这正是「In Context」与普通查词的区别：先定义项，再解释。</p>`,
+    synonyms:`<div class="res-hw"><b>bank</b> · <span class="ipa">高频多义词</span></div>
+<p class="res">与其比较近义词，不如先<b>分清义项</b> —— 这才是母语者不会搞错的地方。</p>
+<div class="res-card"><h5>bank（金融）</h5><ul>
+<li><b>信号词</b>：account, transfer, loan, branch</li></ul></div>
+<div class="res-card"><h5>bank（河岸）</h5><ul>
+<li><b>信号词</b>：river, grassy, steep, along</li>
+<li><b>易混</b>：shore 指海/湖岸，coast 指海岸线</li></ul></div>
+<div class="guide"><b class="gt">⚡️ 快速决策</b>
+<p>跟钱有关 👉 银行</p>
+<p>跟水有关 👉 <code>bank</code> 河岸 / <code>shore</code> 海岸</p></div>`,
+    analyze:`<p class="res"><b>译文：</b>无论如何，银行还是在周五批准了这笔转账。</p>
+<p class="res"><b>结构：</b>Either way 是句首连接副词，意为「无论哪种情况」，承接上文两种对立说法。</p>`
+  },
+  shipped: {
+    translate:`<div class="res-hw"><b>ship</b> <span class="ipa">/ʃɪp/</span> <span class="tag">v.</span></div>
+<p class="res"><b>1.</b> 运输；发货</p>
+<p class="res"><b>2.</b><b>（科技行话）</b>发布上线 —— 把做好的东西真正交付出去</p>
+<div class="res-ex">We shipped on Friday.<br><span class="zh">我们周五上线了。</span></div>
+<div class="res-ex">Real artists ship. <span style="opacity:.7">— Steve Jobs</span><br><span class="zh">真正的行家会把东西做出来交付。</span></div>`,
+    context:`<p class="res"><b>在这句话里：</b>科技行业用法 ——「<b>把产品发出去了</b>」，不是运货。</p>
+<p class="res">线索是 <b>the team shipped</b> 后面不带宾语：不及物、无宾语的 ship 几乎总是「发布上线」这个义项。</p>`,
+    synonyms:`<div class="res-hw"><b>ship</b> · <span class="ipa">口语 / 行业内</span></div>
+<p class="res">核心：<b>交付出去了</b>，强调完成动作，不谈规模。</p>
+<div class="res-card"><h5>launch <span>（发布）</span></h5><ul>
+<li><b>差异</b>：更正式、更隆重，通常<b>伴随对外宣传</b>。</li>
+<li><b>搭配</b>：launch a product 发布产品</li></ul></div>
+<div class="res-card"><h5>release <span>（放出版本）</span></h5><ul>
+<li><b>差异</b>：中性技术用语，强调<b>版本可用</b>。</li>
+<li><b>搭配</b>：release v2.1 发布 2.1 版</li></ul></div>
+<div class="guide"><b class="gt">⚡️ 快速决策</b>
+<p>团队内部说「做完发了」 👉 <code>shipped</code></p>
+<p>对外正式发布 👉 <code>launched</code></p>
+<p>放出某个版本 👉 <code>released</code></p></div>`,
+    analyze:`<p class="res"><b>译文：</b>……然后团队就上线了。</p>
+<p class="res"><b>结构：</b>ship 在此为不及物动词，省略宾语是行业口语的标志性用法。</p>`
+  }
+};
+const fallback = (t) => `<p class="res"><b>“${t.replace(/[<>&]/g,'')}”</b></p>
+<p class="res">This demo ships hand-written answers for the six underlined words only.</p>
+<p class="res">In the app, this is a <b>live streaming call</b> to whichever model you configured — any word, any sentence, 21 languages, in about the time it took to read this.</p>
+<p class="res muted">Try one of the underlined words, or download and point it at your own key.</p>`;
+
+/* ═════════════ PLAYGROUND ═════════════ */
+const mock = $('#mock'), panel = $('#panel'), panelBody = $('#panelBody'),
+      panelSrc = $('#panelSrc'), panelTabs = $('#panelTabs'), armed = $('#panelArmed'),
+      ghost = $('#ghost'), keyhint = $('#keyhint'), hintChip = $('#hintChip'), article = $('#article');
+let current = 'ambiguous', currentTab = 'translate', autoplayed = false, userTook = false;
+/* the element the open panel is anchored to, so a resize can re-place it */
+let anchorEl = null;
+const defaultAnchor = () => $('.article .w[data-w="ambiguous"]');
+
+function moveArmed(){
+  const b = panelTabs.querySelector('button.act');
+  if (!b) return;
+  armed.style.width = b.offsetWidth + 'px';
+  armed.style.transform = `translateX(${b.offsetLeft - 8}px)`;
+}
+function render(){
+  const data = G[current];
+  panelBody.innerHTML = '';
+  stream(panelBody, data ? data[currentTab] : fallback(current), 170);
+}
+function placePanel(rect){
+  if (narrow()) { panel.style.cssText = ''; return; }
+  const m = mock.getBoundingClientRect();
+  const pw = 306, ph = 366, pad = 14;
+  /* beside the selection — but never on top of the prose column */
+  const col = article.querySelector('p').getBoundingClientRect();
+  let x = Math.max(rect.right - m.left + 16, col.right - m.left + 18);
+  let y = rect.top - m.top - 12;
+  x = Math.max(pad, Math.min(x, m.width - pw - pad));
+  y = Math.max(pad, Math.min(y, m.height - ph - pad));
+  panel.style.left = x + 'px';
+  panel.style.top = y + 'px';
+  const ox = Math.max(0, Math.min(pw, (rect.left - m.left) - x));
+  const oy = Math.max(0, Math.min(ph, (rect.top - m.top) - y));
+  panel.style.transformOrigin = `${ox}px ${oy}px`;
+}
+function open(text, rect){
+  current = text;
+  panelSrc.textContent = text;
+  if (rect) placePanel(rect);
+  panel.classList.add('on');
+  hintChip.classList.add('gone');
+  render();
+}
+panelTabs.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  userTook = true;
+  panelTabs.querySelectorAll('button').forEach(x => x.classList.toggle('act', x === b));
+  currentTab = b.dataset.tab;
+  moveArmed(); render();
+});
+$('#panelX').addEventListener('click', () => panel.classList.remove('on'));
+
+/* click a marked word */
+$$('.article .w').forEach(w => w.addEventListener('click', () => {
+  userTook = true;
+  $$('.article .w').forEach(x => x.classList.remove('sel'));
+  w.classList.add('sel');
+  anchorEl = w;
+  open(w.dataset.w, w.getBoundingClientRect());
+}));
+
+/* free-form drag selection */
+article.addEventListener('mouseup', () => {
+  setTimeout(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return;
+    const t = sel.toString().trim();
+    if (!t || t.length > 70) return;
+    userTook = true;
+    const key = t.toLowerCase().replace(/[^a-z]/g,'');
+    $$('.article .w').forEach(x => x.classList.remove('sel'));
+    anchorEl = null;
+    open(G[key] ? key : t, sel.getRangeAt(0).getBoundingClientRect());
+  }, 10);
+});
+
+/* the real ⌥F, anywhere on the page */
+addEventListener('keydown', e => {
+  if (e.altKey && e.code === 'KeyF') {
+    e.preventDefault();
+    userTook = true;
+    $('#kAlt').classList.add('hit'); $('#kF').classList.add('hit');
+    setTimeout(() => { $('#kAlt').classList.remove('hit'); $('#kF').classList.remove('hit'); }, 220);
+    const sel = window.getSelection();
+    const t = sel && !sel.isCollapsed ? sel.toString().trim() : '';
+    const target = t && t.length <= 70 ? (G[t.toLowerCase().replace(/[^a-z]/g,'')] ? t.toLowerCase().replace(/[^a-z]/g,'') : t) : 'ambiguous';
+    if (!t) { const w = $('.article .w[data-w="ambiguous"]'); w.classList.add('sel'); }
+    mock.scrollIntoView({block:'center', behavior: reduce() ? 'auto' : 'smooth'});
+    anchorEl = defaultAnchor();
+    open(target, anchorEl.getBoundingClientRect());
+  }
+});
+
+/* autoplay */
+function autoplay(){
+  if (autoplayed || userTook || narrow()) return;
+  autoplayed = true;
+  const w = $('.article .w[data-w="ambiguous"]');
+  const m = mock.getBoundingClientRect(), r = w.getBoundingClientRect();
+  anchorEl = w;
+  if (reduce()) { w.classList.add('sel'); open('ambiguous', r); return; }
+  ghost.style.transform = `translate(${r.left - m.left - 60}px, ${r.top - m.top + 34}px)`;
+  requestAnimationFrame(() => {
+    ghost.style.opacity = '1';
+    ghost.style.transform = `translate(${r.left - m.left + 22}px, ${r.top - m.top + 9}px)`;
+  });
+  setTimeout(() => { if (!userTook) w.classList.add('sel'); }, 640);
+  setTimeout(() => {
+    if (userTook) return;
+    keyhint.classList.add('on');
+    $('#hk1').classList.add('hit');
+    setTimeout(() => $('#hk2').classList.add('hit'), 70);
+  }, 1180);
+  setTimeout(() => {
+    $('#hk1').classList.remove('hit'); $('#hk2').classList.remove('hit');
+    ghost.style.opacity = '0';
+    if (!userTook) open('ambiguous', r);
+  }, 1520);
+  setTimeout(() => { keyhint.classList.remove('on'); if (!userTook) hintChip.classList.remove('gone'); }, 4600);
+}
+new IntersectionObserver((es,o) => es.forEach(e => {
+  if (e.isIntersecting) { o.disconnect(); setTimeout(autoplay, 420); }
+}), {threshold:.4}).observe(mock);
+addEventListener('resize', () => {
+  moveArmed();
+  if (!panel.classList.contains('on')) return;
+  if (narrow()) panel.style.cssText = '';
+  else placePanel((anchorEl || defaultAnchor()).getBoundingClientRect());
+});
+moveArmed();
+if (narrow()) { defaultAnchor().classList.add('sel'); open('ambiguous'); }
+
+/* ═════════════ PIPELINE SCROLL ═════════════ */
+const pipe = $('#pipe'), pipeFill = $('#pipeFill'), steps = $$('.pipe-step');
+let ticking = false;
+function pipeScroll(){
+  const r = pipe.getBoundingClientRect(), vh = innerHeight;
+  const p = Math.max(0, Math.min(1, (vh * .82 - r.top) / (r.height * .75)));
+  pipeFill.style.width = (p * 100) + '%';
+  steps.forEach((s,i) => s.classList.toggle('act', p >= [0.06,0.42,0.74][i]));
+  ticking = false;
+}
+addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(pipeScroll); } }, {passive:true});
+pipeScroll();
+
+/* ═════════════ SEVEN LENSES ═════════════ */
+const L = {
+  translate:`<p class="res" style="font-size:15px">考虑到我们目前面临的限制，这件事或许最好下周再讨论。</p>
+<p class="res muted">忠实翻译，不加评论 —— Translate 只做翻译这一件事。</p>`,
+  polish:`<p class="res" style="font-size:15px">Given our constraints, let's revisit this next week.</p>
+<p class="res muted">从 19 个词压到 8 个：删掉 probably、would、best if we 这类缓冲词，语气反而更笃定。</p>`,
+  summarize:`<p class="res" style="font-size:15px"><b>要点：</b>因资源受限，此事推迟到下周再谈。</p>
+<p class="res muted">只提炼，不引申 —— 提示词明确禁止杜撰事实。</p>`,
+  analyze:`<p class="res"><b>译文：</b>考虑到我们目前面临的限制，这件事或许最好下周再讨论。</p>
+<p class="res"><b>语法：</b>Given… 为分词短语作状语；it would be best if we… 为虚拟语气，语气比 we should 更软。</p>
+<p class="res"><b>语域：</b>职场书面语，礼貌但回避担责。<b>circle back</b> 是典型商务委婉语。</p>`,
+  context:`<p class="res"><b>在语境中：</b>这是一句<b>婉拒</b>，不是安排日程。</p>
+<p class="res">probably / would / circle back 三重缓冲叠加，实际含义接近「现在不想推进这件事」。</p>
+<p class="res muted">需要选区周围的上下文才能判断 —— 所以这个动作会额外读取选中文本前后的内容。</p>`,
+  code:`<p class="res">这不是代码 —— Explain Code 会指出这一点，而不是硬编。</p>
+<p class="res muted">选中真正的代码时，它会解释逻辑、指出 bug 与安全隐患，并明确忽略注释里的任何指令。</p>`,
+  synonyms:`<div class="res-card" style="margin-bottom:8px"><h5>circle back <span>（回头再说）</span></h5><ul>
+<li><b>差异</b>：商务委婉语，常用于<b>软性推迟</b>。</li></ul></div>
+<div class="res-card"><h5>revisit <span>（重新审视）</span></h5><ul>
+<li><b>差异</b>：中性、正式，暗示会<b>真的再看一遍</b>。</li></ul></div>
+<div class="guide"><b class="gt">⚡️ 快速决策</b>
+<p>想礼貌地拖 👉 <code>circle back</code></p>
+<p>确实要重新讨论 👉 <code>revisit</code></p></div>`
+};
+const lensTabs = $('#lensTabs'), lensArmed = $('#lensArmed'), lensOut = $('#lensOut');
+let lensKey = 'translate', lensAuto = null, lensTouched = false;
+function lensArm(){
+  const b = lensTabs.querySelector('button.act');
+  lensArmed.style.width = b.offsetWidth + 'px';
+  lensArmed.style.transform = `translateX(${b.offsetLeft - 12}px)`;
+}
+function lensSet(k, byUser){
+  if (byUser) { lensTouched = true; clearInterval(lensAuto); }
+  lensKey = k;
+  lensTabs.querySelectorAll('button').forEach(b => b.classList.toggle('act', b.dataset.l === k));
+  lensArm();
+  lensOut.classList.add('swap');
+  setTimeout(() => { lensOut.classList.remove('swap'); stream(lensOut, L[k], 260); }, reduce() ? 0 : 150);
+}
+lensTabs.addEventListener('click', e => { const b = e.target.closest('button'); if (b) lensSet(b.dataset.l, true); });
+addEventListener('resize', lensArm);
+const lensOrder = ['translate','polish','summarize','analyze','context','code','synonyms'];
+addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && /^Digit[1-7]$/.test(e.code)) {
+    e.preventDefault();
+    lensSet(lensOrder[+e.code.slice(5) - 1], true);
+    $('#lensCard').scrollIntoView({block:'center', behavior: reduce() ? 'auto' : 'smooth'});
+  }
+});
+new IntersectionObserver((es,o) => es.forEach(e => {
+  if (!e.isIntersecting) return; o.disconnect();
+  lensSet('translate');
+  if (!reduce()) lensAuto = setInterval(() => {
+    if (lensTouched) return clearInterval(lensAuto);
+    lensSet(lensOrder[(lensOrder.indexOf(lensKey) + 1) % lensOrder.length]);
+  }, 4200);
+}), {threshold:.35}).observe($('#lensCard'));
+
+/* ═════════════ SYNONYM SPOTLIGHT ═════════════ */
+const SYN = {
+  zh:{
+    meta:'有韧性的 · 中性偏褒 · 书面与口语皆可',
+    nuance:'核心不是「不受伤」，而是<b>受挫之后能弹回来</b>。重点落在恢复力，不在硬度。',
+    cards:[
+      {w:'tough', g:'坚韧的、扛得住的', rows:[['差异','强调本身<b>硬</b>、能扛，不涉及恢复过程；口语感更强。'],['何时用','形容人的性格、谈判风格、糟糕的处境。'],['搭配','a tough negotiator 强硬的谈判者 · tough luck 真倒霉']]},
+      {w:'robust', g:'强健的、稳健的', rows:[['差异','强调<b>结构结实、不易出问题</b>，多用于系统、数据、论证。'],['何时用','技术与商业写作；形容人时略显生硬。'],['搭配','a robust system 稳健的系统 · robust growth 强劲增长']]},
+      {w:'hardy', g:'耐得住的、抗逆的', rows:[['差异','强调<b>耐受恶劣条件</b>，最常用于植物、动物、体质。'],['何时用','气候、环境、生存能力的语境。'],['搭配','a hardy plant 耐寒植物']]}
+    ],
+    guide:[['从打击中恢复','resilient'],['本身就扛揍','tough'],['结构稳、不易崩','robust']]
+  },
+  ja:{
+    meta:'回復力のある · 中立〜やや肯定 · 書き言葉・話し言葉とも可',
+    nuance:'核心は「傷つかない」ことではなく、<b>打たれた後に戻ってこられる</b>こと。硬さではなく回復力が焦点。',
+    cards:[
+      {w:'tough', g:'タフな、打たれ強い', rows:[['違い','<b>硬さ・耐久</b>そのものを指し、回復の過程は含意しない。口語的。'],['使う場面','人の性格、交渉姿勢、厳しい状況。'],['コロケーション','a tough negotiator 手強い交渉相手']]},
+      {w:'robust', g:'頑健な、堅牢な', rows:[['違い','<b>構造がしっかりして壊れにくい</b>。システム・データ・論証に多い。'],['使う場面','技術文書やビジネス文書。人に使うと硬い。'],['コロケーション','a robust system 堅牢なシステム']]},
+      {w:'hardy', g:'耐性のある', rows:[['違い','<b>過酷な環境に耐える</b>。植物・動物・体質に使う。'],['使う場面','気候や生存能力の文脈。'],['コロケーション','a hardy plant 耐寒性の植物']]}
+    ],
+    guide:[['打撃から立ち直る','resilient'],['そもそも頑丈','tough'],['壊れにくい構造','robust']]
+  }
+};
+function renderSyn(lang){
+  const d = SYN[lang];
+  $('#synMeta').textContent = d.meta;
+  $('#synNuance').innerHTML = d.nuance;
+  $('#synFan').innerHTML = d.cards.map(c =>
+    `<div class="f"><h5>${c.w} <span>（${c.g}）</span></h5>` +
+    c.rows.map(r => `<div class="row"><b>${r[0]}</b><span>${r[1]}</span></div>`).join('') + `</div>`).join('');
+  $('#synGuide').innerHTML = `<div class="gt">⚡️ ${lang === 'zh' ? '快速决策指南' : 'クイック判断ガイド'}</div>` +
+    d.guide.map(g => `<div class="g"><span>${g[0]}</span><span class="arw">👉</span><code>${g[1]}</code></div>`).join('');
+}
+renderSyn('zh');
+$('#langSwitch').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  $$('#langSwitch button').forEach(x => x.classList.toggle('act', x === b));
+  renderSyn(b.dataset.lang);
+  $('#synStage').classList.remove('in');
+  requestAnimationFrame(() => requestAnimationFrame(() => $('#synStage').classList.add('in')));
+});
+
+/* ═════════════ CONTEXT SPLIT ═════════════ */
+const CTX = {
+  river:`<p class="res"><b>河岸。</b></p><p class="res">线索：<b>grassy</b>、<b>river</b> —— 地理描写，指河边的斜坡地带。</p>`,
+  money:`<p class="res"><b>银行（金融机构）。</b></p><p class="res">线索：<b>declined the transfer</b> —— 只有金融机构会批准或拒绝转账。</p>`
+};
+$$('[data-ctx]').forEach(c => {
+  new IntersectionObserver((es,o) => es.forEach(e => {
+    if (!e.isIntersecting) return; o.unobserve(c);
+    const out = c.querySelector('.out');
+    setTimeout(() => stream(out, CTX[out.dataset.out], 190), 500);
+  }), {threshold:.45}).observe(c);
+});
+
+/* ═════════════ PROVIDERS ═════════════ */
+const PROV = [
+  ['OpenAI','gpt-4o-mini','Cloud · streaming','☁️'],
+  ['Anthropic','claude-3-7-sonnet','Cloud · streaming','☁️'],
+  ['Google Gemini','gemini-2.0-flash','Cloud · streaming','☁️'],
+  ['DeepSeek','deepseek-v3','Cloud · streaming','☁️'],
+  ['Groq','llama-3.3-70b','Cloud · ultra-low latency','☁️'],
+  ['Moonshot','moonshot-v1-128k','Cloud · long context','☁️'],
+  ['MiniMax','minimax-text-01','Cloud · streaming','☁️'],
+  ['Cohere','command-r-plus','Cloud · streaming','☁️'],
+  ['Azure OpenAI','your-deployment','Enterprise endpoint','☁️'],
+  ['TeamoRouter','auto-route','Multi-model router','☁️'],
+  ['Ollama','qwen2.5 · llama3','Local · offline','🖥️'],
+  ['Custom endpoint','/v1/chat/completions','Anything OpenAI-compatible','🔌']
+];
+const track = $('#railTrack');
+track.innerHTML = [...PROV, ...PROV].map((p,i) =>
+  `<button class="pchip${i===0?' act':''}" data-i="${i % PROV.length}"><span class="d"></span>${p[0]}</button>`).join('');
+track.addEventListener('click', e => {
+  const b = e.target.closest('.pchip'); if (!b) return;
+  const p = PROV[+b.dataset.i];
+  $$('.pchip', track).forEach(x => x.classList.toggle('act', x.dataset.i === b.dataset.i));
+  $('#pvName').textContent = p[0]; $('#pvModel').textContent = p[1]; $('#pvType').textContent = p[2];
+  $('#provIcon').textContent = p[3];
+  $('#provPanel').classList.toggle('offline', p[0] === 'Ollama');
+});
+
+/* ═════════════ CUSTOM ACTIONS ═════════════ */
+/* markers: [[raw|resolved]] */
+const TPL = [
+  {t:`Analyze the following [[\${sourceLang}|English]] text for grammatical issues, awkward phrasing, and tone. Reply in [[\${targetLang}|简体中文]]:\n\n[[\${text}|the selected sentence]]`,
+   o:`<p class="res">Analyze the following <b>English</b> text for grammatical issues, awkward phrasing, and tone. Reply in <b>简体中文</b>:</p><p class="res muted">Given the constraints we are operating under, it would probably be best if we circled back on this next week.</p>`},
+  {t:`Rewrite the text below so it sounds confident and direct, without changing the facts. Keep it in [[\${sourceLang}|English]].\n\nSurrounding context: [[\${context}|escaped · max 1,600 chars]]\n\n[[\${text}|the selected sentence]]`,
+   o:`<p class="res">Rewrite the text below so it sounds confident and direct, without changing the facts. Keep it in <b>English</b>.</p><p class="res muted">The surrounding context comes from whatever you were reading — bounded to 1,600 characters and escaped before it ever reaches the model.</p>`},
+  {t:`Explain [[\${text}|the selection]] as if I were five years old. Answer in [[\${targetLang}|简体中文]]. Use one analogy and no jargon.`,
+   o:`<p class="res">Explain <b>the selection</b> like I am five. Answer in <b>简体中文</b>. One analogy, no jargon.</p><p class="res muted">Custom actions get their own tab, their own icon, and their own command-number shortcut.</p>`}
+];
+function renderTpl(i){
+  const html = TPL[i].t
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\[\[(.+?)\|(.+?)\]\]/g, (_,raw,res) =>
+      `<span class="vchip"><span class="raw">${raw}</span><span class="resolved">${res}</span></span>`)
+    .replace(/\n/g,'<br>');
+  $('#tmplBody').innerHTML = html;
+  $('#tmplOut').innerHTML = TPL[i].o;
+  $$('#tmplBody .vchip').forEach(c => {
+    c.addEventListener('mouseenter', () => c.classList.add('res'));
+    c.addEventListener('mouseleave', () => c.classList.remove('res'));
+  });
+}
+renderTpl(0);
+$('#presets').addEventListener('click', e => {
+  const b = e.target.closest('.preset'); if (!b) return;
+  $$('#presets .preset').forEach(x => x.classList.toggle('act', x === b));
+  renderTpl(+b.dataset.p);
+});
+
+/* ═════════════ SHORTCUT MAP ═════════════ */
+$$('#scList .sc').forEach(row => {
+  const keys = row.dataset.keys.split(',');
+  const light = (on) => keys.forEach(k => {
+    const el = $(`#kbdMap .key[data-k="${k}"]`);
+    if (el) el.classList.toggle('lit', on);
+  });
+  row.addEventListener('mouseenter', () => light(true));
+  row.addEventListener('mouseleave', () => light(false));
+});
+
+/* ═════════════ COPY BUTTONS ═════════════ */
+$$('.tline .cp').forEach(btn => btn.addEventListener('click', async () => {
+  const text = btn.parentNode.querySelector('.c').textContent;
+  try { await navigator.clipboard.writeText(text); } catch(_) {}
+  btn.textContent = '✓ copied'; btn.classList.add('done');
+  setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('done'); }, 1400);
+}));
+
+/* ═════════════ REWRITE-IN-PLACE TILE ═════════════ */
+const rp = $('#rpField');
+if (rp && !reduce()) {
+  const A = "we should probably maybe try to fix this thing";
+  const B = "Let's fix this.";
+  const paint = (s) => rp.innerHTML = s.replace(/[<>&]/g,'') + '<span class="cur"></span>';
+  let mode = 'hold', i = A.length, wait = 26;
+  setInterval(() => {
+    if (mode === 'hold')      { if (--wait <= 0) { mode = 'erase'; } }
+    else if (mode === 'erase'){ paint(A.slice(0, --i)); if (i <= 0) mode = 'type'; }
+    else if (mode === 'type') { paint(B.slice(0, ++i)); if (i >= B.length) { mode = 'done'; wait = 34; } }
+    else                      { if (--wait <= 0) { mode = 'hold'; i = A.length; wait = 20; paint(A); } }
+  }, 58);
+}
+})();
+</script>
+</body>
+</html>
