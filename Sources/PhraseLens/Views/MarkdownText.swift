@@ -7,19 +7,19 @@ import SwiftUI
 /// or fenced code. Splitting the document into blocks keeps those semantics
 /// visible without introducing an HTML/WebView execution boundary.
 struct MarkdownText: View {
-  private let blocks: [MarkdownBlock]
+  private let markdown: String
   private let baseFontSize: Double
 
   @Environment(\.palette) private var palette
 
   init(_ markdown: String, baseFontSize: Double = 15) {
-    blocks = MarkdownParser.parse(markdown)
+    self.markdown = markdown
     self.baseFontSize = baseFontSize
   }
 
   var body: some View {
     LazyVStack(alignment: .leading, spacing: 12) {
-      ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+      ForEach(Array(MarkdownCache.blocks(for: markdown).enumerated()), id: \.offset) { _, block in
         blockView(block)
       }
     }
@@ -87,7 +87,7 @@ struct MarkdownText: View {
           Text(language.uppercased())
             .font(.system(size: 9, weight: .semibold, design: .monospaced))
             .tracking(0.6)
-            .foregroundStyle(palette.faintForeground)
+            .foregroundStyle(palette.mutedForeground)
         }
         ScrollView(.horizontal) {
           Text(code)
@@ -148,12 +148,7 @@ struct MarkdownText: View {
   }
 
   private func inlineText(_ markdown: String) -> Text {
-    let attributed =
-      (try? AttributedString(
-        markdown: markdown,
-        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-      )) ?? AttributedString(markdown)
-    return Text(attributed)
+    Text(MarkdownCache.inline(markdown))
   }
 
   private func headingSize(_ level: Int) -> Double {
@@ -163,6 +158,49 @@ struct MarkdownText: View {
     case 3: baseFontSize * 1.18
     default: baseFontSize
     }
+  }
+}
+
+/// Parsed Markdown held between renders.
+///
+/// `body` runs far more often than the document changes — hover, focus, a
+/// window resize, and every 50 ms flush of a stream — and both
+/// `MarkdownParser.parse` and `AttributedString(markdown:)` are full parses of
+/// what they are handed. A stream only ever appends, so on each flush every
+/// block but the last is byte-for-byte what it was: keyed by source text, the
+/// inline cache turns a whole-document cost per frame into the cost of the
+/// text that actually arrived.
+@MainActor
+enum MarkdownCache {
+  private static var blockSource: String?
+  private static var parsedBlocks: [MarkdownBlock] = []
+  private static var inlineRuns: [String: AttributedString] = [:]
+  /// Two surfaces render at most one document each, and a document is a page
+  /// or two of prose. The bound exists only so a long session cannot grow the
+  /// table without end; dropping the whole table is fine, since the next
+  /// render rebuilds exactly the entries it needs.
+  private static let inlineLimit = 400
+
+  static func blocks(for markdown: String) -> [MarkdownBlock] {
+    if blockSource == markdown { return parsedBlocks }
+    let parsed = MarkdownParser.parse(markdown)
+    blockSource = markdown
+    parsedBlocks = parsed
+    return parsed
+  }
+
+  static func inline(_ markdown: String) -> AttributedString {
+    if let cached = inlineRuns[markdown] { return cached }
+    let attributed =
+      (try? AttributedString(
+        markdown: markdown,
+        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+      )) ?? AttributedString(markdown)
+    if inlineRuns.count >= inlineLimit {
+      inlineRuns.removeAll(keepingCapacity: true)
+    }
+    inlineRuns[markdown] = attributed
+    return attributed
   }
 }
 
