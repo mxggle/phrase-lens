@@ -55,7 +55,11 @@ struct SettingsView: View {
     ThemedContainer {
       SettingsShell(pane: $pane)
     }
-    .frame(minWidth: 720, idealWidth: 820, minHeight: 520, idealHeight: 620)
+    // The width class is measured on the content column, so the 200pt sidebar
+    // and its hairline come off the top: a row only reaches AppBreakpoints
+    // .regular from 841pt of window. Anything narrower stacks every label above
+    // its control, which is the fallback layout, not the intended one.
+    .frame(minWidth: 880, idealWidth: 940, minHeight: 520, idealHeight: 620)
     .environmentObject(model)
     .environmentObject(settingsStore)
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
@@ -358,6 +362,7 @@ private struct ProviderSettingsPane: View {
   @Environment(\.palette) private var palette
 
   @State private var apiKeyDraft = ""
+  @State private var isConfirmingKeyRemoval = false
   @State private var endpointStatus: (text: String, isValid: Bool)?
   @State private var availableModels: [String] = []
   @State private var modelCatalogStatus: String?
@@ -492,15 +497,25 @@ private struct ProviderSettingsPane: View {
                   text: $apiKeyDraft,
                   isSecure: true,
                   size: .sm,
-                  onSubmit: { settingsStore.saveAPIKey(apiKeyDraft) }
+                  onSubmit: { saveAPIKeyIfChanged() }
                 )
                 .disabled(settingsStore.isLoadingAPIKey || settingsStore.isSavingAPIKey)
 
                 Button("Save Key") {
-                  settingsStore.saveAPIKey(apiKeyDraft)
+                  saveAPIKeyIfChanged()
                 }
                 .appButton(.primary, size: .sm)
-                .disabled(settingsStore.isLoadingAPIKey || settingsStore.isSavingAPIKey)
+                .disabled(
+                  settingsStore.isLoadingAPIKey || settingsStore.isSavingAPIKey
+                    || !hasUnsavedAPIKey
+                )
+
+                if !settingsStore.apiKey.isEmpty {
+                  Button("Remove") { isConfirmingKeyRemoval = true }
+                    .appButton(.destructiveGhost, size: .sm)
+                    .disabled(settingsStore.isLoadingAPIKey || settingsStore.isSavingAPIKey)
+                    .help("Delete this provider's key from the Keychain")
+                }
               }
 
               HStack(spacing: AppSpacing.sm) {
@@ -509,6 +524,9 @@ private struct ProviderSettingsPane: View {
                   variant: settingsStore.apiKey.isEmpty ? .warning : .success,
                   symbol: settingsStore.apiKey.isEmpty ? "exclamationmark" : "checkmark"
                 )
+                if hasUnsavedAPIKey {
+                  Badge(text: "Unsaved", variant: .warning, symbol: "pencil")
+                }
                 Text(credentialStatus)
                   .font(AppFont.caption)
                   .foregroundStyle(palette.mutedForeground)
@@ -547,6 +565,33 @@ private struct ProviderSettingsPane: View {
     .onChange(of: settingsStore.apiKey) { _, value in
       apiKeyDraft = value
     }
+    // A typed key is the one setting that does not persist on its own, so
+    // leaving the pane must not be the same as discarding it.
+    .onDisappear { saveAPIKeyIfChanged() }
+    .confirmationDialog(
+      "Remove the \(settingsStore.settings.provider.provider.rawValue) API key?",
+      isPresented: $isConfirmingKeyRemoval,
+      titleVisibility: .visible
+    ) {
+      Button("Remove Key", role: .destructive) {
+        apiKeyDraft = ""
+        settingsStore.saveAPIKey("")
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("It is deleted from the Keychain, and this provider stops working until you add another.")
+    }
+  }
+
+  private var hasUnsavedAPIKey: Bool {
+    apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines) != settingsStore.apiKey
+  }
+
+  /// The Keychain write captures the provider it was started for, so calling
+  /// this before a provider switch still files the key under the old one.
+  private func saveAPIKeyIfChanged() {
+    guard hasUnsavedAPIKey, !settingsStore.isLoadingAPIKey else { return }
+    settingsStore.saveAPIKey(apiKeyDraft)
   }
 
   private var isFetchModelsDisabled: Bool {
@@ -575,6 +620,7 @@ private struct ProviderSettingsPane: View {
   }
 
   private func selectProvider(_ provider: ProviderKind) {
+    saveAPIKeyIfChanged()
     apiKeyDraft = ""
     availableModels = []
     modelCatalogStatus = nil
