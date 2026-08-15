@@ -45,7 +45,7 @@ private struct LibraryScaffold<Toolbar: View, Content: View>: View {
         Text("\(count) \(countNoun)")
           .font(AppFont.caption)
           .monospacedDigit()
-          .foregroundStyle(palette.faintForeground)
+          .foregroundStyle(palette.mutedForeground)
       }
 
       Spacer(minLength: AppSpacing.sm)
@@ -55,6 +55,36 @@ private struct LibraryScaffold<Toolbar: View, Content: View>: View {
     .padding(.horizontal, AppSpacing.lg)
     .padding(.vertical, AppSpacing.sm + 2)
     .background(palette.chrome)
+  }
+}
+
+/// The delete confirmation both library sections share.
+///
+/// Nothing deleted from the library can be brought back — there is no trash and
+/// no undo — so every delete goes through here, including a single row from a
+/// context menu.
+extension View {
+  fileprivate func libraryDeleteConfirmation(
+    isPresented: Binding<Bool>,
+    count: Int,
+    singular: String,
+    plural: String,
+    perform: @escaping () -> Void
+  ) -> some View {
+    let noun = count == 1 ? singular : plural
+    return confirmationDialog(
+      "Delete \(count) \(noun)?",
+      isPresented: isPresented,
+      titleVisibility: .visible
+    ) {
+      Button("Delete \(count) \(noun.capitalized)", role: .destructive, action: perform)
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(
+        "\(count == 1 ? "This \(singular) is" : "These \(count) \(plural) are") removed "
+          + "from this Mac. There is no undo."
+      )
+    }
   }
 }
 
@@ -125,9 +155,15 @@ private struct LibraryList<Item: Identifiable, Row: View>: View {
     ScrollView {
       if let columnMinWidth, !layoutWidth.isCompact {
         LazyVGrid(
-          columns: [GridItem(.adaptive(minimum: columnMinWidth), spacing: AppSpacing.sm)],
+          columns: [
+            GridItem(
+              .adaptive(minimum: columnMinWidth),
+              spacing: AppSpacing.md,
+              alignment: .topLeading
+            )
+          ],
           alignment: .leading,
-          spacing: AppSpacing.sm
+          spacing: AppSpacing.md
         ) {
           ForEach(items) { row($0) }
         }
@@ -150,6 +186,8 @@ struct HistoryView: View {
   @Environment(\.layoutWidth) private var layoutWidth
   @State private var searchText = ""
   @State private var selection = Set<UUID>()
+  @State private var pendingDelete = Set<UUID>()
+  @State private var isConfirmingDelete = false
 
   private var filtered: [HistoryEntry] {
     guard !searchText.isEmpty else { return model.history }
@@ -187,14 +225,27 @@ struct HistoryView: View {
               model.toggleFavorite(entry)
             }
             Divider()
-            Button("Delete", role: .destructive) {
-              model.deleteHistory(ids: [entry.id])
-              selection.remove(entry.id)
-            }
+            Button("Delete", role: .destructive) { confirmDelete(of: [entry.id]) }
           }
         }
       }
     }
+    .libraryDeleteConfirmation(
+      isPresented: $isConfirmingDelete,
+      count: pendingDelete.count,
+      singular: "entry",
+      plural: "entries"
+    ) {
+      model.deleteHistory(ids: pendingDelete)
+      selection.subtract(pendingDelete)
+      pendingDelete.removeAll()
+    }
+  }
+
+  private func confirmDelete(of ids: Set<UUID>) {
+    guard !ids.isEmpty else { return }
+    pendingDelete = ids
+    isConfirmingDelete = true
   }
 
   @ViewBuilder
@@ -216,8 +267,7 @@ struct HistoryView: View {
     .accessibilityLabel("Use the selected translation again")
 
     Button {
-      model.deleteHistory(ids: selection)
-      selection.removeAll()
+      confirmDelete(of: selection)
     } label: {
       AdaptiveLabel(title: "Delete", symbol: "trash", iconOnly: layoutWidth.isCompact)
     }
@@ -277,9 +327,9 @@ private struct HistoryRow: View {
             .accessibilityLabel("Favorite")
         }
         Spacer(minLength: AppSpacing.sm)
-        Text(entry.createdAt, style: .relative)
+        Text(entry.createdAt, format: .relative(presentation: .named))
           .font(AppFont.caption)
-          .foregroundStyle(palette.faintForeground)
+          .foregroundStyle(palette.mutedForeground)
           .lineLimit(1)
           .layoutPriority(1)
       }
@@ -329,6 +379,8 @@ struct VocabularyView: View {
   @Environment(\.layoutWidth) private var layoutWidth
   @State private var searchText = ""
   @State private var selection = Set<UUID>()
+  @State private var pendingDelete = Set<UUID>()
+  @State private var isConfirmingDelete = false
 
   private var filtered: [VocabularyEntry] {
     guard !searchText.isEmpty else { return model.vocabulary }
@@ -347,8 +399,7 @@ struct VocabularyView: View {
       countNoun: filteredEntries.count == 1 ? "word" : "words"
     ) {
       Button {
-        model.deleteVocabulary(ids: selection)
-        selection.removeAll()
+        confirmDelete(of: selection)
       } label: {
         AdaptiveLabel(title: "Delete", symbol: "trash", iconOnly: layoutWidth.isCompact)
       }
@@ -372,14 +423,27 @@ struct VocabularyView: View {
           .contextMenu {
             Button("Copy Explanation") { copyExplanation(of: entry) }
             Divider()
-            Button("Delete", role: .destructive) {
-              model.deleteVocabulary(ids: [entry.id])
-              selection.remove(entry.id)
-            }
+            Button("Delete", role: .destructive) { confirmDelete(of: [entry.id]) }
           }
         }
       }
     }
+    .libraryDeleteConfirmation(
+      isPresented: $isConfirmingDelete,
+      count: pendingDelete.count,
+      singular: "word",
+      plural: "words"
+    ) {
+      model.deleteVocabulary(ids: pendingDelete)
+      selection.subtract(pendingDelete)
+      pendingDelete.removeAll()
+    }
+  }
+
+  private func confirmDelete(of ids: Set<UUID>) {
+    guard !ids.isEmpty else { return }
+    pendingDelete = ids
+    isConfirmingDelete = true
   }
 
   private func select(_ id: UUID, extending: Bool) {
@@ -421,30 +485,109 @@ private struct VocabularyRow: View {
 
   @Environment(\.palette) private var palette
 
+  /// Lines of explanation every card holds open, whether or not it has them.
+  ///
+  /// A card sized to its own text leaves the grid ragged: a two-line entry
+  /// beside a ten-line one opens a hole a column wide, and the eye reads the
+  /// hole before it reads the words. Reserving the lines makes every card the
+  /// same height, so the tiles land on a shared baseline row after row.
+  private static let previewLines = 4
+
   var body: some View {
     VStack(alignment: .leading, spacing: AppSpacing.sm) {
-      HStack(alignment: .firstTextBaseline, spacing: AppSpacing.sm) {
-        Text(entry.word)
-          .font(AppFont.title)
-          .foregroundStyle(palette.foreground)
-          .lineLimit(2)
-        Spacer(minLength: AppSpacing.sm)
+      Text(entry.word)
+        .font(AppFont.title)
+        .foregroundStyle(palette.foreground)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+      Text(VocabularyPreview.text(for: entry.explanation, word: entry.word))
+        .font(AppFont.body)
+        .foregroundStyle(palette.secondaryForeground)
+        .lineSpacing(2)
+        .lineLimit(Self.previewLines, reservesSpace: true)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+
+      // The two pieces of metadata share the last line: the pair is smaller
+      // than the word and the prose above it, and reads as the card's footer
+      // rather than as a third thing to look at.
+      HStack(spacing: AppSpacing.sm) {
         Badge(
           text: "\(entry.sourceLanguage.displayName) → \(entry.targetLanguage.displayName)",
           variant: .outline
         )
+        Spacer(minLength: AppSpacing.sm)
+        Text(entry.createdAt, format: .relative(presentation: .named))
+          .font(AppFont.caption)
+          .foregroundStyle(palette.mutedForeground)
+          .lineLimit(1)
+          .layoutPriority(1)
       }
-
-      Text(entry.explanation)
-        .font(AppFont.body)
-        .foregroundStyle(palette.mutedForeground)
-        .lineLimit(5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-
-      Text(entry.createdAt, style: .relative)
-        .font(AppFont.caption)
-        .foregroundStyle(palette.faintForeground)
     }
     .accessibilityLabel("\(entry.word). \(entry.explanation)")
+  }
+}
+
+/// The plain text a vocabulary card shows under the word.
+///
+/// Explanations are stored exactly as the model wrote them, which is Markdown —
+/// typically a heading repeating the word, then bold field labels. Four lines is
+/// too little room to lay that out as a document, and at that size the markers
+/// read as damage rather than as emphasis, so the card takes the prose alone.
+private enum VocabularyPreview {
+  /// Roughly what the reserved lines can hold at the widest column. Whatever
+  /// follows is not dropped, only unread here — the saved entry keeps it.
+  private static let characterBudget = 400
+
+  static func text(for explanation: String, word: String) -> String {
+    let word = word.trimmingCharacters(in: .whitespacesAndNewlines)
+    var lines: [String] = []
+    var remaining = characterBudget
+
+    for rawLine in explanation.split(separator: "\n", omittingEmptySubsequences: false) {
+      let line = clean(String(rawLine))
+      guard !line.isEmpty else { continue }
+      lines.append(line)
+      remaining -= line.count
+      if remaining <= 0 { break }
+    }
+
+    // The model opens on a heading that is the word itself, which the card
+    // already prints above this in its own type. An entry that is *only* that
+    // line keeps it: a card showing nothing at all reads as a failure.
+    if lines.count > 1, lines[0].caseInsensitiveCompare(word) == .orderedSame {
+      lines.removeFirst()
+    }
+
+    return lines.joined(separator: "\n")
+  }
+
+  /// One source line with its block and inline markers taken off.
+  private static func clean(_ line: String) -> String {
+    var text = line.trimmingCharacters(in: .whitespaces)
+
+    // A rule carries nothing once it is not being drawn as one.
+    if text.allSatisfy({ $0 == "-" || $0 == "_" || $0 == "*" }) { return "" }
+
+    text = String(text.drop { $0 == "#" || $0 == ">" }).trimmingCharacters(in: .whitespaces)
+
+    for marker in ["- ", "* ", "+ "] where text.hasPrefix(marker) {
+      text.removeFirst(marker.count)
+    }
+    let number = text.prefix(while: \.isNumber)
+    if !number.isEmpty, text.dropFirst(number.count).hasPrefix(". ") {
+      text.removeFirst(number.count + 2)
+    }
+
+    text =
+      text
+      .replacingOccurrences(of: "**", with: "")
+      .replacingOccurrences(of: "__", with: "")
+      .replacingOccurrences(of: "`", with: "")
+    text = text.replacing(/\[([^\]]*)\]\([^)]*\)/) { $0.output.1 }
+
+    return text.trimmingCharacters(in: .whitespaces)
   }
 }

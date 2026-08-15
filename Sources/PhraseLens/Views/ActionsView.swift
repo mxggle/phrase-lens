@@ -14,6 +14,8 @@ struct ActionsView: View {
   @State private var splitFraction = 0.32
   /// Compact layouts show one column at a time; this is which one.
   @State private var showsEditorInCompact = false
+  @State private var isConfirmingRemove = false
+  @State private var isConfirmingRestore = false
 
   var body: some View {
     Group {
@@ -67,6 +69,37 @@ struct ActionsView: View {
       guard overrides != settingsStore.settings.builtInActionOverrides else { return }
       settingsStore.settings.builtInActionOverrides = overrides
     }
+    // Both of these discard prompts the user wrote by hand, and neither can be
+    // taken back, so neither happens on a single click.
+    .confirmationDialog(
+      "Delete \(selectedActionName)?",
+      isPresented: $isConfirmingRemove,
+      titleVisibility: .visible
+    ) {
+      Button("Delete Action", role: .destructive) { removeSelectedAction() }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Its role prompt and command prompt are deleted with it. There is no undo.")
+    }
+    .confirmationDialog(
+      "Restore the built-in actions?",
+      isPresented: $isConfirmingRestore,
+      titleVisibility: .visible
+    ) {
+      Button("Restore Defaults", role: .destructive) { restoreAllDefaults() }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(
+        "Every edit you have made to a built-in prompt is discarded, and the "
+          + "actions you hid and the order you arranged them in go back to the "
+          + "defaults. Your own custom actions are kept."
+      )
+    }
+  }
+
+  /// Named in the delete prompt so the dialog says what is about to go.
+  private var selectedActionName: String {
+    draftActions.first { $0.id == selectedID }?.name ?? "this action"
   }
 
   // MARK: - Compact
@@ -128,10 +161,10 @@ struct ActionsView: View {
           symbol: "minus",
           isDisabled: !draftActions.contains(where: { $0.id == selectedID })
         ) {
-          removeSelectedAction()
+          isConfirmingRemove = true
         }
         Spacer(minLength: 0)
-        Button("Restore Defaults") { restoreAllDefaults() }
+        Button("Restore Defaults") { isConfirmingRestore = true }
           .appButton(.ghost, size: .sm)
           .help("Restore built-in actions, visibility, and display order")
       }
@@ -320,7 +353,7 @@ struct ActionsView: View {
         HStack(spacing: AppSpacing.xs + 2) {
           Text("Variables")
             .font(AppFont.caption)
-            .foregroundStyle(palette.faintForeground)
+            .foregroundStyle(palette.mutedForeground)
           ForEach(
             ["${sourceLang}", "${targetLang}", "${text}", "${context}"], id: \.self
           ) { variable in
@@ -348,7 +381,7 @@ struct ActionsView: View {
           : "Restores the custom action template."
       )
         .font(AppFont.caption)
-        .foregroundStyle(palette.faintForeground)
+        .foregroundStyle(palette.mutedForeground)
     }
   }
 
