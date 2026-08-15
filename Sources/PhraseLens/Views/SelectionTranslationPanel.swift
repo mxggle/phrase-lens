@@ -29,13 +29,18 @@ final class SelectionPanelCoordinator {
   /// collapses back into the same point on the way out.
   private var anchor = PanelMotion.centreAnchor
   private weak var settingsStore: SettingsStore?
+  /// The model whose request this panel is displaying, so dismissing the panel
+  /// can call that request off.
+  private weak var model: AppModel?
 
   private init() {}
 
   func show(model: AppModel) {
     // A replacement pop-up should not cross-fade with the one it replaces:
     // two stacked panels at the same spot read as a flicker, not a transition.
-    close(animated: false)
+    // This is a hand-off, not a dismissal — the request the new panel is about
+    // to display is usually already running — so it keeps the translation.
+    close(animated: false, cancelsTranslation: false)
 
     let rootView = SelectionTranslationPanelView()
       .environmentObject(model)
@@ -113,6 +118,7 @@ final class SelectionPanelCoordinator {
     }
     panel.setFrame(targetFrame, display: false)
     self.panel = panel
+    self.model = model
     settingsStore = model.settingsStore
     rememberCurrentPosition()
     installDismissalObservers(for: panel)
@@ -128,7 +134,15 @@ final class SelectionPanelCoordinator {
     )
   }
 
-  func close(animated: Bool = true) {
+  /// Takes the pop-up down.
+  ///
+  /// Dismissing it abandons the work it was showing: a request left running
+  /// would keep streaming into a window the user has already waved away and
+  /// would still file itself in history when it finished. A hand-off is not a
+  /// dismissal, though — `show` closes the panel it replaces, and the main
+  /// window carries on displaying the same request — so those callers pass
+  /// `cancelsTranslation: false`.
+  func close(animated: Bool = true, cancelsTranslation: Bool = true) {
     if let outsideClickMonitor {
       NSEvent.removeMonitor(outsideClickMonitor)
       self.outsideClickMonitor = nil
@@ -149,6 +163,10 @@ final class SelectionPanelCoordinator {
       NotificationCenter.default.removeObserver(moveObserver)
       self.moveObserver = nil
     }
+    if cancelsTranslation, model?.isTranslating == true {
+      model?.stopTranslation()
+    }
+    model = nil
     guard let panel else {
       settingsStore = nil
       return
@@ -467,8 +485,16 @@ private struct SelectionPanelBody: View {
   @EnvironmentObject private var settingsStore: SettingsStore
   @Environment(\.palette) private var palette
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.openSettings) private var openSettings
   @State private var didCopy = false
   @State private var copyResetTask: Task<Void, Never>?
+  @State private var isSourceExpanded = false
+
+  /// The captured text is clamped at rest so the pop-up always opens at the
+  /// same height, and capped when expanded because the panel cannot grow —
+  /// anything past the cap belongs in the full translator window.
+  private static let collapsedSourceLines = 2
+  private static let expandedSourceLines = 10
 
   var body: some View {
     VStack(spacing: 0) {
@@ -489,6 +515,14 @@ private struct SelectionPanelBody: View {
       .padding(.top, AppSpacing.sm + 2)
       .padding(.bottom, AppSpacing.sm)
       Hairline()
+      // A failure sits above the result instead of replacing it: an error that
+      // takes the Translate button off screen leaves nothing to recover with.
+      // The accessibility case keeps the whole area, because its own recovery
+      // route is already the only thing worth showing there.
+      if !model.isAccessibilityPermissionError, let error = model.errorMessage {
+        failureNotice(error)
+        Hairline()
+      }
       result
       Hairline()
       footer
@@ -499,6 +533,7 @@ private struct SelectionPanelBody: View {
     }
     .animation(AppMotion.state(reduceMotion: reduceMotion), value: model.outputText.isEmpty)
     .animation(AppMotion.state(reduceMotion: reduceMotion), value: model.isTranslating)
+    .animation(AppMotion.state(reduceMotion: reduceMotion), value: model.errorMessage)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Selection translation")
   }
@@ -519,6 +554,13 @@ private struct SelectionPanelBody: View {
 
       if model.isTranslating {
         Spinner(size: 12)
+
+        // Closing the pop-up also calls the request off, but that costs the
+        // user the result so far. Stopping is the cheaper half of it.
+        IconButton(title: "Stop translating (⌘.)", symbol: "stop.fill") {
+          model.stopTranslation()
+        }
+        .keyboardShortcut(".", modifiers: [.command])
       }
 
       IconButton(title: "Close (Escape)", symbol: "xmark", size: .iconSmall) {
@@ -559,15 +601,46 @@ private struct SelectionPanelBody: View {
       Text(model.inputText.isEmpty ? "Nothing was selected" : model.inputText)
         .font(AppFont.body)
         .foregroundStyle(
-          model.inputText.isEmpty ? palette.faintForeground : palette.secondaryForeground
+          model.inputText.isEmpty ? palette.mutedForeground : palette.secondaryForeground
         )
-        .lineLimit(2)
+        .lineLimit(isSourceExpanded ? Self.expandedSourceLines : Self.collapsedSourceLines)
+        .fixedSize(horizontal: false, vertical: true)
         .textSelection(.enabled)
       Spacer(minLength: 0)
+      if !model.inputText.isEmpty {
+        expandSourceButton
+      }
     }
     .padding(AppSpacing.sm)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+    .animation(AppMotion.state(reduceMotion: reduceMotion), value: isSourceExpanded)
+  }
+
+  /// Capture is lossy — accessibility reads can come back partial and fall back
+  /// to the clipboard — so the user has to be able to read back everything that
+  /// was actually captured, not the first two lines of it.
+  private var expandSourceButton: some View {
+    let title = isSourceExpanded
+      ? "Show less of the captured text"
+      : "Show all of the captured text"
+    return Button {
+      isSourceExpanded.toggle()
+    } label: {
+      Image(systemName: isSourceExpanded ? "chevron.up" : "chevron.down")
+        .font(.system(size: 9, weight: .semibold))
+        .contentTransition(.symbolEffect(.replace))
+        .foregroundStyle(palette.mutedForeground)
+        // Sized against the quote glyph rather than against a control, so a
+        // one-line capture keeps the height it rests at today.
+        .frame(width: AppSpacing.md, height: AppSpacing.md)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .padding(.top, 1)
+    .help(title)
+    .accessibilityLabel(title)
+    .accessibilityAddTraits(isSourceExpanded ? [.isSelected] : [])
   }
 
   // MARK: - Result
@@ -579,8 +652,6 @@ private struct SelectionPanelBody: View {
     Group {
       if model.isAccessibilityPermissionError {
         accessibilityPermissionMessage
-      } else if let error = model.errorMessage {
-        message(error, symbol: "exclamationmark.triangle.fill", tint: palette.warning)
       } else if model.outputText.isEmpty, model.isTranslating {
         message("Translating…", symbol: "ellipsis", tint: palette.mutedForeground)
       } else if model.outputText.isEmpty {
@@ -597,9 +668,9 @@ private struct SelectionPanelBody: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
-        ScrollView {
+        FollowingScrollView(isFollowing: model.isTranslating, trigger: model.outputText.utf8.count) {
           Group {
-            if model.outputUsesMarkdown || MarkdownParser.looksLikeMarkdown(model.outputText) {
+            if model.outputUsesMarkdown {
               MarkdownText(model.outputText, baseFontSize: settingsStore.settings.fontSize)
             } else {
               Text(model.outputText)
@@ -613,7 +684,6 @@ private struct SelectionPanelBody: View {
           .padding(.vertical, AppSpacing.md - 2)
           .overlayScrollers()
         }
-        .scrollBounceBehavior(.basedOnSize)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -636,6 +706,47 @@ private struct SelectionPanelBody: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, AppSpacing.md)
     .padding(.vertical, AppSpacing.md - 2)
+  }
+
+  /// A failure and the commands that recover from it, in the shape the
+  /// accessibility notice above already uses: say what went wrong, then offer
+  /// the way out. It is a strip rather than a pane so the result it sits over
+  /// keeps whatever it was showing.
+  private func failureNotice(_ error: String) -> some View {
+    VStack(alignment: .leading, spacing: AppSpacing.sm) {
+      Label(error, systemImage: "exclamationmark.triangle.fill")
+        .font(AppFont.body)
+        .foregroundStyle(palette.warning)
+        // Provider messages run long and the panel's height is fixed, so the
+        // notice gives back the space it does not need.
+        .lineLimit(3)
+        .fixedSize(horizontal: false, vertical: true)
+        .help(error)
+
+      HStack(spacing: AppSpacing.sm) {
+        Button("Retry") {
+          model.translate()
+        }
+        .appButton(.secondary, size: .sm)
+        .disabled(normalizedInputText.isEmpty)
+
+        // Retrying a misconfigured provider only reproduces the error, so a
+        // configuration failure also needs the route that fixes it — and from
+        // this pop-up, Settings is otherwise unreachable.
+        if model.isConfigurationError {
+          Button("Open Settings") {
+            WindowCoordinator.prepareForSettings()
+            openSettings()
+          }
+          .appButton(.secondary, size: .sm)
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, AppSpacing.md)
+    .padding(.vertical, AppSpacing.sm)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Translation problem")
   }
 
   private func message(_ text: String, symbol: String, tint: Color) -> some View {
