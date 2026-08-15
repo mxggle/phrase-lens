@@ -456,7 +456,7 @@ struct Eyebrow: View {
     Text(text.uppercased())
       .font(AppFont.overline)
       .tracking(0.7)
-      .foregroundStyle(palette.faintForeground)
+      .foregroundStyle(palette.mutedForeground)
       .accessibilityLabel(text)
   }
 }
@@ -634,7 +634,7 @@ struct AppTextEditor: View {
       if text.isEmpty, !placeholder.isEmpty {
         Text(placeholder)
           .font(.system(size: fontSize, design: monospaced ? .monospaced : .default))
-          .foregroundStyle(palette.faintForeground)
+          .foregroundStyle(palette.mutedForeground)
           .padding(.horizontal, AppSpacing.sm + 4)
           .padding(.vertical, AppSpacing.sm - 2)
           .allowsHitTesting(false)
@@ -1045,7 +1045,7 @@ struct NavRow: View {
             if let subtitle {
               Text(subtitle)
                 .font(AppFont.caption)
-                .foregroundStyle(palette.faintForeground)
+                .foregroundStyle(palette.mutedForeground)
                 .lineLimit(1)
             }
           }
@@ -1054,7 +1054,7 @@ struct NavRow: View {
             Text(trailing)
               .font(AppFont.caption)
               .monospacedDigit()
-              .foregroundStyle(palette.faintForeground)
+              .foregroundStyle(palette.mutedForeground)
           }
         }
       }

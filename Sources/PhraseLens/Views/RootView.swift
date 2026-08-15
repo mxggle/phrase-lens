@@ -95,6 +95,14 @@ struct RootView: View {
     // to go or it is paid twice.
     .ignoresSafeArea(.container, edges: .top)
     .background(WindowChrome().frame(width: 0, height: 0))
+    // Only a view inside the scene can hand out `openWindow`, and the window
+    // that needs re-opening is gone by the time it is asked for. Handing the
+    // action over while the window is alive is what lets it come back.
+    .onAppear {
+      WindowCoordinator.registerMainWindowOpener {
+        openWindow(id: WindowCoordinator.mainWindowSceneID)
+      }
+    }
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
     .alert(
       "PhraseLens",
@@ -257,7 +265,7 @@ private struct SidebarView: View {
             .foregroundStyle(palette.foreground)
           Text("Language workspace")
             .font(AppFont.caption)
-            .foregroundStyle(palette.faintForeground)
+            .foregroundStyle(palette.mutedForeground)
         }
         .lineLimit(1)
 

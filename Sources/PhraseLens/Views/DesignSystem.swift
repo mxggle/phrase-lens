@@ -59,9 +59,12 @@ struct AppPalette: Equatable, Sendable {
   let foreground: Color
   /// Supporting text that is still content.
   let secondaryForeground: Color
-  /// Labels, metadata, and captions.
+  /// Labels, metadata, and captions. The lightest tone that still carries
+  /// words: anything a reader has to read stops here.
   let mutedForeground: Color
-  /// Placeholders and disabled glyphs.
+  /// Ornament only — chevrons, drag handles, quote marks, and the glyphs that
+  /// accompany a label rather than replace it. Held at or above 3:1 for
+  /// non-text contrast, which is *not* enough for text, so text never uses it.
   let faintForeground: Color
 
   /// Hairline between regions and around resting controls.
@@ -101,7 +104,7 @@ extension AppPalette {
     foreground: Color(hex: 0x09090B),
     secondaryForeground: Color(hex: 0x3F3F46),
     mutedForeground: Color(hex: 0x71717A),
-    faintForeground: Color(hex: 0xA1A1AA),
+    faintForeground: Color(hex: 0x85858E),
     border: Color(hex: 0xE4E4E7),
     borderStrong: Color(hex: 0xD4D4D8),
     ring: Color(hex: 0x09090B, opacity: 0.22),
