@@ -67,6 +67,7 @@ struct RootView: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.openWindow) private var openWindow
 
   @State private var selection: AppSection = .translator
   /// `nil` means "follow the window width". Set once the user picks a side.

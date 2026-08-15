@@ -23,7 +23,9 @@ struct PhraseLensApp: App {
   }
 
   var body: some Scene {
-    WindowGroup("PhraseLens") {
+    // The scene is addressed by id so that a main window the user closed can
+    // be opened again from the menu bar or a hotkey.
+    WindowGroup("PhraseLens", id: WindowCoordinator.mainWindowSceneID) {
       RootView()
         .environmentObject(model)
         .environmentObject(model.settingsStore)
@@ -141,13 +143,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     _: NSApplication,
     hasVisibleWindows _: Bool
   ) -> Bool {
-    WindowCoordinator.dismissAutoPresentedSettingsWindow()
-    // If the user closed the last main window, let SwiftUI recreate the scene
-    // window itself. Racing it with our own ordering calls can leave two main
-    // windows behind.
-    guard WindowCoordinator.mainWindow() != nil else { return false }
+    // showMain() covers both cases itself: raise the window if one exists,
+    // or ask SwiftUI to recreate the scene and raise that once it appears.
+    // Always return false afterwards — true tells AppKit to *also* run its
+    // own default reopen handling, which for a WindowGroup races our own
+    // scene-recreation call and leaves two main windows on screen. Returning
+    // false skips that default without skipping our own handling above,
+    // which happens unconditionally either way.
     WindowCoordinator.showMain()
-    return true
+    return false
   }
 
   private func applyActivationPolicy() {

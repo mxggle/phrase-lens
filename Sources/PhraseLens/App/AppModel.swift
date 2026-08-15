@@ -754,21 +754,68 @@ enum WindowCoordinator {
     "PhraseLens.MainWindow"
   )
 
+  /// The main `WindowGroup`'s scene id, so a closed main window can be built
+  /// again rather than the app quietly doing nothing when it is asked for.
+  static let mainWindowSceneID = "PhraseLens.MainWindow"
+
+  /// SwiftUI's `openWindow` action, captured by the main window's own content
+  /// while it is on screen. Closing the last window tears the scene down but
+  /// not the action, so this is what brings the window back afterwards.
+  private static var openMainWindowScene: (() -> Void)?
+
+  static func registerMainWindowOpener(_ open: @escaping () -> Void) {
+    openMainWindowScene = open
+  }
+
   static func showMain() {
-    SelectionPanelCoordinator.shared.close()
+    // The window inherits the pop-up's model, so a translation that is still
+    // streaming carries on here rather than being cancelled out from under it.
+    SelectionPanelCoordinator.shared.close(cancelsTranslation: false)
     let settings = AppDelegate.sharedModel?.settingsStore.settings
     NSApp.setActivationPolicy(settings?.showDockIcon == false ? .accessory : .regular)
     NSApp.activate(ignoringOtherApps: true)
     if let window = mainWindow() {
-      window.level = .floating
-      window.makeKeyAndOrderFront(nil)
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-        if !window.isKeyWindow {
-          window.makeKeyAndOrderFront(nil)
-        }
-        window.level = settings?.alwaysOnTop == true ? .floating : .normal
-      }
+      raiseMainWindow(window)
+      return
     }
+    // The user closed the last main window, so there is nothing to raise:
+    // ask SwiftUI for a new one and raise that once it exists. Without this
+    // the request lands on whatever other window the app still owns.
+    guard let openMainWindowScene else { return }
+    openMainWindowScene()
+    DispatchQueue.main.async {
+      guard let window = mainWindow() else { return }
+      raiseMainWindow(window)
+    }
+  }
+
+  /// Brings a main window forward. It is raised above everything first because
+  /// the request usually comes from a hotkey pressed in another app, then
+  /// dropped back to its configured level once it holds focus.
+  private static func raiseMainWindow(_ window: NSWindow) {
+    let settings = AppDelegate.sharedModel?.settingsStore.settings
+    window.level = .floating
+    window.makeKeyAndOrderFront(nil)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+      if !window.isKeyWindow {
+        window.makeKeyAndOrderFront(nil)
+      }
+      window.level = settings?.alwaysOnTop == true ? .floating : .normal
+    }
+  }
+
+  /// Clears the way for the Settings scene before it is opened.
+  ///
+  /// The selection pop-up is a non-activating panel, usually on an app with no
+  /// Dock icon, so nothing has activated the app by the time Settings is asked
+  /// for: without this the window opens behind whatever the user was reading.
+  /// The pop-up is handed off rather than dismissed, so a translation it was
+  /// running survives the trip.
+  static func prepareForSettings() {
+    SelectionPanelCoordinator.shared.close(cancelsTranslation: false)
+    let settings = AppDelegate.sharedModel?.settingsStore.settings
+    NSApp.setActivationPolicy(settings?.showDockIcon == false ? .accessory : .regular)
+    NSApp.activate(ignoringOtherApps: true)
   }
 
   /// A window restored onto a display that no longer exists is resized by
@@ -784,20 +831,32 @@ enum WindowCoordinator {
     window.setFrame(frame, display: true)
   }
 
-  /// The main window carries the scene's title, which is the only stable way
-  /// to tell it apart from the Settings window now that both are plain,
-  /// titled-appearance windows of similar size. Width is the fallback for a
-  /// system that has not applied the title yet.
+  /// Claims a window as the main one.
+  ///
+  /// Called from the main window's own content view, which is the only place
+  /// that knows for certain which window it is: every other test is a guess
+  /// from the outside, and guessing once cost the app a Settings window
+  /// standing in for the translator.
+  static func adoptMainWindow(_ window: NSWindow) {
+    window.identifier = mainWindowIdentifier
+    guard !window.styleMask.contains(.fullSizeContentView) else { return }
+    configureChrome(of: window)
+  }
+
+  /// Last-resort identification for a main window that has not adopted itself
+  /// yet — during launch, before its content view has a window. The Settings
+  /// window is excluded outright: it is the same shape as the main window, so
+  /// a match on size alone would hand it back as the translator.
   static func tagMainWindowIfNeeded() {
     let candidates = NSApp.windows.filter {
       $0.identifier != mainWindowIdentifier && $0.canBecomeKey && !($0 is NSPanel)
+        && !isSettingsWindow($0)
     }
     guard
       let window = candidates.first(where: { $0.title == "PhraseLens" })
         ?? candidates.first(where: { $0.frame.width >= AppMetrics.windowMinWidth })
     else { return }
-    window.identifier = mainWindowIdentifier
-    configureChrome(of: window)
+    adoptMainWindow(window)
   }
 
   /// The app draws its own top bar, so the window's content has to reach the
@@ -818,24 +877,33 @@ enum WindowCoordinator {
   }
 
   static func mainWindow() -> NSWindow? {
-    if let tagged = NSApp.windows.first(where: {
-      $0.identifier == mainWindowIdentifier
-    }) {
+    if let tagged = taggedMainWindow() {
       return tagged
     }
     tagMainWindowIfNeeded()
-    return NSApp.windows.first(where: {
-      $0.identifier == mainWindowIdentifier
-    })
+    return taggedMainWindow()
+  }
+
+  /// The tag is checked against the Settings window as well, so a stale tag
+  /// left by an earlier mis-identification cannot keep answering for the
+  /// translator.
+  private static func taggedMainWindow() -> NSWindow? {
+    NSApp.windows.first {
+      $0.identifier == mainWindowIdentifier && !isSettingsWindow($0)
+    }
   }
 
   /// The SwiftUI `Settings` scene's window, which macOS may restore or
   /// auto-present during launch or activation.
   static func settingsWindow() -> NSWindow? {
-    NSApp.windows.first { window in
-      window.title == "PhraseLens Settings"
-        || (window.identifier?.rawValue.contains("SwiftUI_Settings") ?? false)
-    }
+    NSApp.windows.first(where: isSettingsWindow)
+  }
+
+  /// Settings keeps its title even with the title bar hidden, and SwiftUI
+  /// stamps its own identifier on the scene, so either one identifies it.
+  private static func isSettingsWindow(_ window: NSWindow) -> Bool {
+    window.title == "PhraseLens Settings"
+      || (window.identifier?.rawValue.contains("SwiftUI_Settings") ?? false)
   }
 
   /// Dismisses a Settings window that macOS or SwiftUI presented without an

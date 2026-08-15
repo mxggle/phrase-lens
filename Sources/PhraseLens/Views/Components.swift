@@ -1328,8 +1328,8 @@ struct WindowChrome: NSViewRepresentable {
   }
 
   private func apply(to window: NSWindow?) {
-    guard let window, !window.styleMask.contains(.fullSizeContentView) else { return }
-    WindowCoordinator.configureChrome(of: window)
+    guard let window else { return }
+    WindowCoordinator.adoptMainWindow(window)
   }
 }
 
