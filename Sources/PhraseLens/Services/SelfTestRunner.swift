@@ -311,6 +311,42 @@ enum SelfTestRunner {
       "Gemini thought content leaked into visible output",
       failures: &failures
     )
+    // A stream that stops early still ends cleanly on the wire, so the only
+    // evidence the answer is a fragment is the provider's own stop reason.
+    let openAITruncated =
+      #"data: {"choices":[{"delta":{"content":"half"},"finish_reason":"length"}]}"#
+    let openAITruncatedEvent = StreamDecoder.event(from: openAITruncated, provider: .openAI)
+    check(
+      openAITruncatedEvent.text == "half" && openAITruncatedEvent.truncation != nil,
+      "OpenAI truncated stream was not detected",
+      failures: &failures
+    )
+    check(
+      StreamDecoder.event(from: openAI, provider: .openAI).truncation == nil
+        && StreamDecoder.event(
+          from: #"data: {"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}"#,
+          provider: .openAI
+        ).truncation == nil,
+      "a completed OpenAI stream was reported as truncated",
+      failures: &failures
+    )
+    check(
+      StreamDecoder.event(
+        from: #"data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}"#,
+        provider: .anthropic
+      ).truncation != nil,
+      "Anthropic truncated stream was not detected",
+      failures: &failures
+    )
+    check(
+      StreamDecoder.event(
+        from: #"data: {"candidates":[{"finishReason":"MAX_TOKENS"}]}"#,
+        provider: .gemini
+      ).truncation != nil
+        && StreamDecoder.event(from: geminiThought, provider: .gemini).truncation == nil,
+      "Gemini truncated stream detection failed",
+      failures: &failures
+    )
     do {
       let client = TranslationClient()
       let testPrompt = TranslationPrompt(system: "Return only the answer.", user: "Hello")

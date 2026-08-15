@@ -185,7 +185,7 @@ struct TranslatorView: View {
         Text("\(model.inputText.count)")
           .font(AppFont.caption)
           .monospacedDigit()
-          .foregroundStyle(palette.faintForeground)
+          .foregroundStyle(palette.mutedForeground)
           .accessibilityLabel("\(model.inputText.count) characters in the source text")
       }
     }
@@ -232,7 +232,7 @@ struct TranslatorView: View {
         if model.inputText.isEmpty {
           Text("Type or paste text here.")
             .font(.system(size: settingsStore.settings.fontSize))
-            .foregroundStyle(palette.faintForeground)
+            .foregroundStyle(palette.mutedForeground)
             .padding(.horizontal, AppMetrics.readingInset)
             .padding(.vertical, AppMetrics.readingInset - 8)
             .allowsHitTesting(false)
@@ -326,9 +326,9 @@ struct TranslatorView: View {
       )
       .transition(.opacity)
     } else {
-      ScrollView {
+      FollowingScrollView(isFollowing: model.isTranslating, trigger: model.outputText.utf8.count) {
         Group {
-          if model.outputUsesMarkdown || MarkdownParser.looksLikeMarkdown(model.outputText) {
+          if model.outputUsesMarkdown {
             MarkdownText(model.outputText, baseFontSize: settingsStore.settings.fontSize)
           } else {
             Text(model.outputText)

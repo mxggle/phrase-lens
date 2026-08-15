@@ -705,6 +705,8 @@ enum TranslationError: LocalizedError, Equatable {
   case invalidEndpoint(String)
   case invalidResponse
   case provider(String)
+  case network(String)
+  case streamInterrupted(String)
   case noInput
   case selectionUnavailable
   case accessibilityPermissionRequired
@@ -716,6 +718,9 @@ enum TranslationError: LocalizedError, Equatable {
     case .invalidEndpoint(let reason): "Invalid API endpoint: \(reason)"
     case .invalidResponse: "The provider returned an unreadable response."
     case .provider(let message): message
+    case .network(let reason): "Could not reach the provider: \(reason)"
+    case .streamInterrupted(let reason):
+      "The reply was cut off before it finished: \(reason)"
     case .noInput: "Enter or select text first."
     case .selectionUnavailable:
       "Selected text could not be read. Keep it selected in the other app, release the shortcut keys, and press ⌥F again."

@@ -9,11 +9,22 @@ enum InputSource: Sendable {
   case history
 }
 
+/// How the result pane should lay the output out.
+enum OutputRendering: Sendable {
+  /// The armed action asked for plain text.
+  case plain
+  /// The armed action asked for Markdown.
+  case markdown
+  /// No action speaks for this output — restored history whose action has
+  /// since been deleted or renamed. Only here does the text itself decide.
+  case undetermined
+}
+
 @MainActor
 final class AppModel: ObservableObject {
   @Published var inputText = ""
   @Published var outputText = ""
-  @Published private(set) var outputUsesMarkdown = false
+  @Published private(set) var outputRendering: OutputRendering = .plain
   @Published var selectedActionID = TranslationAction.builtIns[0].id
   @Published var selectionContext: String?
   @Published var inputSource: InputSource = .manual
@@ -91,6 +102,20 @@ final class AppModel: ObservableObject {
       ?? TranslationAction.builtIns[0]
   }
 
+  /// Whether the result is laid out as Markdown rather than shown literally.
+  ///
+  /// The action's "Render the result as Markdown" switch is the authority: a
+  /// model that answers in Markdown anyway does not get to override an author
+  /// who turned the switch off. Inspecting the text is a last resort, for
+  /// output whose action no longer exists.
+  var outputUsesMarkdown: Bool {
+    switch outputRendering {
+    case .markdown: true
+    case .plain: false
+    case .undetermined: MarkdownParser.looksLikeMarkdown(outputText)
+    }
+  }
+
   var visibleSourceLanguages: [LanguageCode] {
     let favorites = normalizedFavoriteLanguages()
     return [.auto] + favorites
@@ -102,6 +127,16 @@ final class AppModel: ObservableObject {
 
   var isAccessibilityPermissionError: Bool {
     errorMessage == TranslationError.accessibilityPermissionRequired.localizedDescription
+  }
+
+  /// Whether the current failure is something only Settings can fix, so a
+  /// surface showing it can offer that route instead of a retry that would
+  /// reproduce the same error. Matched against the errors themselves rather
+  /// than against copied strings, as the accessibility case above is.
+  var isConfigurationError: Bool {
+    guard let errorMessage else { return false }
+    return errorMessage == TranslationError.missingAPIKey.localizedDescription
+      || errorMessage.hasPrefix(TranslationError.invalidEndpoint("").localizedDescription)
   }
 
   func translate() {
@@ -128,7 +163,7 @@ final class AppModel: ObservableObject {
     )
     let target = settings.targetLanguage
     let action = selectedAction
-    outputUsesMarkdown = action.outputMarkdown
+    outputRendering = action.outputMarkdown ? .markdown : .plain
     let context = selectionContext
     let prompt = PromptBuilder.build(
       text: text,
@@ -142,8 +177,11 @@ final class AppModel: ObservableObject {
     let proxy = settings.proxy
 
     translationTask = Task {
+      // Held outside the `do` so a failure can still flush it: the UI is
+      // updated on a 50 ms throttle, and text that arrived inside the last
+      // tick is as real as the rest of the answer.
+      var streamedText = ""
       do {
-        var streamedText = ""
         streamedText.reserveCapacity(min(max(text.utf8.count, 1_024), 65_536))
         let clock = ContinuousClock()
         var nextUIUpdate = clock.now
@@ -170,18 +208,18 @@ final class AppModel: ObservableObject {
         guard !streamedText.isEmpty else {
           throw TranslationError.invalidResponse
         }
-        let entry = HistoryEntry(
-          sourceText: text,
-          translatedText: streamedText,
-          sourceLanguage: source,
-          targetLanguage: target,
-          actionName: action.name,
-          provider: configuration.provider,
-          model: configuration.model,
-          selectionContext: context
+        try await recordHistory(
+          HistoryEntry(
+            sourceText: text,
+            translatedText: streamedText,
+            sourceLanguage: source,
+            targetLanguage: target,
+            actionName: action.name,
+            provider: configuration.provider,
+            model: configuration.model,
+            selectionContext: context
+          )
         )
-        try await library.addHistory(entry)
-        history.insert(entry, at: 0)
         if settings.autoSpeakSelection {
           speech.speak(
             text,
@@ -193,15 +231,39 @@ final class AppModel: ObservableObject {
         }
       } catch let error as TranslationError where error == .cancelled {
         guard requestID == activeRequest else { return }
+        outputText = streamedText
         isTranslating = false
         statusMessage = "Stopped"
       } catch {
         guard requestID == activeRequest else { return }
+        outputText = streamedText
         isTranslating = false
         statusMessage = "Failed"
         errorMessage = error.localizedDescription
+        // A provider that stopped early still answered. The text on screen is
+        // as real as any other result and belongs in history; the message
+        // above is what says it is a fragment.
+        if case TranslationError.streamInterrupted = error, !streamedText.isEmpty {
+          try? await recordHistory(
+            HistoryEntry(
+              sourceText: text,
+              translatedText: streamedText,
+              sourceLanguage: source,
+              targetLanguage: target,
+              actionName: action.name,
+              provider: configuration.provider,
+              model: configuration.model,
+              selectionContext: context
+            )
+          )
+        }
       }
     }
+  }
+
+  private func recordHistory(_ entry: HistoryEntry) async throws {
+    try await library.addHistory(entry)
+    history.insert(entry, at: 0)
   }
 
   func stopTranslation() {
@@ -216,7 +278,7 @@ final class AppModel: ObservableObject {
     stopTranslation()
     inputText = ""
     outputText = ""
-    outputUsesMarkdown = false
+    outputRendering = .plain
     selectionContext = nil
     inputSource = .manual
     restoredSourceLanguage = nil
@@ -234,7 +296,7 @@ final class AppModel: ObservableObject {
       let previousInput = inputText
       inputText = outputText
       outputText = previousInput
-      outputUsesMarkdown = false
+      outputRendering = .plain
     }
   }
 
@@ -343,10 +405,12 @@ final class AppModel: ObservableObject {
     settingsStore.settings.targetLanguage = entry.targetLanguage
     if let action = visibleActions.first(where: { $0.name == entry.actionName }) {
       selectedActionID = action.id
-      outputUsesMarkdown = action.outputMarkdown
+      outputRendering = action.outputMarkdown ? .markdown : .plain
     } else {
+      // The action that produced this entry is gone, so nothing here states
+      // the author's intent — the stored text is all there is to go on.
       selectDefaultAction()
-      outputUsesMarkdown = selectedAction.outputMarkdown
+      outputRendering = .undetermined
     }
     WindowCoordinator.showMain()
   }
@@ -540,7 +604,7 @@ final class AppModel: ObservableObject {
     let activeCapture = selectionCaptureID
     inputText = ""
     outputText = ""
-    outputUsesMarkdown = false
+    outputRendering = .plain
     selectionContext = nil
     inputSource = .selection
     restoredSourceLanguage = nil

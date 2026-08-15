@@ -1403,6 +1403,78 @@ extension View {
   }
 }
 
+// MARK: - Following scroll view
+
+/// A scroll view that keeps the end of its content in sight while that content
+/// is still growing.
+///
+/// Streamed output otherwise runs off the bottom within a few seconds, leaving
+/// the reader watching a stale paragraph. Following stops the moment the
+/// reader scrolls away from the bottom, and does not resume until they return
+/// there — a result the reader is scrolled back through must never be yanked
+/// out from under them.
+struct FollowingScrollView<Trigger: Equatable, Content: View>: View {
+  /// Whether content is still arriving. A finished result never moves.
+  let isFollowing: Bool
+  /// Changes whenever content is appended.
+  let trigger: Trigger
+  @ViewBuilder var content: Content
+
+  /// How close to the bottom still counts as "reading the end". A line of
+  /// prose is under this, so a reader who has not deliberately scrolled away
+  /// keeps being followed.
+  private static var pinThreshold: CGFloat { 28 }
+
+  private let space = "followingScroll"
+  private let tail = "followingScrollTail"
+
+  @State private var isPinnedToBottom = true
+
+  var body: some View {
+    ScrollViewReader { proxy in
+      GeometryReader { viewport in
+        ScrollView {
+          VStack(spacing: 0) {
+            content
+            // Doubles as the scroll target and the probe that reports how far
+            // the end of the content sits from the bottom of the viewport.
+            Color.clear
+              .frame(height: 1)
+              .id(tail)
+              .background {
+                GeometryReader { marker in
+                  Color.clear.preference(
+                    key: TailOffsetKey.self,
+                    value: marker.frame(in: .named(space)).maxY
+                  )
+                }
+              }
+              .accessibilityHidden(true)
+          }
+        }
+        .coordinateSpace(name: space)
+        .scrollBounceBehavior(.basedOnSize)
+        .onPreferenceChange(TailOffsetKey.self) { tailBottom in
+          let distance = tailBottom - viewport.size.height
+          isPinnedToBottom = distance <= Self.pinThreshold
+        }
+        .onChange(of: trigger) { _, _ in
+          guard isFollowing, isPinnedToBottom else { return }
+          proxy.scrollTo(tail, anchor: .bottom)
+        }
+      }
+    }
+  }
+}
+
+private struct TailOffsetKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = nextValue()
+  }
+}
+
 // MARK: - App Logo
 
 /// Renders the PhraseLens brand application icon.

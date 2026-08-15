@@ -11,6 +11,10 @@ struct TranslationClient: Sendable {
   ) -> AsyncThrowingStream<String, Error> {
     AsyncThrowingStream { continuation in
       let task = Task {
+        // Whether the user is already looking at part of an answer. It decides
+        // how a failure reads: nothing on screen is a connection that never
+        // delivered, text on screen is one that stopped partway.
+        var emitted = false
         do {
           if configuration.provider.usesAPIKey,
             apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -41,16 +45,22 @@ struct TranslationClient: Sendable {
             )
           }
 
-          var emitted = false
+          var truncation: String?
           for try await line in bytes.lines {
             try Task.checkCancellation()
-            if let chunk = StreamDecoder.content(
-              from: line,
-              provider: configuration.provider
-            ), !chunk.isEmpty {
+            let event = StreamDecoder.event(from: line, provider: configuration.provider)
+            if let chunk = event.text, !chunk.isEmpty {
               emitted = true
               continuation.yield(chunk)
             }
+            if let reason = event.truncation {
+              truncation = reason
+            }
+          }
+          // A provider that says why it stopped early explains more than the
+          // empty-stream fallback, so it is preferred even when nothing came.
+          if let truncation {
+            throw TranslationError.streamInterrupted(truncation)
           }
           if !emitted {
             throw TranslationError.invalidResponse
@@ -58,6 +68,16 @@ struct TranslationClient: Sendable {
           continuation.finish()
         } catch is CancellationError {
           continuation.finish(throwing: TranslationError.cancelled)
+        } catch let error as URLError where error.code == .cancelled {
+          // Stopping the request tears the connection down; that is the user's
+          // own doing, not a network failure to report as one.
+          continuation.finish(throwing: TranslationError.cancelled)
+        } catch let error as URLError {
+          continuation.finish(
+            throwing: emitted
+              ? TranslationError.streamInterrupted(error.localizedDescription)
+              : TranslationError.network(error.localizedDescription)
+          )
         } catch {
           continuation.finish(throwing: error)
         }
@@ -169,15 +189,20 @@ struct TranslationClient: Sendable {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
     request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+    // Anthropic bills thinking tokens against max_tokens, so a shared cap leaves
+    // the visible answer whatever thinking did not spend. Budget them apart.
+    let thinkingBudget = 4_000
+    let answerBudget = 4_096
     var body: [String: Any] = [
       "model": configuration.model,
-      "max_tokens": 4_096,
+      "max_tokens": configuration.extendedThinking
+        ? thinkingBudget + answerBudget : answerBudget,
       "stream": true,
       "system": prompt.system,
       "messages": [["role": "user", "content": prompt.user]],
     ]
     if configuration.extendedThinking {
-      body["thinking"] = ["type": "enabled", "budget_tokens": 4_000]
+      body["thinking"] = ["type": "enabled", "budget_tokens": thinkingBudget]
       body["temperature"] = 1
     } else {
       body["temperature"] = 0.2
@@ -265,7 +290,12 @@ struct TranslationClient: Sendable {
 
   private static func configuredSession(proxy: ProxySettings?) -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
-    configuration.waitsForConnectivity = true
+    // Waiting for connectivity takes timeoutIntervalForRequest out of play, and
+    // timeoutIntervalForResource then defaults to a week: an offline user would
+    // watch the spinner forever. A translation the user just asked for should
+    // fail fast enough to say why, with a backstop for the whole stream.
+    configuration.waitsForConnectivity = false
+    configuration.timeoutIntervalForResource = 600
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
     if let proxy {
       configuration.connectionProxyDictionary = [
@@ -295,69 +325,138 @@ struct TranslationClient: Sendable {
   }
 }
 
+/// What one server-sent line carried.
+struct StreamEvent {
+  /// Text to show. `nil` for keep-alives, control frames, and the private
+  /// reasoning the user must never see.
+  var text: String?
+  /// The provider's own statement that it stopped early, in plain language.
+  /// A truncated stream still ends cleanly on the wire, so without this the
+  /// user is handed a half-answer that looks finished.
+  var truncation: String?
+}
+
 enum StreamDecoder {
   static func content(from rawLine: String, provider: ProviderKind) -> String? {
+    event(from: rawLine, provider: provider).text
+  }
+
+  /// Decodes a line once. Text and stop reason arrive on the same frames for
+  /// most providers, and this runs on every line of every stream, so they are
+  /// read together rather than by parsing the JSON twice.
+  static func event(from rawLine: String, provider: ProviderKind) -> StreamEvent {
     var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !line.isEmpty, !line.hasPrefix("event:") else { return nil }
+    guard !line.isEmpty, !line.hasPrefix("event:") else { return StreamEvent() }
     if line.hasPrefix("data:") {
       line = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
     }
     guard line != "[DONE]", let data = line.data(using: .utf8),
       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else {
-      return nil
+      return StreamEvent()
     }
 
     switch provider {
     case .anthropic:
-      if let delta = json["delta"] as? [String: Any],
-        let text = delta["text"] as? String
-      {
-        return text
-      }
-      return nil
+      let delta = json["delta"] as? [String: Any]
+      return StreamEvent(
+        text: delta?["text"] as? String,
+        // The stop reason for the whole message rides on `message_delta`.
+        truncation: describe(
+          anthropic: delta?["stop_reason"] as? String ?? json["stop_reason"] as? String
+        )
+      )
 
     case .gemini:
       guard let candidates = json["candidates"] as? [[String: Any]],
-        let content = candidates.first?["content"] as? [String: Any],
+        let candidate = candidates.first
+      else { return StreamEvent() }
+      let finish = describe(gemini: candidate["finishReason"] as? String)
+      guard let content = candidate["content"] as? [String: Any],
         let parts = content["parts"] as? [[String: Any]]
-      else { return nil }
+      else { return StreamEvent(truncation: finish) }
       let finalText = parts.compactMap { part -> String? in
         // Gemini thinking models mark internal thought parts explicitly. They are
         // model working state, not user-visible translation output.
         guard part["thought"] as? Bool != true else { return nil }
         return part["text"] as? String
       }.joined()
-      return finalText.isEmpty ? nil : finalText
+      return StreamEvent(text: finalText.isEmpty ? nil : finalText, truncation: finish)
 
     case .ollama:
+      let truncation = json["done_reason"] as? String == "length" ? lengthLimit : nil
       if let message = json["message"] as? [String: Any] {
-        if let content = message["content"] as? String, !content.isEmpty { return content }
-        return nil
+        let content = message["content"] as? String
+        return StreamEvent(
+          text: (content?.isEmpty ?? true) ? nil : content,
+          truncation: truncation
+        )
       }
-      return json["response"] as? String
+      return StreamEvent(text: json["response"] as? String, truncation: truncation)
 
     case .cohere:
-      if let delta = json["delta"] as? [String: Any],
-        let message = delta["message"] as? [String: Any],
-        let content = message["content"] as? [String: Any],
-        let text = content["text"] as? String
-      {
-        return text
-      }
-      return nil
+      let delta = json["delta"] as? [String: Any]
+      let text = ((delta?["message"] as? [String: Any])?["content"] as? [String: Any])?["text"]
+      return StreamEvent(
+        text: text as? String,
+        truncation: describe(cohere: delta?["finish_reason"] as? String)
+      )
 
     default:
       guard let choices = json["choices"] as? [[String: Any]],
         let first = choices.first
-      else { return nil }
+      else { return StreamEvent() }
+      let truncation = describe(openAI: first["finish_reason"] as? String)
       if let delta = first["delta"] as? [String: Any] {
-        if let text = delta["content"] as? String { return text }
         // OpenAI-compatible reasoning models commonly stream private chain-of-
         // thought separately in `reasoning_content` before the final `content`.
         // Never merge that field into the text shown to the user.
+        return StreamEvent(text: delta["content"] as? String, truncation: truncation)
       }
-      return (first["message"] as? [String: Any])?["content"] as? String
+      return StreamEvent(
+        text: (first["message"] as? [String: Any])?["content"] as? String,
+        truncation: truncation
+      )
+    }
+  }
+
+  // MARK: - Stop reasons
+
+  private static let lengthLimit = "the answer reached the model's length limit"
+  private static let filtered = "the provider's content filter stopped it"
+
+  private static func describe(openAI reason: String?) -> String? {
+    switch reason {
+    case "length": lengthLimit
+    case "content_filter": filtered
+    default: nil
+    }
+  }
+
+  private static func describe(anthropic reason: String?) -> String? {
+    switch reason {
+    case "max_tokens": lengthLimit
+    case "refusal": "the model declined to continue"
+    default: nil
+    }
+  }
+
+  private static func describe(cohere reason: String?) -> String? {
+    switch reason {
+    case "MAX_TOKENS": lengthLimit
+    case "ERROR": "the provider ended the stream with an error"
+    default: nil
+    }
+  }
+
+  private static func describe(gemini reason: String?) -> String? {
+    switch reason {
+    // A finished answer and an absent field both mean nothing went wrong.
+    case nil, "STOP", "FINISH_REASON_UNSPECIFIED": nil
+    case "MAX_TOKENS": lengthLimit
+    case "SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII": filtered
+    case "RECITATION": "the provider stopped it for reproducing training data"
+    case .some(let other): "the provider ended it early (\(other))"
     }
   }
 }
