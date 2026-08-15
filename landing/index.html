@@ -170,6 +170,11 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
 .hero-cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .hero-meta{margin-top:14px;font-size:12.5px;color:var(--fg4)}
 .hero-pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}
+/* Gatekeeper stops an un-notarized first launch, so say so before the OS does. */
+.first-run{margin-top:12px;font-size:12.5px;color:var(--fg3);max-width:54ch}
+.first-run summary{cursor:pointer;color:var(--fg2);text-decoration:underline dotted;text-underline-offset:3px}
+.first-run summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+.first-run p{margin:8px 0 0;line-height:1.6}
 
 /* ---- mock macOS window ---- */
 .stage{position:relative}
@@ -732,6 +737,10 @@ footer{border-top:1px solid var(--border);padding:30px 0}
         <a class="btn btn-ghost" href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener">View source</a>
       </div>
       <div class="hero-meta">macOS 14+ · Apple Silicon &amp; Intel · Free and open source (AGPL-3.0)</div>
+      <details class="first-run">
+        <summary>Opening it the first time</summary>
+        <p>Builds are signed but not yet notarized, so macOS checks with you before the first launch. Right-click <b>PhraseLens.app</b>, choose <b>Open</b>, then <b>Open</b> again. Once only — macOS remembers after that.</p>
+      </details>
       <div class="hero-pills">
         <span class="pillchip">No account</span>
         <span class="pillchip">No telemetry</span>

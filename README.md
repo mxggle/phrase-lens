@@ -108,6 +108,30 @@ PhraseLens supports direct streaming connections to major cloud providers, local
 
 ---
 
+## 📥 Install
+
+Grab the latest `PhraseLens.dmg` or `PhraseLens.zip` from the [Releases page](https://github.com/mxggle/phrase-lens/releases/latest), then drag **PhraseLens.app** into your **Applications** folder.
+
+### Opening it the first time
+
+Release builds are code-signed but **not yet notarized by Apple**, so macOS blocks the first launch with *"PhraseLens cannot be opened because Apple cannot check it for malicious software."* This is expected. To open it:
+
+1. Right-click (or Control-click) **PhraseLens.app** in Applications and choose **Open**.
+2. Click **Open** again in the dialog that appears.
+
+Alternatively, launch it once normally, then go to **System Settings → Privacy & Security**, scroll to the Security section, and click **Open Anyway** next to the PhraseLens message.
+
+You only need to do this once. macOS remembers the choice for every later launch and update.
+
+> [!NOTE]
+> Don't disable Gatekeeper system-wide to work around this. The steps above approve this one app and leave the rest of your Mac protected.
+
+### Granting permissions
+
+On first use PhraseLens asks for **Accessibility** permission, which is what lets it read the text you have selected in other apps and write replacements back. Grant it in **System Settings → Privacy & Security → Accessibility**. Screenshot OCR additionally uses **Screen Recording** permission.
+
+---
+
 ## 🛠️ Build and Run
 
 ### Clone the Repository
