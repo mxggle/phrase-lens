@@ -66,6 +66,44 @@ enum SelfTestRunner {
       "Japanese phrase and word prompt classification failed",
       failures: &failures
     )
+    // Every built-in ships an editable template, and `PromptBuilder` fills the
+    // same template in at send time. A variable typo would otherwise reach a
+    // provider as literal `${targetLang}`, and an action that never names the
+    // reader's language is how an answer comes back in the wrong one.
+    for builtIn in TranslationAction.builtIns {
+      let filled = PromptBuilder.build(
+        text: "sample phrase",
+        source: .english,
+        target: .simplifiedChinese,
+        action: builtIn,
+        selectionContext: "A paragraph that contains the sample phrase and continues."
+      )
+      check(
+        !filled.system.contains("${") && !filled.user.contains("${"),
+        "\(builtIn.name) prompt left a template variable unsubstituted",
+        failures: &failures
+      )
+      check(
+        // Polish deliberately works in the language of the text itself.
+        builtIn.mode == .polishing
+          || filled.system.contains("简体中文") || filled.user.contains("简体中文"),
+        "\(builtIn.name) prompt never names the language to answer in",
+        failures: &failures
+      )
+    }
+    let compareAction = TranslationAction.builtIns.first { $0.mode == .compareSynonyms }!
+    let comparePrompt = PromptBuilder.build(
+      text: "brave",
+      source: .english,
+      target: .simplifiedChinese,
+      action: compareAction
+    )
+    check(
+      comparePrompt.user.contains("`brave`") && comparePrompt.user.contains("Example:"),
+      "Compare Synonyms lost the headword or its mandatory example line",
+      failures: &failures
+    )
+
     var overriddenTranslate = translateAction
     overriddenTranslate.rolePrompt = "Translate carefully into ${targetLang}."
     overriddenTranslate.commandPrompt = "Process ${text} from ${sourceLang}."
@@ -81,6 +119,145 @@ enum SelfTestRunner {
       "built-in action prompt overrides were ignored",
       failures: &failures
     )
+    // Translate keeps its Markdown switch off because a translation is plain
+    // text, but a single word takes the dictionary branch and answers in
+    // Markdown. Rendering that literally is what shows a reader raw `**`.
+    check(
+      PromptBuilder.expectsMarkdown(translateAction, text: "設定")
+        && !PromptBuilder.expectsMarkdown(translateAction, text: "設定を開く必要がある。")
+        && !PromptBuilder.expectsMarkdown(translateAction, text: "設定", writing: true)
+        && !PromptBuilder.expectsMarkdown(overriddenTranslate, text: "設定")
+        && PromptBuilder.expectsMarkdown(contextAction, text: "A short sentence."),
+      "Markdown rendering did not follow what the request asked the model for",
+      failures: &failures
+    )
+    let basePrompt = PromptBuilder.build(
+      text: "設定",
+      source: .japanese,
+      target: .simplifiedChinese,
+      action: translateAction
+    )
+    let followUpPrompt = PromptBuilder.followUp(
+      question: "Give me one more example.",
+      base: basePrompt,
+      answer: "The first answer.",
+      turns: [FollowUpTurn(question: "Where is it used?", answer: "Everywhere.")],
+      target: .simplifiedChinese
+    )
+    check(
+      followUpPrompt.messages.map(\.role) == [.user, .assistant, .user, .assistant, .user]
+        && followUpPrompt.messages.first?.content == basePrompt.user
+        && followUpPrompt.messages.last?.content == "Give me one more example."
+        && followUpPrompt.system.hasPrefix(basePrompt.system),
+      "a follow-up did not carry the exchange it asks about",
+      failures: &failures
+    )
+    let unansweredFollowUp = PromptBuilder.followUp(
+      question: "Why?",
+      base: basePrompt,
+      answer: "The first answer.",
+      // The turn currently streaming has no answer yet, and half a turn would
+      // read to the model as a question the assistant refused.
+      turns: [FollowUpTurn(question: "Where is it used?", answer: "")],
+      target: .simplifiedChinese
+    )
+    check(
+      unansweredFollowUp.messages.count == 3,
+      "an unanswered follow-up turn was sent as context",
+      failures: &failures
+    )
+
+    do {
+      let client = TranslationClient()
+      let openAIBody =
+        try JSONSerialization.jsonObject(
+          with: client.makeRequest(
+            prompt: followUpPrompt,
+            configuration: ProviderConfiguration(provider: .openAI),
+            apiKey: "test-key"
+          ).httpBody ?? Data()
+        ) as? [String: Any]
+      let openAIMessages = openAIBody?["messages"] as? [[String: String]]
+      check(
+        openAIMessages?.map({ $0["role"] ?? "" })
+          == ["system", "user", "assistant", "user", "assistant", "user"],
+        "an OpenAI-compatible request dropped the follow-up exchange",
+        failures: &failures
+      )
+
+      let anthropicBody =
+        try JSONSerialization.jsonObject(
+          with: client.makeRequest(
+            prompt: followUpPrompt,
+            configuration: ProviderConfiguration(
+              provider: .anthropic,
+              endpoint: ProviderKind.anthropic.defaultEndpoint,
+              model: ProviderKind.anthropic.defaultModel
+            ),
+            apiKey: "test-key"
+          ).httpBody ?? Data()
+        ) as? [String: Any]
+      check(
+        (anthropicBody?["messages"] as? [[String: String]])?.count == 5
+          && anthropicBody?["system"] as? String == followUpPrompt.system,
+        "an Anthropic request dropped the follow-up exchange",
+        failures: &failures
+      )
+
+      let geminiBody =
+        try JSONSerialization.jsonObject(
+          with: client.makeRequest(
+            prompt: followUpPrompt,
+            configuration: ProviderConfiguration(
+              provider: .gemini,
+              endpoint: ProviderKind.gemini.defaultEndpoint,
+              model: ProviderKind.gemini.defaultModel
+            ),
+            apiKey: "test-key"
+          ).httpBody ?? Data()
+        ) as? [String: Any]
+      let geminiRoles = (geminiBody?["contents"] as? [[String: Any]])?
+        .compactMap { $0["role"] as? String }
+      check(
+        geminiRoles == ["user", "model", "user", "model", "user"],
+        "a Gemini request did not map assistant turns to the model role",
+        failures: &failures
+      )
+    } catch {
+      failures.append("follow-up request test failed: \(error)")
+    }
+
+    do {
+      // History written before follow-ups existed has no such field, and one
+      // undecodable row fails the whole library load.
+      let legacyHistory = Data(
+        """
+        [{
+          "id": "20000000-0000-4000-8000-000000000001",
+          "createdAt": "2025-01-01T00:00:00Z",
+          "sourceText": "Hello",
+          "translatedText": "你好",
+          "sourceLanguage": "en",
+          "targetLanguage": "zh-Hans",
+          "actionName": "Translate",
+          "provider": "OpenAI",
+          "model": "gpt-4o-mini",
+          "favorite": false
+        }]
+        """.utf8
+      )
+      let decoder = JSONDecoder()
+      decoder.dateDecodingStrategy = .iso8601
+      let entries = try decoder.decode([HistoryEntry].self, from: legacyHistory)
+      check(
+        entries.first?.followUps == nil,
+        "history saved before follow-ups existed did not decode",
+        failures: &failures
+      )
+    } catch {
+      failures.append("legacy history decoding failed: \(error)")
+    }
+
     let customAction = TranslationAction(
       id: UUID(uuidString: "10000000-0000-4000-8000-000000000001")!,
       name: "Custom"

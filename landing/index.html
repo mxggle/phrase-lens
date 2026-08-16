@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PhraseLens — Understand any text, right where you find it</title>
-<meta name="description" content="Select a word in any macOS app. Press ⌥F. Get the meaning, the nuance, and the translation without leaving what you're reading. Native Swift, bring your own key, open source.">
+<meta name="description" content="Select a word in any macOS app. Press ⌥F. Get the meaning, the nuance, and the translation without leaving what you're reading — then keep asking until it's clear. Native Swift, bring your own key, open source.">
 <link rel="icon" href="assets/logo.png">
 <meta property="og:title" content="PhraseLens — Understand any text, right where you find it">
 <meta property="og:description" content="A native macOS comprehension layer. Select text anywhere, press ⌥F, get an answer where you are.">
@@ -364,6 +364,46 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
 @keyframes swapout{to{opacity:0;transform:translateY(6px);filter:blur(3px)}}
 .lens-hint{display:flex;align-items:center;gap:10px;padding:11px 24px;border-top:1px solid var(--border);font-size:12px;color:var(--fg4);background:var(--chrome)}
 
+/* ============================================================ FOLLOW-UPS */
+.fu{overflow:hidden}
+.fu-src{display:flex;align-items:baseline;gap:12px;padding:18px 24px;border-bottom:1px solid var(--border);background:var(--chrome)}
+.fu-src .lab{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg4)}
+.fu-src p{font-size:19px;font-weight:640;color:var(--fg);letter-spacing:-.02em}
+.fu-src .ipa{margin-left:-6px}
+.fu-src .pair{margin-left:auto;font-size:11.5px;color:var(--fg4);white-space:nowrap}
+/* one scroller for the answer and everything asked about it — as in the app */
+.fu-scroll{max-height:342px;overflow-y:auto;overscroll-behavior:contain;padding:20px 24px;scrollbar-width:thin}
+.fu-turn{margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
+.fu-q{
+  display:flex;align-items:flex-start;gap:8px;margin-bottom:11px;
+  padding:7px 10px;border-radius:10px;background:var(--muted);
+}
+.fu-q .arw{flex:none;color:var(--fg4);margin-top:2px}
+.fu-q .qt{font-size:12.5px;font-weight:550;line-height:1.5;color:var(--fg2)}
+.fu-think{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg4)}
+.fu-think i{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--border2);border-top-color:var(--accent);animation:fuspin .7s linear infinite}
+@keyframes fuspin{to{transform:rotate(360deg)}}
+.fu-foot{padding:12px 14px;border-top:1px solid var(--border);background:var(--chrome)}
+.fu-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.fu-chip{
+  display:inline-flex;align-items:center;gap:7px;height:29px;padding:0 12px;
+  border:1px solid var(--border);border-radius:999px;background:var(--surface);
+  font-size:12.2px;font-weight:500;color:var(--fg2);
+  transition:border-color .18s var(--ease),color .18s,background .18s,opacity .3s;
+}
+.fu-chip .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex:none}
+.fu-chip:hover{border-color:var(--accent);background:var(--muted-hover);color:var(--fg)}
+.fu-chip.used{opacity:.4;pointer-events:none}
+.fu-field{
+  display:flex;align-items:center;gap:2px;height:36px;padding:0 8px 0 12px;
+  border:1px solid var(--border2);border-radius:10px;background:var(--surface);
+  font-size:13px;color:var(--fg4);
+}
+.fu-field .cur{display:inline-block;width:1.5px;height:14px;background:var(--accent);animation:blink 1s steps(1) infinite}
+.fu-field .keys{margin-left:auto;display:flex;gap:4px}
+.fu-field .keys .kbd{height:20px;min-width:20px;font-size:10.5px}
+.fu-note{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:11.5px;color:var(--fg4)}
+
 /* ============================================================ SYNONYM SPOTLIGHT */
 .syn-wrap{display:grid;grid-template-columns:minmax(0,.82fr) minmax(0,1.18fr);gap:52px;align-items:center}
 .syn-stage{position:relative}
@@ -684,6 +724,10 @@ footer{border-top:1px solid var(--border);padding:30px 0}
   .sc .combo{min-width:0}
   .lens-src p{font-size:15px}
   .syn-head .hw{font-size:20px}
+  /* a scroller inside the page scroller fights the thumb; let the thread grow */
+  .fu-scroll{max-height:none;padding:16px 18px}
+  .fu-src{flex-wrap:wrap;padding:16px 18px}
+  .fu-src .pair{margin-left:0;flex-basis:100%}
 }
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
@@ -704,6 +748,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
     <div class="nav-links">
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
+      <a href="#followups">Follow-ups</a>
       <a href="#providers">Providers</a>
       <a href="#privacy">Privacy</a>
     </div>
@@ -950,6 +995,51 @@ footer{border-top:1px solid var(--border);padding:30px 0}
   </div>
 </section>
 
+<!-- ═══════════════════════════ FOLLOW-UPS ═══════════════════════════ -->
+<section class="sec" id="followups" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head rv" style="max-width:720px">
+      <div class="eyebrow">Follow-up questions <span class="tag">New</span></div>
+      <h2 class="h">One answer is rarely the end of it.</h2>
+      <p class="sub">
+        Keep asking, right under the result. The thread stays with the answer it's about — no new
+        window, no re-explaining what you meant — and the model still sees the whole exchange.
+      </p>
+    </div>
+
+    <div class="card fu rv" id="fuCard">
+      <div class="fu-src">
+        <span class="lab">Selection</span>
+        <p>candid</p>
+        <span class="ipa">/ˈkændɪd/</span>
+        <span class="pair">EN → 简体中文</span>
+      </div>
+
+      <div class="fu-scroll" id="fuScroll">
+        <div id="fuBase">
+          <p class="res-hw"><b>坦率的、直言不讳的</b> <span class="tag">adj.</span></p>
+          <p class="res">说话<b>不遮掩、不加修饰</b>，尤指在本可以回避时仍如实说出来。</p>
+          <p class="res-ex">He was candid about what went wrong.<br><span class="zh">他坦率地说明了哪里出了问题。</span></p>
+        </div>
+        <div id="fuThread"></div>
+      </div>
+
+      <div class="fu-foot">
+        <div class="fu-chips" id="fuChips"></div>
+        <div class="fu-field">
+          <span id="fuPh">Ask about this result…</span><span class="cur"></span>
+          <span class="keys"><span class="kbd">⌘</span><span class="kbd">L</span></span>
+        </div>
+        <div class="fu-note">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Suggestions change with what you're reading — a word, a sentence, or code. Or type your own.
+        </div>
+      </div>
+    </div>
+    <p class="ctx-caption rv">Saved with the result. Reopen it from History and <b>the whole thread comes back</b>.</p>
+  </div>
+</section>
+
 <!-- ═══════════════════════════ BENTO ═══════════════════════════ -->
 <section class="sec" style="padding-top:0">
   <div class="wrap">
@@ -1150,8 +1240,8 @@ footer{border-top:1px solid var(--border);padding:30px 0}
   <div class="wrap keys-wrap">
     <div class="rv">
       <div class="eyebrow">Shortcuts</div>
-      <h2 class="h">Six keys. That's the whole product.</h2>
-      <p class="sub" style="margin-bottom:22px">Hover a row to see it on the keyboard. All of them remappable in Settings.</p>
+      <h2 class="h">Seven keys. That's the whole product.</h2>
+      <p class="sub" style="margin-bottom:22px">Hover a row to see it on the keyboard. The four global ones are remappable in Settings.</p>
       <div class="sc-list" id="scList">
         <div class="sc" data-keys="alt,f"><span class="combo"><kbd>⌥</kbd><kbd>F</kbd></span><span class="txt">Look up the selection</span></div>
         <div class="sc" data-keys="alt,shift,f"><span class="combo"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>F</kbd></span><span class="txt">Open the full workspace</span></div>
@@ -1159,6 +1249,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
         <div class="sc" data-keys="alt,w"><span class="combo"><kbd>⌥</kbd><kbd>W</kbd></span><span class="txt">Translate &amp; replace in place</span></div>
         <div class="sc" data-keys="cmd,1"><span class="combo"><kbd>⌘</kbd><kbd>1–9</kbd></span><span class="txt">Jump to an action</span></div>
         <div class="sc" data-keys="cmd,shift,bracket"><span class="combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>[ ]</kbd></span><span class="txt">Cycle through actions</span></div>
+        <div class="sc" data-keys="cmd,l"><span class="combo"><kbd>⌘</kbd><kbd>L</kbd></span><span class="txt">Ask a follow-up about the result</span></div>
       </div>
     </div>
     <div class="card kbd-map rv d2" id="kbdMap">
@@ -1175,7 +1266,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
       <div class="kbd-row">
         <div class="key" data-k="a">A</div><div class="key" data-k="s">S</div><div class="key" data-k="d">D</div>
         <div class="key" data-k="f">F</div><div class="key" data-k="g">G</div><div class="key" data-k="h">H</div>
-        <div class="key" data-k="j">J</div><div class="key" data-k="k">K</div>
+        <div class="key" data-k="j">J</div><div class="key" data-k="k">K</div><div class="key" data-k="l">L</div>
       </div>
       <div class="kbd-row">
         <div class="key wide" data-k="shift">⇧ shift</div>
@@ -1231,6 +1322,8 @@ footer{border-top:1px solid var(--border);padding:30px 0}
         <div class="a">Yes — your own, from whichever provider you like. PhraseLens doesn't resell tokens, so you pay the provider directly and nothing to us. Or run Ollama locally and pay nobody.</div></details>
       <details class="q"><summary>Is it free?<span class="chev">›</span></summary>
         <div class="a">The app is free and open source under AGPL-3.0. Your only cost is your provider's usage, which for word lookups is measured in fractions of a cent.</div></details>
+      <details class="q"><summary>What does a follow-up send back to the model?<span class="chev">›</span></summary>
+        <div class="a">The question, plus the exchange it's about: your original request, the answer you got, and up to eight earlier turns of the thread, trimmed. Nothing else is attached — and the thread itself is stored on your Mac, alongside the result in History.</div></details>
       <details class="q"><summary>Does it work offline?<span class="chev">›</span></summary>
         <div class="a">Completely, with <a href="https://ollama.com" target="_blank" rel="noopener" style="color:var(--accent-ink)">Ollama</a>. Screenshot OCR and macOS system voices are on-device regardless of provider.</div></details>
       <details class="q"><summary>Why does it want Accessibility permission?<span class="chev">›</span></summary>
@@ -1320,9 +1413,11 @@ $$('.proof .n').forEach(el => {
 });
 
 /* ═════════════ STREAMING ENGINE ═════════════ */
-let streamToken = 0;
-function stream(container, html, cps = 150) {
-  const token = ++streamToken;
+/* One token per lane: two sections can stream at once without cancelling
+   each other, while everything inside a lane still replaces what came before. */
+const streamTokens = {};
+function stream(container, html, cps = 150, lane = 'main') {
+  const token = streamTokens[lane] = (streamTokens[lane] || 0) + 1;
   container.innerHTML = html;
   const tops = [...container.children];
   if (reduce()) return;
@@ -1351,7 +1446,7 @@ function stream(container, html, cps = 150) {
   place();
 
   const tick = (now) => {
-    if (token !== streamToken) { caret.remove(); return; }
+    if (token !== streamTokens[lane]) { caret.remove(); return; }
     acc += (now - last) / 1000 * cps; last = now;
     let budget = Math.floor(acc);
     if (budget > 0) {
@@ -1730,6 +1825,96 @@ new IntersectionObserver((es,o) => es.forEach(e => {
     lensSet(lensOrder[(lensOrder.indexOf(lensKey) + 1) % lensOrder.length]);
   }, 4200);
 }), {threshold:.35}).observe($('#lensCard'));
+
+/* ═════════════ FOLLOW-UPS ═════════════ */
+/* Labels and questions are the ones the app actually offers for a headword
+   (FollowUpSuggestion.word) — the chip is short, the thread shows the question. */
+const FU = [
+  {label:'Examples',
+   q:'Give three natural example sentences using this, from everyday to formal, each with a translation.',
+   a:`<p class="res-ex">Can I be candid with you?<br><span class="zh">我能跟你说句实话吗？（日常）</span></p>
+<p class="res-ex">She was candid about the risks of the plan.<br><span class="zh">她坦率地谈了这个方案的风险。（职场）</span></p>
+<p class="res-ex">The report is unusually candid about the failure.<br><span class="zh">这份报告罕见地直陈了这次失败。（正式）</span></p>`},
+
+  {label:'Nuance',
+   q:'Which words are easily confused with this one, and what exactly separates them? Show a minimal pair for each.',
+   a:`<div class="res-card"><h5>frank <span>（直率的）</span></h5><ul>
+<li><b>差异</b>：同样直说，但更偏「说出不中听的事实」；candid 含<b>本可隐瞒却选择公开</b>。</li>
+<li><b>最小对比</b>：a frank warning 直白的警告 · a candid admission 主动的坦白</li></ul></div>
+<div class="res-card"><h5>blunt <span>（说话冲的）</span></h5><ul>
+<li><b>差异</b>：直到<b>不顾对方感受</b>，多为负面评价。</li>
+<li><b>最小对比</b>：He was candid. 他很坦率。· He was blunt. 他说话很冲。</li></ul></div>
+<div class="res-card"><h5>honest <span>（诚实的）</span></h5><ul>
+<li><b>差异</b>：只表示<b>不说假话</b>，不含「主动摊开」。</li>
+<li><b>最小对比</b>：an honest answer 不撒谎的回答 · a candid answer 什么都没瞒的回答</li></ul></div>`},
+
+  {label:'Collocations',
+   q:'What does this word usually go with? List the highest-frequency collocations and set phrases with translations.',
+   a:`<p class="res"><b>be candid about sth</b> 坦率谈及某事 —— 最高频，后面几乎总跟不好开口的事。</p>
+<p class="res"><b>a candid conversation</b> 一次坦诚的谈话 · <b>a candid assessment</b> 不加粉饰的评估</p>
+<p class="res"><b>to be candid, …</b> 说实话，…… —— 句首插入语，位置同 frankly。</p>
+<p class="res muted">另有摄影义：a candid photo 抓拍（非摆拍）。</p>`},
+
+  {label:'Word parts',
+   q:'Break this word into its parts and give its etymology, then list a few words built from the same roots.',
+   a:`<p class="res"><b>cand-</b> ← 拉丁语 <b>candidus</b>「洁白、明亮」，引申为不藏污、不掺假。</p>
+<p class="res">同源词：<b>candidate</b>（古罗马求职者身着白袍）· <b>candle</b> 蜡烛 · <b>incandescent</b> 白炽的</p>
+<p class="res muted">抓住这条线，candid 的「把话摊在亮处」就不必死记。</p>`},
+
+  {label:'Remember it',
+   q:'Give me a concrete memory hook for this word, and one short sentence I could use today to make it stick.',
+   a:`<div class="guide"><b class="gt">🕯 记忆钩子</b>
+<p>candid = candle 的白光：<b>把话放到亮处，不留暗角</b>。</p>
+<p>今天就能用 👉 <code>To be candid, I'd rather not.</code> 说实话，我不太想。</p></div>`}
+];
+
+const fuCard = $('#fuCard'), fuChips = $('#fuChips'), fuThread = $('#fuThread'), fuScroll = $('#fuScroll');
+FU.forEach((f, i) => {
+  const b = document.createElement('button');
+  b.className = 'fu-chip'; b.dataset.i = i;
+  b.innerHTML = `<span class="dot"></span>${f.label}`;
+  fuChips.appendChild(b);
+});
+
+let fuTouched = false;
+/* scroll only the thread's own scroller — the page stays where the reader put it */
+function fuReveal(el) {
+  const delta = el.getBoundingClientRect().top - fuScroll.getBoundingClientRect().top;
+  fuScroll.scrollTo({top: fuScroll.scrollTop + delta - 14, behavior: reduce() ? 'auto' : 'smooth'});
+}
+function fuAsk(i) {
+  const f = FU[i];
+  const chip = fuChips.querySelector(`.fu-chip[data-i="${i}"]`);
+  if (!f || !chip || chip.classList.contains('used')) return;
+  chip.classList.add('used');
+
+  const turn = document.createElement('div');
+  turn.className = 'fu-turn';
+  turn.innerHTML = `<div class="fu-q">
+      <svg class="arw" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M5 4v7a3 3 0 0 0 3 3h9"/><path d="M14 10l4 4-4 4"/></svg>
+      <span class="qt"></span></div>
+    <div class="fu-a"><div class="fu-think"><i></i>Thinking…</div></div>`;
+  turn.querySelector('.qt').textContent = f.q;
+  fuThread.appendChild(turn);
+  fuReveal(turn);
+
+  /* its own lane, so answering a second question doesn't cut the first one off */
+  const body = turn.querySelector('.fu-a');
+  setTimeout(() => { stream(body, f.a, 300, 'fu' + i); fuReveal(turn); }, reduce() ? 0 : 480);
+}
+fuChips.addEventListener('click', e => {
+  const b = e.target.closest('.fu-chip');
+  if (!b) return;
+  fuTouched = true;
+  fuAsk(+b.dataset.i);
+});
+/* ask the first one for the reader, once — after that the strip is theirs */
+new IntersectionObserver((es, o) => es.forEach(e => {
+  if (!e.isIntersecting) return; o.disconnect();
+  setTimeout(() => { if (!fuTouched) fuAsk(0); }, reduce() ? 0 : 700);
+}), {threshold:.4}).observe(fuCard);
 
 /* ═════════════ SYNONYM SPOTLIGHT ═════════════ */
 const SYN = {

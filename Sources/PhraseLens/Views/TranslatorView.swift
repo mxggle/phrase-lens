@@ -56,6 +56,7 @@ struct TranslatorView: View {
     .background(palette.background)
     .animation(motion, value: model.isTranslating)
     .animation(motion, value: model.outputText.isEmpty)
+    .animation(motion, value: model.followUps.count)
     .animation(motion, value: showsSelectionPreview)
   }
 
@@ -271,6 +272,13 @@ struct TranslatorView: View {
 
       resultBody
 
+      // The composer belongs to the result, not to the window: it appears
+      // once there is an answer to ask about and goes away with it.
+      if !model.outputText.isEmpty {
+        FollowUpComposer()
+          .transition(.opacity)
+      }
+
       PaneFooter {
         Button {
           model.toggleCollectCurrentWord()
@@ -326,8 +334,11 @@ struct TranslatorView: View {
       )
       .transition(.opacity)
     } else {
-      FollowingScrollView(isFollowing: model.isTranslating, trigger: model.outputText.utf8.count) {
-        Group {
+      FollowingScrollView(
+        isFollowing: model.isTranslating || model.isAnsweringFollowUp,
+        trigger: model.resultLength
+      ) {
+        VStack(alignment: .leading, spacing: 0) {
           if model.outputUsesMarkdown {
             MarkdownText(model.outputText, baseFontSize: settingsStore.settings.fontSize)
           } else {
@@ -336,6 +347,8 @@ struct TranslatorView: View {
               .lineSpacing(3)
               .textSelection(.enabled)
           }
+
+          FollowUpThread()
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(AppMetrics.readingInset)

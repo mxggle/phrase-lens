@@ -53,6 +53,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | :--- | :--- |
 | 🔍 **Global Selection Lookup** | Select text anywhere in Safari, Xcode, Slack, or any app and trigger a compact pop-up right next to your cursor. |
 | 🖥️ **Full Language Workspace** | Dedicated multi-tab workspace for translation, polishing, summarization, context explanation, and code analysis. |
+| 💬 **Follow-Up Questions** | Keep asking about a result — examples, nuance, collocations, grammar — with one-tap suggested questions. The thread is saved with the result and reopens with it from History. |
 | 📸 **Vision Screenshot OCR** | Snip any region on your screen to extract, recognize, and translate text instantly via Apple's Vision framework. |
 | ✍️ **In-Place Writing & Rewrite** | Translate or polish text directly inside any active, editable text field and replace it with a single keystroke. |
 | 🗣️ **Dual Speech Synthesizers** | Read source text aloud using high-fidelity **Microsoft Edge Neural TTS** or offline native **macOS System Voices**. |
@@ -70,6 +71,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | **Open Full Workspace** | <kbd>⌥</kbd> <kbd>⇧</kbd> <kbd>F</kbd> | None |
 | **Screenshot OCR** | <kbd>⌥</kbd> <kbd>S</kbd> | Screen Recording |
 | **Translate & Replace in Focused Field** | <kbd>⌥</kbd> <kbd>W</kbd> | macOS Accessibility |
+| **Ask a Follow-Up** *(in-app)* | <kbd>⌘</kbd> <kbd>L</kbd> | None |
 | **Switch Action** *(in-app)* | <kbd>⌘</kbd> <kbd>1</kbd>…<kbd>9</kbd> | None |
 | **Next / Previous Action** *(in-app)* | <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>]</kbd> / <kbd>[</kbd> | None |
 
