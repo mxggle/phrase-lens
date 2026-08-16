@@ -57,6 +57,9 @@ struct PhraseLensApp: App {
           .keyboardShortcut(.return, modifiers: [.command])
         Button("Stop") { model.stopTranslation() }
           .keyboardShortcut(".", modifiers: [.command])
+        Button("Ask a Follow-Up") { model.requestFollowUpFocus() }
+          .keyboardShortcut("l", modifiers: [.command])
+          .disabled(!model.canAskFollowUp)
         Divider()
         // The tab bar shows glyphs alone once the window is narrow, so the
         // actions also need a keyboard route that names them.

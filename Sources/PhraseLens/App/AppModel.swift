@@ -30,6 +30,17 @@ final class AppModel: ObservableObject {
   @Published var inputSource: InputSource = .manual
   @Published var isSelectionExpanded = false
   @Published var isTranslating = false
+  /// The questions asked about the current result, oldest first. The last one
+  /// may still be streaming its answer.
+  @Published private(set) var followUps: [FollowUpTurn] = []
+  @Published private(set) var isAnsweringFollowUp = false
+  /// Why the last follow-up failed. Shown beside the composer rather than in
+  /// an alert: the result it belongs to is still on screen and still readable.
+  @Published private(set) var followUpError: String?
+  @Published var followUpDraft = ""
+  /// Changes whenever a command outside the composer asks it for keyboard
+  /// focus, which is the only way a menu item can reach a text field.
+  @Published private(set) var followUpFocusToken = UUID()
   @Published var statusMessage = "Ready"
   @Published var errorMessage: String?
   @Published var history: [HistoryEntry] = []
@@ -46,7 +57,12 @@ final class AppModel: ObservableObject {
   private let accessibility = AccessibilityService()
   private let ocr = OCRService()
   private var translationTask: Task<Void, Never>?
+  private var followUpTask: Task<Void, Never>?
   private var requestID = UUID()
+  private var followUpRequestID = UUID()
+  /// The history row the current result was filed under, so a thread built on
+  /// top of it is saved to that same row instead of to a new one.
+  private var currentHistoryID: UUID?
   private var selectionCaptureID = UUID()
   private var restoredSourceLanguage: LanguageCode?
   private var cancellables = Set<AnyCancellable>()
@@ -150,6 +166,8 @@ final class AppModel: ObservableObject {
     requestID = UUID()
     let activeRequest = requestID
     outputText = ""
+    // The thread hangs off the answer that is about to be replaced.
+    resetFollowUps()
     errorMessage = nil
     isTranslating = true
     statusMessage = "Connecting to \(settingsStore.settings.provider.provider.rawValue)…"
@@ -264,13 +282,17 @@ final class AppModel: ObservableObject {
   private func recordHistory(_ entry: HistoryEntry) async throws {
     try await library.addHistory(entry)
     history.insert(entry, at: 0)
+    currentHistoryID = entry.id
   }
 
+  /// Calls off everything the translator is running, the follow-up thread
+  /// included: both stream into the same pane, so one Stop has to reach both.
   func stopTranslation() {
     requestID = UUID()
     translationTask?.cancel()
     translationTask = nil
     isTranslating = false
+    stopFollowUp()
     statusMessage = "Stopped"
   }
 
@@ -283,6 +305,7 @@ final class AppModel: ObservableObject {
     inputSource = .manual
     restoredSourceLanguage = nil
     isSelectionExpanded = false
+    resetFollowUps()
     errorMessage = nil
     statusMessage = "Ready"
   }
@@ -297,6 +320,8 @@ final class AppModel: ObservableObject {
       inputText = outputText
       outputText = previousInput
       outputRendering = .plain
+      // The questions were asked about the answer that just became the input.
+      resetFollowUps()
     }
   }
 
@@ -327,6 +352,213 @@ final class AppModel: ObservableObject {
         volume: settings.speechVolume,
         provider: settings.resolvedTTSProvider
       )
+    }
+  }
+
+  // MARK: - Follow-up thread
+
+  /// Whether there is a finished result to ask about. A question asked while
+  /// the answer is still arriving would be about half a paragraph.
+  var canAskFollowUp: Bool {
+    !isTranslating && !outputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  /// One-tap questions for the current result, minus the ones already asked —
+  /// a chip that would repeat an answer already in the thread is noise.
+  var followUpSuggestions: [FollowUpSuggestion] {
+    guard canAskFollowUp else { return [] }
+    let asked = Set(followUps.map(\.question))
+    return FollowUpSuggestion.suggestions(for: inputText, mode: selectedAction.mode)
+      .filter { !asked.contains($0.question) }
+  }
+
+  /// Total streamed text in the result pane. The pane follows its own tail
+  /// while text is arriving, and text arrives in both the result and the
+  /// thread, so one measure has to cover both.
+  var resultLength: Int {
+    followUps.reduce(outputText.utf8.count) { total, turn in
+      total + turn.question.utf8.count + turn.answer.utf8.count
+    }
+  }
+
+  /// Asks about the result currently on screen.
+  ///
+  /// The question is appended before the request is made, so the thread shows
+  /// what was asked while the answer is still on its way.
+  func askFollowUp(_ rawQuestion: String) {
+    let question = rawQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !question.isEmpty, canAskFollowUp else { return }
+
+    stopFollowUp()
+    followUpError = nil
+    followUpDraft = ""
+
+    let settings = settingsStore.settings
+    let source = TranslationSourceResolver.resolve(
+      inputText.trimmingCharacters(in: .whitespacesAndNewlines),
+      configuredSource: settings.sourceLanguage,
+      inputSource: inputSource,
+      restoredSource: restoredSourceLanguage
+    )
+    let prompt = PromptBuilder.followUp(
+      question: question,
+      base: PromptBuilder.build(
+        text: inputText,
+        source: source,
+        target: settings.targetLanguage,
+        action: selectedAction,
+        selectionContext: selectionContext
+      ),
+      answer: outputText,
+      turns: followUps,
+      target: settings.targetLanguage
+    )
+
+    let turn = FollowUpTurn(question: question, answer: "")
+    followUps.append(turn)
+    isAnsweringFollowUp = true
+    statusMessage = "Answering…"
+
+    followUpRequestID = UUID()
+    let activeRequest = followUpRequestID
+    let configuration = settings.provider
+    let key = settingsStore.apiKey
+    let proxy = settings.proxy
+
+    followUpTask = Task {
+      // Held outside the `do` for the same reason the translation stream holds
+      // its own: text that arrived inside the last UI tick is part of the
+      // answer even when the stream then failed.
+      var streamedText = ""
+      do {
+        let clock = ContinuousClock()
+        var nextUIUpdate = clock.now
+        for try await chunk in client.stream(
+          prompt: prompt,
+          configuration: configuration,
+          apiKey: key,
+          proxy: proxy
+        ) {
+          guard followUpRequestID == activeRequest else { return }
+          streamedText.append(chunk)
+          let now = clock.now
+          if now >= nextUIUpdate {
+            update(turn.id, answer: streamedText)
+            nextUIUpdate = now.advanced(by: .milliseconds(50))
+          }
+        }
+        guard followUpRequestID == activeRequest else { return }
+        update(turn.id, answer: streamedText)
+        isAnsweringFollowUp = false
+        guard !streamedText.isEmpty else { throw TranslationError.invalidResponse }
+        statusMessage = "Completed"
+        await persistFollowUps()
+      } catch let error as TranslationError where error == .cancelled {
+        guard followUpRequestID == activeRequest else { return }
+        await settleFollowUp(turn.id, question: question, text: streamedText, status: "Stopped")
+      } catch {
+        guard followUpRequestID == activeRequest else { return }
+        await settleFollowUp(
+          turn.id,
+          question: question,
+          text: streamedText,
+          status: "Failed",
+          error: error.localizedDescription
+        )
+      }
+    }
+  }
+
+  func stopFollowUp() {
+    followUpRequestID = UUID()
+    followUpTask?.cancel()
+    followUpTask = nil
+    guard isAnsweringFollowUp else { return }
+    isAnsweringFollowUp = false
+    // A question with nothing under it is not a turn, only a stray heading.
+    if let last = followUps.last, last.answer.isEmpty {
+      followUps.removeLast()
+      followUpDraft = last.question
+    }
+  }
+
+  func removeFollowUp(_ id: UUID) {
+    guard let index = followUps.firstIndex(where: { $0.id == id }) else { return }
+    if isAnsweringFollowUp, followUps[index].id == followUps.last?.id {
+      stopFollowUp()
+      return
+    }
+    followUps.remove(at: index)
+    Task { await persistFollowUps() }
+  }
+
+  func copyFollowUpAnswer(_ id: UUID) {
+    guard let turn = followUps.first(where: { $0.id == id }), !turn.answer.isEmpty else { return }
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(turn.answer, forType: .string)
+    statusMessage = "Copied"
+  }
+
+  func dismissFollowUpError() {
+    followUpError = nil
+  }
+
+  /// Hands keyboard focus to the composer from a menu command.
+  func requestFollowUpFocus() {
+    guard canAskFollowUp else { return }
+    followUpFocusToken = UUID()
+  }
+
+  private func update(_ id: UUID, answer: String) {
+    guard let index = followUps.firstIndex(where: { $0.id == id }) else { return }
+    followUps[index].answer = answer
+  }
+
+  /// Closes out a follow-up that stopped early. Whatever streamed before it
+  /// stopped is a real partial answer and stays; a turn with nothing under it
+  /// hands its question back to the composer so it can be asked again.
+  private func settleFollowUp(
+    _ id: UUID,
+    question: String,
+    text: String,
+    status: String,
+    error: String? = nil
+  ) async {
+    isAnsweringFollowUp = false
+    statusMessage = status
+    followUpError = error
+    if text.isEmpty {
+      followUps.removeAll { $0.id == id }
+      if followUpDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        followUpDraft = question
+      }
+      return
+    }
+    update(id, answer: text)
+    await persistFollowUps()
+  }
+
+  private func resetFollowUps() {
+    stopFollowUp()
+    followUps = []
+    followUpDraft = ""
+    followUpError = nil
+    currentHistoryID = nil
+  }
+
+  /// Files the thread with the result it belongs to, so reopening that history
+  /// row brings the whole conversation back rather than the first answer alone.
+  private func persistFollowUps() async {
+    guard let currentHistoryID,
+      let index = history.firstIndex(where: { $0.id == currentHistoryID })
+    else { return }
+    let answered = followUps.filter { !$0.answer.isEmpty }
+    history[index].followUps = answered.isEmpty ? nil : answered
+    let updated = history[index]
+    do {
+      try await library.updateHistory(updated)
+    } catch {
+      errorMessage = error.localizedDescription
     }
   }
 
@@ -397,11 +629,16 @@ final class AppModel: ObservableObject {
 
   func restore(_ entry: HistoryEntry) {
     stopTranslation()
+    resetFollowUps()
     inputText = entry.sourceText
     outputText = entry.translatedText
     selectionContext = entry.selectionContext
     inputSource = .history
     restoredSourceLanguage = entry.sourceLanguage
+    // The thread is reopened against its own history row, so questions asked
+    // now are saved back to the same entry.
+    followUps = entry.followUps ?? []
+    currentHistoryID = entry.id
     settingsStore.settings.targetLanguage = entry.targetLanguage
     if let action = visibleActions.first(where: { $0.name == entry.actionName }) {
       selectedActionID = action.id
@@ -609,6 +846,7 @@ final class AppModel: ObservableObject {
     inputSource = .selection
     restoredSourceLanguage = nil
     isSelectionExpanded = false
+    resetFollowUps()
     errorMessage = nil
     statusMessage = "Reading selection…"
 
@@ -662,6 +900,7 @@ final class AppModel: ObservableObject {
         selectionContext = nil
         inputSource = .ocr
         restoredSourceLanguage = nil
+        resetFollowUps()
         isSelectionExpanded = true
         selectDefaultAction()
         WindowCoordinator.showMain()

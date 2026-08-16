@@ -678,6 +678,9 @@ struct HistoryEntry: Codable, Identifiable, Hashable, Sendable {
   var model: String
   var selectionContext: String?
   var favorite = false
+  /// The follow-up thread the reader built on top of this result. Optional so
+  /// that history written before follow-ups existed still decodes.
+  var followUps: [FollowUpTurn]?
 }
 
 struct VocabularyEntry: Codable, Identifiable, Hashable, Sendable {
@@ -689,9 +692,156 @@ struct VocabularyEntry: Codable, Identifiable, Hashable, Sendable {
   var targetLanguage: LanguageCode
 }
 
+/// One role-tagged message in an exchange with the provider.
+struct PromptTurn: Equatable, Sendable {
+  enum Role: String, Sendable {
+    case user
+    case assistant
+  }
+
+  let role: Role
+  let content: String
+}
+
 struct TranslationPrompt: Equatable, Sendable {
   let system: String
   let user: String
+  /// Completed turns that come before `user`, oldest first. Empty for a plain
+  /// one-shot request; a follow-up carries the exchange it is asking about, so
+  /// the model answers the question in the context that produced it.
+  var priorTurns: [PromptTurn] = []
+
+  /// The whole exchange in wire order. `system` is not part of it: providers
+  /// take the system prompt through a field of their own.
+  var messages: [PromptTurn] {
+    priorTurns + [PromptTurn(role: .user, content: user)]
+  }
+}
+
+/// One question a reader asked about a result, and the answer it got.
+///
+/// A turn is appended the moment it is asked, so `answer` grows while the
+/// reply streams and is empty for the turn currently being answered.
+struct FollowUpTurn: Codable, Identifiable, Hashable, Sendable {
+  var id = UUID()
+  var createdAt = Date()
+  var question: String
+  var answer: String
+}
+
+/// A one-tap follow-up question.
+///
+/// The chip carries a short label and the full question it sends, so the strip
+/// stays scannable while the model still receives an unambiguous request — and
+/// the question, not the label, is what the thread shows afterwards.
+struct FollowUpSuggestion: Identifiable, Hashable, Sendable {
+  let label: String
+  let symbol: String
+  let question: String
+
+  var id: String { question }
+
+  /// The questions offered for a result, chosen by what is being studied: a
+  /// word wants senses and collocations, a sentence wants structure, code
+  /// wants a walkthrough. Ordered by how often a reader reaches for them.
+  static func suggestions(for text: String, mode: ActionMode?) -> [FollowUpSuggestion] {
+    let subject = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !subject.isEmpty else { return [] }
+    if mode == .explainCode { return code }
+    return isShortPhrase(subject) ? word : sentence
+  }
+
+  /// Roughly "a headword or a fixed phrase" rather than something to parse.
+  /// Scripts that do not space their words are counted by character instead.
+  static func isShortPhrase(_ text: String) -> Bool {
+    guard text.count <= 40 else { return false }
+    let words = text.split { $0.isWhitespace || $0.isNewline }
+    return words.count <= 3
+  }
+
+  private static let word: [FollowUpSuggestion] = [
+    FollowUpSuggestion(
+      label: "Examples",
+      symbol: "text.quote",
+      question:
+        "Give three natural example sentences using this, from everyday to formal, each with a translation."
+    ),
+    FollowUpSuggestion(
+      label: "Nuance",
+      symbol: "arrow.triangle.branch",
+      question:
+        "Which words are easily confused with this one, and what exactly separates them? Show a minimal pair for each."
+    ),
+    FollowUpSuggestion(
+      label: "Collocations",
+      symbol: "link",
+      question:
+        "What does this word usually go with? List the highest-frequency collocations and set phrases with translations."
+    ),
+    FollowUpSuggestion(
+      label: "Word parts",
+      symbol: "square.split.2x1",
+      question:
+        "Break this word into its parts and give its etymology, then list a few words built from the same roots."
+    ),
+    FollowUpSuggestion(
+      label: "Remember it",
+      symbol: "brain",
+      question:
+        "Give me a concrete memory hook for this word, and one short sentence I could use today to make it stick."
+    ),
+  ]
+
+  private static let sentence: [FollowUpSuggestion] = [
+    FollowUpSuggestion(
+      label: "Break it down",
+      symbol: "list.bullet.indent",
+      question:
+        "Break this down chunk by chunk: what each part means and how the parts fit together."
+    ),
+    FollowUpSuggestion(
+      label: "Grammar",
+      symbol: "textformat.abc",
+      question:
+        "Which grammar points does this use? Explain each one and give one more example sentence per point."
+    ),
+    FollowUpSuggestion(
+      label: "Key words",
+      symbol: "star",
+      question:
+        "Which words here are worth learning? For each, give the sense used here and one more example."
+    ),
+    FollowUpSuggestion(
+      label: "Say it differently",
+      symbol: "arrow.2.squarepath",
+      question:
+        "Rewrite this three ways — more casual, more formal, and shorter — and say when each fits."
+    ),
+    FollowUpSuggestion(
+      label: "Why this reading",
+      symbol: "questionmark.circle",
+      question:
+        "Why does it mean this rather than the literal reading? Point out anything idiomatic or easy to misread."
+    ),
+  ]
+
+  private static let code: [FollowUpSuggestion] = [
+    FollowUpSuggestion(
+      label: "Line by line",
+      symbol: "list.number",
+      question: "Walk through this line by line and say what each line does."
+    ),
+    FollowUpSuggestion(
+      label: "Risks",
+      symbol: "exclamationmark.triangle",
+      question: "What bugs, edge cases, or security risks does this code have?"
+    ),
+    FollowUpSuggestion(
+      label: "Better version",
+      symbol: "wand.and.stars",
+      question: "How would you write this better? Show the improved version and say what changed."
+    ),
+  ]
 }
 
 struct SelectionSnapshot: Equatable, Sendable {

@@ -556,6 +556,16 @@ struct AppTextField: View {
   var size: AppControlSize = .md
   var monospaced = false
   var onSubmit: (() -> Void)?
+  /// Changing this asks the field to take keyboard focus, which is how a menu
+  /// command reaches it.
+  ///
+  /// The field keeps ownership of its focus state deliberately. Handing an
+  /// ancestor's `FocusState` binding down here and reading it back for the
+  /// chrome makes appearance and first-responder status depend on each other:
+  /// rebuild the field under that arrangement — as the follow-up composer is
+  /// whenever a new result replaces the old one — and SwiftUI and AppKit trade
+  /// the responder back and forth forever, pegging a core.
+  var focusToken: UUID?
 
   @Environment(\.palette) private var palette
   @Environment(\.isEnabled) private var isEnabled
@@ -603,6 +613,7 @@ struct AppTextField: View {
     .focusRing(palette, isFocused: isFocused, radius: AppRadius.md)
     .opacity(isEnabled ? 1 : 0.5)
     .animation(.easeOut(duration: 0.12), value: isFocused)
+    .onChange(of: focusToken) { _, _ in isFocused = true }
   }
 
   private var shape: RoundedRectangle {

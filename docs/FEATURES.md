@@ -7,6 +7,7 @@ This file maps the original desktop behaviors to their native implementation.
 | Streaming translate | `TranslationClient` with provider-specific SSE/JSON decoders |
 | Translate, polish, summarize, analyze, context, code | `PromptBuilder` and action tabs |
 | OpenAI, ChatGPT API, Azure, Claude, Gemini, Ollama, Groq, DeepSeek, Moonshot, MiniMax, Cohere, Cerebras, ChatGLM, Kimi, TeamoRouter, custom | Editable provider profiles and native `URLSession` requests |
+| Follow-up questions | Multi-turn thread under the result, suggested questions per content type, saved onto the result's history row |
 | Selected-text lookup | macOS Accessibility API plus bounded surrounding context |
 | Compact selection preview | Native SwiftUI preview with speech and explicit Edit actions |
 | Selection pop-up | Compact, transient translation panel near the selected text, with its own compact action tab strip |

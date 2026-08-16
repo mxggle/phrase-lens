@@ -159,10 +159,7 @@ struct TranslationClient: Sendable {
       "model": configuration.model,
       "stream": true,
       "temperature": 0.2,
-      "messages": [
-        ["role": "system", "content": prompt.system],
-        ["role": "user", "content": prompt.user],
-      ],
+      "messages": [["role": "system", "content": prompt.system]] + Self.chatMessages(prompt),
     ]
     if configuration.provider == .miniMax {
       body["tokens_to_generate"] = 4_096
@@ -199,7 +196,7 @@ struct TranslationClient: Sendable {
         ? thinkingBudget + answerBudget : answerBudget,
       "stream": true,
       "system": prompt.system,
-      "messages": [["role": "user", "content": prompt.user]],
+      "messages": Self.chatMessages(prompt),
     ]
     if configuration.extendedThinking {
       body["thinking"] = ["type": "enabled", "budget_tokens": thinkingBudget]
@@ -228,7 +225,13 @@ struct TranslationClient: Sendable {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     let body: [String: Any] = [
       "systemInstruction": ["parts": [["text": prompt.system]]],
-      "contents": [["role": "user", "parts": [["text": prompt.user]]]],
+      // Gemini names the model's own turns "model" rather than "assistant".
+      "contents": prompt.messages.map { turn in
+        [
+          "role": turn.role == .assistant ? "model" : "user",
+          "parts": [["text": turn.content]],
+        ]
+      },
       "generationConfig": ["temperature": 0.2],
     ]
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -247,10 +250,7 @@ struct TranslationClient: Sendable {
     let body: [String: Any] = [
       "model": configuration.model,
       "stream": true,
-      "messages": [
-        ["role": "system", "content": prompt.system],
-        ["role": "user", "content": prompt.user],
-      ],
+      "messages": [["role": "system", "content": prompt.system]] + Self.chatMessages(prompt),
       "options": ["temperature": 0.2],
     ]
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -272,13 +272,16 @@ struct TranslationClient: Sendable {
       "model": configuration.model,
       "stream": true,
       "temperature": 0.2,
-      "messages": [
-        ["role": "system", "content": prompt.system],
-        ["role": "user", "content": prompt.user],
-      ],
+      "messages": [["role": "system", "content": prompt.system]] + Self.chatMessages(prompt),
     ]
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
     return request
+  }
+
+  /// The exchange in the shape every OpenAI-style API takes it in. The system
+  /// prompt is not included: each provider carries that its own way.
+  private static func chatMessages(_ prompt: TranslationPrompt) -> [[String: String]] {
+    prompt.messages.map { ["role": $0.role.rawValue, "content": $0.content] }
   }
 
   private func makeSession(proxy: ProxySettings) -> URLSession {
