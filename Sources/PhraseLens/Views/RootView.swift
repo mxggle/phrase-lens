@@ -254,11 +254,25 @@ private struct SidebarView: View {
 
   // MARK: Brand
 
+  // Collapsed used to rely on a double-tap on the logo to re-expand, with no
+  // visible control -- a gesture nobody could discover, and not accessible or
+  // keyboard-reachable either. The rail now keeps a real, visible toggle
+  // button in the logo's place instead, matching the one shown when expanded.
   private var brand: some View {
     HStack(spacing: AppSpacing.sm) {
-      AppLogo(size: 26)
+      if isCollapsed {
+        if canToggle {
+          IconButton(
+            title: "Expand the sidebar",
+            symbol: "sidebar.leading",
+            action: onToggle
+          )
+        } else {
+          AppLogo(size: 26)
+        }
+      } else {
+        AppLogo(size: 26)
 
-      if !isCollapsed {
         VStack(alignment: .leading, spacing: 0) {
           Text("PhraseLens")
             .font(AppFont.bodyMedium)
@@ -282,10 +296,6 @@ private struct SidebarView: View {
     }
     .frame(height: 34)
     .frame(maxWidth: .infinity, alignment: isCollapsed ? .center : .leading)
-    .contentShape(Rectangle())
-    .onTapGesture(count: 2) {
-      if isCollapsed { onToggle() }
-    }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("PhraseLens")
   }
