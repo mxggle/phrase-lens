@@ -66,6 +66,44 @@ enum SelfTestRunner {
       "Japanese phrase and word prompt classification failed",
       failures: &failures
     )
+    // Every built-in ships an editable template, and `PromptBuilder` fills the
+    // same template in at send time. A variable typo would otherwise reach a
+    // provider as literal `${targetLang}`, and an action that never names the
+    // reader's language is how an answer comes back in the wrong one.
+    for builtIn in TranslationAction.builtIns {
+      let filled = PromptBuilder.build(
+        text: "sample phrase",
+        source: .english,
+        target: .simplifiedChinese,
+        action: builtIn,
+        selectionContext: "A paragraph that contains the sample phrase and continues."
+      )
+      check(
+        !filled.system.contains("${") && !filled.user.contains("${"),
+        "\(builtIn.name) prompt left a template variable unsubstituted",
+        failures: &failures
+      )
+      check(
+        // Polish deliberately works in the language of the text itself.
+        builtIn.mode == .polishing
+          || filled.system.contains("简体中文") || filled.user.contains("简体中文"),
+        "\(builtIn.name) prompt never names the language to answer in",
+        failures: &failures
+      )
+    }
+    let compareAction = TranslationAction.builtIns.first { $0.mode == .compareSynonyms }!
+    let comparePrompt = PromptBuilder.build(
+      text: "brave",
+      source: .english,
+      target: .simplifiedChinese,
+      action: compareAction
+    )
+    check(
+      comparePrompt.user.contains("`brave`") && comparePrompt.user.contains("Example:"),
+      "Compare Synonyms lost the headword or its mandatory example line",
+      failures: &failures
+    )
+
     var overriddenTranslate = translateAction
     overriddenTranslate.rolePrompt = "Translate carefully into ${targetLang}."
     overriddenTranslate.commandPrompt = "Process ${text} from ${sourceLang}."
@@ -79,6 +117,18 @@ enum SelfTestRunner {
       overriddenPrompt.system == "Translate carefully into 日本語."
         && overriddenPrompt.user == "Process Hello from English.",
       "built-in action prompt overrides were ignored",
+      failures: &failures
+    )
+    // Translate keeps its Markdown switch off because a translation is plain
+    // text, but a single word takes the dictionary branch and answers in
+    // Markdown. Rendering that literally is what shows a reader raw `**`.
+    check(
+      PromptBuilder.expectsMarkdown(translateAction, text: "設定")
+        && !PromptBuilder.expectsMarkdown(translateAction, text: "設定を開く必要がある。")
+        && !PromptBuilder.expectsMarkdown(translateAction, text: "設定", writing: true)
+        && !PromptBuilder.expectsMarkdown(overriddenTranslate, text: "設定")
+        && PromptBuilder.expectsMarkdown(contextAction, text: "A short sentence."),
+      "Markdown rendering did not follow what the request asked the model for",
       failures: &failures
     )
     let basePrompt = PromptBuilder.build(

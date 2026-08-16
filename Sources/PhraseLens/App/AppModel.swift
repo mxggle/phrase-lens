@@ -120,10 +120,10 @@ final class AppModel: ObservableObject {
 
   /// Whether the result is laid out as Markdown rather than shown literally.
   ///
-  /// The action's "Render the result as Markdown" switch is the authority: a
-  /// model that answers in Markdown anyway does not get to override an author
-  /// who turned the switch off. Inspecting the text is a last resort, for
-  /// output whose action no longer exists.
+  /// What the request asked the model for is the authority (see
+  /// `PromptBuilder.expectsMarkdown`): a model that answers in Markdown anyway
+  /// does not get to override an author who turned the switch off. Inspecting
+  /// the text is a last resort, for output whose action no longer exists.
   var outputUsesMarkdown: Bool {
     switch outputRendering {
     case .markdown: true
@@ -181,7 +181,7 @@ final class AppModel: ObservableObject {
     )
     let target = settings.targetLanguage
     let action = selectedAction
-    outputRendering = action.outputMarkdown ? .markdown : .plain
+    outputRendering = PromptBuilder.expectsMarkdown(action, text: text) ? .markdown : .plain
     let context = selectionContext
     let prompt = PromptBuilder.build(
       text: text,
@@ -642,7 +642,8 @@ final class AppModel: ObservableObject {
     settingsStore.settings.targetLanguage = entry.targetLanguage
     if let action = visibleActions.first(where: { $0.name == entry.actionName }) {
       selectedActionID = action.id
-      outputRendering = action.outputMarkdown ? .markdown : .plain
+      outputRendering =
+        PromptBuilder.expectsMarkdown(action, text: entry.sourceText) ? .markdown : .plain
     } else {
       // The action that produced this entry is gone, so nothing here states
       // the author's intent — the stored text is all there is to go on.
