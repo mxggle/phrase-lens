@@ -636,6 +636,9 @@ struct AppSettings: Codable, Equatable, Sendable {
   var useCompactSelectionPreview = true
   var selectionPanelPlacement: SelectionPanelPlacementMode = .nearPointer
   var selectionPanelPosition: SelectionPanelPosition?
+  /// Keeps the pop-up on screen when the user clicks away from it, so working
+  /// in another app while reading a result no longer costs the result.
+  var selectionPanelPinned = false
   var useClipboardFallback = true
   var theme: AppTheme = .system
   var fontSize = 15.0
@@ -668,6 +671,7 @@ struct AppSettings: Codable, Equatable, Sendable {
     case useCompactSelectionPreview
     case selectionPanelPlacement
     case selectionPanelPosition
+    case selectionPanelPinned
     case useClipboardFallback
     case theme
     case fontSize
@@ -719,6 +723,8 @@ struct AppSettings: Codable, Equatable, Sendable {
       ?? .nearPointer
     selectionPanelPosition =
       try container.decodeIfPresent(SelectionPanelPosition.self, forKey: .selectionPanelPosition)
+    selectionPanelPinned =
+      try container.decodeIfPresent(Bool.self, forKey: .selectionPanelPinned) ?? false
     useClipboardFallback =
       try container.decodeIfPresent(Bool.self, forKey: .useClipboardFallback)
       ?? true

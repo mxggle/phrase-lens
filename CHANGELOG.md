@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Responses backend instead of a Platform API key. The token is refreshed on its own
   when it expires, the models the subscription actually serves are listed from the
   backend's own catalog, and signing out removes the token.
+- **The selection pop-up can be pinned.** It used to close on any click outside it,
+  so glancing at the source app while reading a result threw the result away and the
+  lookup had to be repeated. The pin in its title bar keeps it on screen until you
+  close it with Escape or the close button; the choice is remembered, and Settings ›
+  Selection carries the same switch as "Keep the pop-up open".
 
 ### Changed
 

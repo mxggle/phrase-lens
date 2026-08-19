@@ -10,7 +10,7 @@ This file maps the original desktop behaviors to their native implementation.
 | Follow-up questions | Multi-turn thread under the result, suggested questions per content type, saved onto the result's history row |
 | Selected-text lookup | macOS Accessibility API plus bounded surrounding context |
 | Compact selection preview | Native SwiftUI preview with speech and explicit Edit actions |
-| Selection pop-up | Compact, transient translation panel near the selected text, with its own compact action tab strip |
+| Selection pop-up | Compact translation panel near the selected text, with its own compact action tab strip and a pin that keeps it open when you click elsewhere |
 | Screenshot OCR | Interactive `screencapture` region plus Vision recognition |
 | Writing replacement | Accessibility read, streaming translation, and focused-control replacement |
 | TTS | `AVSpeechSynthesizer` with source-text autoplay, manual result playback, and cancellation |

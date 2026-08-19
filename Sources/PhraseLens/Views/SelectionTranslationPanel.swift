@@ -121,7 +121,10 @@ final class SelectionPanelCoordinator {
     self.model = model
     settingsStore = model.settingsStore
     rememberCurrentPosition()
-    installDismissalObservers(for: panel)
+    installPositionObserver(for: panel)
+    if !settings.selectionPanelPinned {
+      installDismissalObservers()
+    }
 
     NSApp.setActivationPolicy(settings.showDockIcon ? .regular : .accessory)
     present(
@@ -143,22 +146,7 @@ final class SelectionPanelCoordinator {
   /// window carries on displaying the same request — so those callers pass
   /// `cancelsTranslation: false`.
   func close(animated: Bool = true, cancelsTranslation: Bool = true) {
-    if let outsideClickMonitor {
-      NSEvent.removeMonitor(outsideClickMonitor)
-      self.outsideClickMonitor = nil
-    }
-    if let escapeKeyMonitor {
-      NSEvent.removeMonitor(escapeKeyMonitor)
-      self.escapeKeyMonitor = nil
-    }
-    if let resignObserver {
-      NotificationCenter.default.removeObserver(resignObserver)
-      self.resignObserver = nil
-    }
-    if let deactivateObserver {
-      NotificationCenter.default.removeObserver(deactivateObserver)
-      self.deactivateObserver = nil
-    }
+    removeDismissalObservers()
     if let moveObserver {
       NotificationCenter.default.removeObserver(moveObserver)
       self.moveObserver = nil
@@ -295,7 +283,22 @@ final class SelectionPanelCoordinator {
     }
   }
 
-  private func installDismissalObservers(for panel: NSPanel) {
+  /// Turns the pop-up's auto-dismissal on and off while it is open.
+  ///
+  /// Pinned, the panel outlives a click elsewhere: the whole point is to keep
+  /// a result readable while the user works in the app it came from. Escape
+  /// and the close button still take it down, and so does the next pop-up.
+  func setPinned(_ isPinned: Bool) {
+    guard panel != nil else { return }
+    if isPinned {
+      removeDismissalObservers()
+    } else if outsideClickMonitor == nil {
+      installDismissalObservers()
+    }
+  }
+
+  private func installDismissalObservers() {
+    guard let panel else { return }
     outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
       matching: [.leftMouseDown, .rightMouseDown]
     ) { _ in
@@ -327,6 +330,9 @@ final class SelectionPanelCoordinator {
         SelectionPanelCoordinator.shared.close()
       }
     }
+  }
+
+  private func installPositionObserver(for panel: NSPanel) {
     moveObserver = NotificationCenter.default.addObserver(
       forName: NSWindow.didMoveNotification,
       object: panel,
@@ -335,6 +341,25 @@ final class SelectionPanelCoordinator {
       Task { @MainActor in
         SelectionPanelCoordinator.shared.rememberCurrentPosition()
       }
+    }
+  }
+
+  private func removeDismissalObservers() {
+    if let outsideClickMonitor {
+      NSEvent.removeMonitor(outsideClickMonitor)
+      self.outsideClickMonitor = nil
+    }
+    if let escapeKeyMonitor {
+      NSEvent.removeMonitor(escapeKeyMonitor)
+      self.escapeKeyMonitor = nil
+    }
+    if let resignObserver {
+      NotificationCenter.default.removeObserver(resignObserver)
+      self.resignObserver = nil
+    }
+    if let deactivateObserver {
+      NotificationCenter.default.removeObserver(deactivateObserver)
+      self.deactivateObserver = nil
     }
   }
 
@@ -561,6 +586,22 @@ private struct SelectionPanelBody: View {
           model.stopTranslation()
         }
         .keyboardShortcut(".", modifiers: [.command])
+      }
+
+      // Reading a result often means working next to it — looking something up
+      // in the source app, switching windows — and unpinned that costs the
+      // result. Pinned, only Escape or the close button takes the pop-up down.
+      IconButton(
+        title: isPinned
+          ? "Unpin: close the pop-up when you click elsewhere"
+          : "Keep the pop-up open when you click elsewhere",
+        symbol: isPinned ? "pin.fill" : "pin",
+        size: .iconSmall,
+        isOn: isPinned
+      ) {
+        let pinned = !isPinned
+        settingsStore.settings.selectionPanelPinned = pinned
+        SelectionPanelCoordinator.shared.setPinned(pinned)
       }
 
       IconButton(title: "Close (Escape)", symbol: "xmark", size: .iconSmall) {
@@ -831,6 +872,8 @@ private struct SelectionPanelBody: View {
     .frame(height: AppMetrics.paneFooterHeight + 6)
     .background(palette.chrome)
   }
+
+  private var isPinned: Bool { settingsStore.settings.selectionPanelPinned }
 
   private var normalizedInputText: String {
     model.inputText.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -256,6 +256,14 @@ private struct GeneralSettingsPane: View {
         }
         Hairline()
         switchRow(
+          "Keep the pop-up open",
+          detail:
+            "Stays on screen when you click elsewhere; close it with Escape or the close button. "
+            + "The pin in the pop-up's title bar toggles this too.",
+          isOn: $settingsStore.settings.selectionPanelPinned
+        )
+        Hairline()
+        switchRow(
           "Copy as a fallback",
           detail:
             "Uses the clipboard for web and document selections that cannot be read directly.",
