@@ -50,6 +50,7 @@ final class AppModel: ObservableObject {
   @Published private(set) var isAccessibilityTrusted = false
 
   let settingsStore: SettingsStore
+  let modelCatalog = ModelCatalogStore()
   let speech = SpeechService()
 
   private let client = TranslationClient()
@@ -191,7 +192,6 @@ final class AppModel: ObservableObject {
       selectionContext: context
     )
     let configuration = settings.provider
-    let key = settingsStore.apiKey
     let proxy = settings.proxy
 
     translationTask = Task {
@@ -200,6 +200,7 @@ final class AppModel: ObservableObject {
       // tick is as real as the rest of the answer.
       var streamedText = ""
       do {
+        let (key, accountId) = try await settingsStore.validCredentials()
         streamedText.reserveCapacity(min(max(text.utf8.count, 1_024), 65_536))
         let clock = ContinuousClock()
         var nextUIUpdate = clock.now
@@ -208,6 +209,7 @@ final class AppModel: ObservableObject {
           prompt: prompt,
           configuration: configuration,
           apiKey: key,
+          accountId: accountId,
           proxy: proxy
         ) {
           guard requestID == activeRequest else { return }
@@ -422,7 +424,6 @@ final class AppModel: ObservableObject {
     followUpRequestID = UUID()
     let activeRequest = followUpRequestID
     let configuration = settings.provider
-    let key = settingsStore.apiKey
     let proxy = settings.proxy
 
     followUpTask = Task {
@@ -431,12 +432,14 @@ final class AppModel: ObservableObject {
       // answer even when the stream then failed.
       var streamedText = ""
       do {
+        let (key, accountId) = try await settingsStore.validCredentials()
         let clock = ContinuousClock()
         var nextUIUpdate = clock.now
         for try await chunk in client.stream(
           prompt: prompt,
           configuration: configuration,
           apiKey: key,
+          accountId: accountId,
           proxy: proxy
         ) {
           guard followUpRequestID == activeRequest else { return }
@@ -932,11 +935,13 @@ final class AppModel: ObservableObject {
           action: action,
           writing: true
         )
+        let (key, accountId) = try await settingsStore.validCredentials()
         var replacement = ""
         for try await chunk in client.stream(
           prompt: prompt,
           configuration: settings.provider,
-          apiKey: settingsStore.apiKey,
+          apiKey: key,
+          accountId: accountId,
           proxy: settings.proxy
         ) {
           replacement += chunk

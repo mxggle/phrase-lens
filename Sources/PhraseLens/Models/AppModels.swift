@@ -372,6 +372,54 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
   }
 }
 
+enum AuthenticationMode: String, Codable, CaseIterable, Identifiable, Sendable {
+  case apiKey = "API Key"
+  case oauthCodex = "ChatGPT OAuth"
+
+  var id: String { rawValue }
+}
+
+struct OAuthCredentials: Codable, Equatable, Sendable {
+  var accessToken: String
+  var refreshToken: String
+  var expiresAt: Date
+  var tokenType: String = "Bearer"
+  var email: String?
+  var accountId: String?
+
+  var isExpired: Bool {
+    expiresAt.timeIntervalSinceNow < 60
+  }
+}
+
+/// The ChatGPT-subscription backend that Codex OAuth tokens talk to. It speaks
+/// the Responses API, not Chat Completions, and does not accept a configurable
+/// endpoint, so every OAuth-mode request and model lookup goes here.
+enum CodexBackend {
+  static let responsesEndpoint = "https://chatgpt.com/backend-api/codex/responses"
+  static let modelsEndpoint = "https://chatgpt.com/backend-api/codex/models"
+  /// The client version Codex CLI reports, which the catalog endpoint reads as
+  /// a floor: every model carries a `minimal_client_version`, and the backend
+  /// omits the ones a client this old could not drive. Claiming too little
+  /// silently hides current models — pinned at 0.115.0 the catalog stopped at
+  /// gpt-5.4, hiding gpt-5.5 (needs 0.124.0) and the gpt-5.6 family (0.144.0),
+  /// all of which this app's plain Responses request drives fine. Raise this as
+  /// new models ship; nothing else sends it, so the translation request is
+  /// unaffected.
+  static let clientVersion = "0.144.0"
+  static let defaultModel = "gpt-5.4-mini"
+
+  /// Shown only when the catalog cannot be fetched. A ChatGPT subscription
+  /// token reaches far less than the Platform API does — the backend answers
+  /// anything else with "model is not supported when using Codex with a ChatGPT
+  /// account" — so this stays at the two models every Codex account has served
+  /// across client versions, and the fetched catalog replaces it outright.
+  static let fallbackModels = [
+    "gpt-5.4-mini",
+    "gpt-5.4",
+  ]
+}
+
 enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
   case openAI = "OpenAI"
   case chatGPT = "ChatGPT API"
@@ -391,6 +439,10 @@ enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
   case custom = "OpenAI-compatible"
 
   var id: String { rawValue }
+
+  var supportsOAuth: Bool {
+    self == .openAI || self == .chatGPT
+  }
 
   var defaultEndpoint: String {
     switch self {
@@ -433,6 +485,7 @@ enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
 
 struct ProviderConfiguration: Codable, Equatable, Sendable {
   var provider: ProviderKind = .openAI
+  var authMode: AuthenticationMode = .apiKey
   var endpoint = ProviderKind.openAI.defaultEndpoint
   var model = ProviderKind.openAI.defaultModel
   var organization = ""
@@ -442,6 +495,7 @@ struct ProviderConfiguration: Codable, Equatable, Sendable {
 
   init(
     provider: ProviderKind = .openAI,
+    authMode: AuthenticationMode = .apiKey,
     endpoint: String = ProviderKind.openAI.defaultEndpoint,
     model: String = ProviderKind.openAI.defaultModel,
     organization: String = "",
@@ -450,6 +504,7 @@ struct ProviderConfiguration: Codable, Equatable, Sendable {
     reasoningEnabled: Bool = false
   ) {
     self.provider = provider
+    self.authMode = authMode
     self.endpoint = endpoint
     self.model = model
     self.organization = organization
@@ -460,6 +515,7 @@ struct ProviderConfiguration: Codable, Equatable, Sendable {
 
   private enum CodingKeys: String, CodingKey {
     case provider
+    case authMode
     case endpoint
     case model
     case organization
@@ -471,6 +527,7 @@ struct ProviderConfiguration: Codable, Equatable, Sendable {
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     provider = try container.decodeIfPresent(ProviderKind.self, forKey: .provider) ?? .openAI
+    authMode = try container.decodeIfPresent(AuthenticationMode.self, forKey: .authMode) ?? .apiKey
     endpoint =
       try container.decodeIfPresent(String.self, forKey: .endpoint)
       ?? provider.defaultEndpoint
@@ -948,6 +1005,8 @@ struct SelectionSnapshot: Equatable, Sendable {
 
 enum TranslationError: LocalizedError, Equatable {
   case missingAPIKey
+  case missingOAuthCredentials
+  case oauthExpired
   case invalidEndpoint(String)
   case invalidResponse
   case provider(String)
@@ -961,6 +1020,8 @@ enum TranslationError: LocalizedError, Equatable {
   var errorDescription: String? {
     switch self {
     case .missingAPIKey: "Add an API key in Settings."
+    case .missingOAuthCredentials: "Please sign in with ChatGPT in Settings."
+    case .oauthExpired: "ChatGPT login session expired. Please sign in again in Settings."
     case .invalidEndpoint(let reason): "Invalid API endpoint: \(reason)"
     case .invalidResponse: "The provider returned an unreadable response."
     case .provider(let message): message

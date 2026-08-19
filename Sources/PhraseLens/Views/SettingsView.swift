@@ -49,6 +49,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 struct SettingsView: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
+  @EnvironmentObject private var modelCatalog: ModelCatalogStore
   @State private var pane: SettingsPane = .general
 
   var body: some View {
@@ -62,6 +63,7 @@ struct SettingsView: View {
     .frame(minWidth: 880, idealWidth: 940, minHeight: 520, idealHeight: 620)
     .environmentObject(model)
     .environmentObject(settingsStore)
+    .environmentObject(modelCatalog)
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
     // macOS may restore the SwiftUI Settings scene on relaunch. Settings is
     // only useful when the user asked for it, so keep its window out of
@@ -359,15 +361,17 @@ private struct GeneralSettingsPane: View {
 
 private struct ProviderSettingsPane: View {
   @EnvironmentObject private var settingsStore: SettingsStore
+  @EnvironmentObject private var modelCatalog: ModelCatalogStore
   @Environment(\.palette) private var palette
 
   @State private var apiKeyDraft = ""
   @State private var isConfirmingKeyRemoval = false
   @State private var endpointStatus: (text: String, isValid: Bool)?
-  @State private var availableModels: [String] = []
-  @State private var modelCatalogStatus: String?
-  @State private var isFetchingModels = false
-  @State private var modelFetchID = UUID()
+
+  private var isOAuthMode: Bool {
+    settingsStore.settings.provider.provider.supportsOAuth
+      && settingsStore.settings.provider.authMode == .oauthCodex
+  }
 
   var body: some View {
     PaneStack {
@@ -383,63 +387,79 @@ private struct ProviderSettingsPane: View {
             label: { $0.rawValue }
           )
         }
+
+        if settingsStore.settings.provider.provider.supportsOAuth {
+          Hairline()
+          SettingsRow(
+            "Authentication mode",
+            detail: "Choose between a Platform API key or your ChatGPT account."
+          ) {
+            AppSelect(
+              title: "Authentication mode",
+              selection: Binding(
+                get: { settingsStore.settings.provider.authMode },
+                set: { setAuthMode($0) }
+              ),
+              options: AuthenticationMode.allCases,
+              label: { $0.rawValue }
+            )
+          }
+        }
+
         Hairline()
-        SettingsRow("Model", stacksControl: true) {
+        SettingsRow(
+          "Model",
+          detail: "Search the provider's catalog, or type any model id to use one that is not listed.",
+          stacksControl: true
+        ) {
           VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack(spacing: AppSpacing.sm) {
-              AppSelect(
+              SearchableSelect(
                 title: "Model",
                 selection: $settingsStore.settings.provider.model,
-                options: selectableModels,
-                label: { $0.isEmpty ? "No model selected" : $0 },
-                fillsWidth: true
+                options: catalogModels,
+                placeholder: "No model selected",
+                searchPrompt: "Search models, or type an id",
+                emptyMessage: emptyCatalogMessage,
+                customValueLabel: { "Use “\($0)” as the model id" }
               )
               Button {
-                fetchModels()
+                refreshCatalog()
               } label: {
-                if isFetchingModels {
+                if isFetchingCatalog {
                   Spinner(size: 12)
                 } else {
-                  AdaptiveLabel(title: "Fetch", symbol: "arrow.clockwise")
+                  AdaptiveLabel(title: "Refresh", symbol: "arrow.clockwise")
                 }
               }
               .appButton(.outline, size: .sm)
-              .disabled(isFetchModelsDisabled)
-              .help("Load the model catalog from this provider")
-              .accessibilityLabel("Fetch models")
+              .disabled(isFetchingCatalog || !canFetchCatalog)
+              .help(refreshHelp)
+              .accessibilityLabel("Refresh the model catalog")
             }
-            if let modelCatalogStatus {
-              InlineNote(
-                text: modelCatalogStatus,
-                kind: availableModels.isEmpty ? .error : .success
-              )
+            if let error = modelCatalog.error(for: settingsStore.settings.provider) {
+              InlineNote(text: error, kind: .error)
+            } else {
+              Text(catalogStatus)
+                .font(AppFont.caption)
+                .foregroundStyle(palette.mutedForeground)
             }
           }
         }
-        Hairline()
-        SettingsRow(
-          "Model ID override",
-          detail: "Use this when a provider does not expose a model catalog endpoint.",
-          stacksControl: true
-        ) {
-          AppTextField(
-            placeholder: "model-id",
-            text: $settingsStore.settings.provider.model,
-            size: .sm,
-            monospaced: true
-          )
-        }
-        Hairline()
-        SettingsRow("API endpoint", stacksControl: true) {
-          AppTextField(
-            placeholder: "https://…",
-            text: $settingsStore.settings.provider.endpoint,
-            size: .sm,
-            monospaced: true
-          )
+
+        if !isOAuthMode {
+          Hairline()
+          SettingsRow("API endpoint", stacksControl: true) {
+            AppTextField(
+              placeholder: "https://…",
+              text: $settingsStore.settings.provider.endpoint,
+              size: .sm,
+              monospaced: true
+            )
+          }
         }
 
-        if settingsStore.settings.provider.supportsReasoningControl {
+        if !isOAuthMode && settingsStore.settings.provider.supportsReasoningControl {
           Hairline()
           SettingsRow(
             "Enable reasoning",
@@ -452,7 +472,7 @@ private struct ProviderSettingsPane: View {
           }
         }
 
-        if settingsStore.settings.provider.provider == .azure {
+        if !isOAuthMode && settingsStore.settings.provider.provider == .azure {
           Hairline()
           SettingsRow("API version", stacksControl: true) {
             AppTextField(
@@ -464,7 +484,7 @@ private struct ProviderSettingsPane: View {
           }
         }
 
-        if settingsStore.settings.provider.provider == .openAI {
+        if !isOAuthMode && settingsStore.settings.provider.provider == .openAI {
           Hairline()
           SettingsRow("Organization", detail: "Optional.", stacksControl: true) {
             AppTextField(
@@ -476,7 +496,7 @@ private struct ProviderSettingsPane: View {
           }
         }
 
-        if settingsStore.settings.provider.provider == .anthropic {
+        if !isOAuthMode && settingsStore.settings.provider.provider == .anthropic {
           Hairline()
           SettingsRow("Extended thinking") {
             Toggle("", isOn: $settingsStore.settings.provider.extendedThinking)
@@ -487,8 +507,71 @@ private struct ProviderSettingsPane: View {
         }
       }
 
-      if settingsStore.settings.provider.provider.usesAPIKey {
-        SettingsCard("Credential", caption: "Keys are stored per provider in the macOS Keychain.") {
+      if isOAuthMode {
+        SettingsCard(
+          "ChatGPT account",
+          caption: "Uses your ChatGPT subscription via OpenAI OAuth 2.0 PKCE."
+        ) {
+          SettingsBlock {
+            VStack(alignment: .leading, spacing: AppSpacing.sm) {
+              if let creds = settingsStore.oauthCredentials, !creds.accessToken.isEmpty {
+                HStack(spacing: AppSpacing.sm) {
+                  Badge(
+                    text: creds.isExpired ? "Expired" : "Signed In",
+                    variant: creds.isExpired ? .warning : .success,
+                    symbol: creds.isExpired ? "exclamationmark.triangle" : "checkmark.circle"
+                  )
+                  if let email = creds.email, !email.isEmpty {
+                    Text(email)
+                      .font(AppFont.body)
+                      .foregroundStyle(palette.foreground)
+                  }
+                  Spacer()
+                  Button("Sign Out") {
+                    settingsStore.logoutOAuth()
+                  }
+                  .appButton(.destructiveGhost, size: .sm)
+                }
+
+                Text(
+                  "Token active until \(creds.expiresAt.formatted(date: .abbreviated, time: .shortened)) (auto-refreshed as needed)"
+                )
+                .font(AppFont.caption)
+                .foregroundStyle(palette.mutedForeground)
+              } else {
+                HStack(spacing: AppSpacing.sm) {
+                  if settingsStore.isAuthenticatingOAuth {
+                    Spinner(size: 14)
+                    Text("Waiting for browser authorization (Port 1455)…")
+                      .font(AppFont.caption)
+                      .foregroundStyle(palette.mutedForeground)
+                    Spacer()
+                    Button("Cancel") {
+                      settingsStore.cancelOAuthLogin()
+                    }
+                    .appButton(.outline, size: .sm)
+                  } else {
+                    Button("Sign in with ChatGPT") {
+                      settingsStore.startOAuthLogin()
+                    }
+                    .appButton(.primary, size: .sm)
+                  }
+                }
+              }
+
+              legacyKeychainImportRow
+
+              if let error = settingsStore.oauthError {
+                InlineNote(text: error, kind: .error)
+              }
+            }
+          }
+        }
+      } else if settingsStore.settings.provider.provider.usesAPIKey {
+        SettingsCard(
+          "Credential",
+          caption: "Keys are stored per provider, encrypted in PhraseLens's own application support folder."
+        ) {
           SettingsBlock {
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
               HStack(spacing: AppSpacing.sm) {
@@ -499,22 +582,17 @@ private struct ProviderSettingsPane: View {
                   size: .sm,
                   onSubmit: { saveAPIKeyIfChanged() }
                 )
-                .disabled(settingsStore.isLoadingAPIKey || settingsStore.isSavingAPIKey)
 
                 Button("Save Key") {
                   saveAPIKeyIfChanged()
                 }
                 .appButton(.primary, size: .sm)
-                .disabled(
-                  settingsStore.isLoadingAPIKey || settingsStore.isSavingAPIKey
-                    || !hasUnsavedAPIKey
-                )
+                .disabled(!hasUnsavedAPIKey)
 
                 if !settingsStore.apiKey.isEmpty {
                   Button("Remove") { isConfirmingKeyRemoval = true }
                     .appButton(.destructiveGhost, size: .sm)
-                    .disabled(settingsStore.isLoadingAPIKey || settingsStore.isSavingAPIKey)
-                    .help("Delete this provider's key from the Keychain")
+                    .help("Delete this provider's saved key")
                 }
               }
 
@@ -532,7 +610,9 @@ private struct ProviderSettingsPane: View {
                   .foregroundStyle(palette.mutedForeground)
               }
 
-              if let error = settingsStore.keychainError {
+              legacyKeychainImportRow
+
+              if let error = settingsStore.credentialError {
                 InlineNote(text: error, kind: .error)
               }
             }
@@ -540,34 +620,39 @@ private struct ProviderSettingsPane: View {
         }
       }
 
-      SettingsCard("Endpoint safety") {
-        SettingsBlock {
-          VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            HStack(spacing: AppSpacing.sm) {
-              Button("Validate Configuration") { validateEndpoint() }
-                .appButton(.outline, size: .sm)
-              if let endpointStatus {
-                InlineNote(
-                  text: endpointStatus.text,
-                  kind: endpointStatus.isValid ? .success : .error
-                )
+      if !isOAuthMode {
+        SettingsCard("Endpoint safety") {
+          SettingsBlock {
+            VStack(alignment: .leading, spacing: AppSpacing.sm) {
+              HStack(spacing: AppSpacing.sm) {
+                Button("Validate Configuration") { validateEndpoint() }
+                  .appButton(.outline, size: .sm)
+                if let endpointStatus {
+                  InlineNote(
+                    text: endpointStatus.text,
+                    kind: endpointStatus.isValid ? .success : .error
+                  )
+                }
               }
+              InlineNote(
+                text: "HTTPS is required. Plain HTTP is accepted only for Ollama on this Mac.",
+                kind: .info
+              )
             }
-            InlineNote(
-              text: "HTTPS is required. Plain HTTP is accepted only for Ollama on this Mac.",
-              kind: .info
-            )
           }
         }
       }
     }
-    .onAppear { apiKeyDraft = settingsStore.apiKey }
+    .onAppear {
+      apiKeyDraft = settingsStore.apiKey
+      refreshCatalogIfStale()
+    }
     .onChange(of: settingsStore.apiKey) { _, value in
       apiKeyDraft = value
     }
     // A typed key is the one setting that does not persist on its own, so
     // leaving the pane must not be the same as discarding it.
-    .onDisappear { saveAPIKeyIfChanged() }
+    .onDisappear { persistAPIKeyDraft() }
     .confirmationDialog(
       "Remove the \(settingsStore.settings.provider.provider.rawValue) API key?",
       isPresented: $isConfirmingKeyRemoval,
@@ -579,7 +664,7 @@ private struct ProviderSettingsPane: View {
       }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text("It is deleted from the Keychain, and this provider stops working until you add another.")
+      Text("The saved key is deleted, and this provider stops working until you add another.")
     }
   }
 
@@ -587,24 +672,132 @@ private struct ProviderSettingsPane: View {
     apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines) != settingsStore.apiKey
   }
 
-  /// The Keychain write captures the provider it was started for, so calling
-  /// this before a provider switch still files the key under the old one.
-  private func saveAPIKeyIfChanged() {
-    guard hasUnsavedAPIKey, !settingsStore.isLoadingAPIKey else { return }
+  /// Files the typed key under whichever provider is selected right now, which
+  /// is why a provider switch has to call this before it switches.
+  @discardableResult
+  private func persistAPIKeyDraft() -> Bool {
+    guard hasUnsavedAPIKey else { return false }
     settingsStore.saveAPIKey(apiKeyDraft)
+    return true
   }
 
-  private var isFetchModelsDisabled: Bool {
-    isFetchingModels || settingsStore.isLoadingAPIKey
-      || (settingsStore.settings.provider.provider.usesAPIKey && settingsStore.apiKey.isEmpty)
+  private func saveAPIKeyIfChanged() {
+    guard persistAPIKeyDraft() else { return }
+    // A provider is only usable once it has both a key and a model, so the
+    // catalog is worth loading the moment the key lands rather than after one
+    // more click.
+    refreshCatalogIfStale()
   }
 
-  private var selectableModels: [String] {
-    let current = settingsStore.settings.provider.model
-    guard !current.isEmpty, !availableModels.contains(current) else {
-      return availableModels.isEmpty ? [current] : availableModels
+  // MARK: Model catalog
+
+  private var isFetchingCatalog: Bool {
+    modelCatalog.isFetching(settingsStore.settings.provider)
+  }
+
+  /// Azure has no catalog endpoint at all — it serves deployment names the
+  /// portal defines — and every other provider needs a credential first.
+  private var canFetchCatalog: Bool {
+    guard settingsStore.settings.provider.provider != .azure else { return false }
+    return hasCredential
+  }
+
+  private var hasCredential: Bool {
+    if isOAuthMode {
+      return !(settingsStore.oauthCredentials?.accessToken.isEmpty ?? true)
     }
-    return [current] + availableModels
+    return !settingsStore.settings.provider.provider.usesAPIKey || !settingsStore.apiKey.isEmpty
+  }
+
+  private var catalogModels: [String] {
+    var list = modelCatalog.models(for: settingsStore.settings.provider)
+    // A fetched Codex catalog is the whole truth about what a ChatGPT
+    // subscription may use, so the built-in names only stand in until one
+    // arrives. Merging the two instead offered models the backend rejects.
+    if isOAuthMode, list.isEmpty {
+      list = CodexBackend.fallbackModels
+    }
+    let current = settingsStore.settings.provider.model
+    if !current.isEmpty, !list.contains(current) {
+      list.insert(current, at: 0)
+    }
+    return list
+  }
+
+  private var emptyCatalogMessage: String {
+    if settingsStore.settings.provider.provider == .azure {
+      return "Azure serves deployments, not a catalog. Type the deployment name configured in the Azure portal."
+    }
+    if !hasCredential {
+      return "Save a credential first, then refresh to load this provider's models."
+    }
+    return "Refresh to load this provider's models, or type a model id."
+  }
+
+  private var catalogStatus: String {
+    if isFetchingCatalog { return "Loading the model catalog…" }
+    if settingsStore.settings.provider.provider == .azure {
+      return "Azure uses deployment names; type the one configured in the Azure portal."
+    }
+    guard let snapshot = modelCatalog.snapshot(for: settingsStore.settings.provider) else {
+      return hasCredential
+        ? "No catalog loaded yet."
+        : "Save a credential to load this provider's model catalog."
+    }
+    let updated = snapshot.fetchedAt.formatted(.relative(presentation: .named))
+    return "\(snapshot.models.count) models · updated \(updated)"
+  }
+
+  private var refreshHelp: String {
+    if !canFetchCatalog { return emptyCatalogMessage }
+    return isOAuthMode
+      ? "Reload the models your ChatGPT subscription serves"
+      : "Reload the model catalog from this provider"
+  }
+
+  private func refreshCatalog() {
+    let configuration = settingsStore.settings.provider
+    let proxy = settingsStore.settings.proxy
+    let store = settingsStore
+    modelCatalog.refresh(configuration: configuration, proxy: proxy) {
+      try await store.validToken()
+    }
+  }
+
+  private func refreshCatalogIfStale() {
+    guard canFetchCatalog else { return }
+    let configuration = settingsStore.settings.provider
+    let proxy = settingsStore.settings.proxy
+    let store = settingsStore
+    modelCatalog.refreshIfStale(configuration: configuration, proxy: proxy) {
+      try await store.validToken()
+    }
+  }
+
+  /// Offered only when an older build actually left something in the Keychain
+  /// for this provider. The read behind the button is the one thing that can
+  /// raise the system password panel, so the caption says so before it happens.
+  @ViewBuilder private var legacyKeychainImportRow: some View {
+    if settingsStore.hasLegacyKeychainCredentials {
+      VStack(alignment: .leading, spacing: AppSpacing.xs) {
+        HStack(spacing: AppSpacing.sm) {
+          Button("Import from Keychain") {
+            settingsStore.importLegacyKeychainCredentials()
+          }
+          .appButton(.outline, size: .sm)
+          .disabled(settingsStore.isImportingLegacyCredentials)
+          if settingsStore.isImportingLegacyCredentials {
+            Spinner(size: 14)
+          }
+        }
+        InlineNote(
+          text:
+            "An older PhraseLens build saved this provider's credential in your login Keychain. "
+            + "Importing it asks for your Keychain password once; entering the key above instead works just as well.",
+          kind: .info
+        )
+      }
+    }
   }
 
   private var credentialBadge: String {
@@ -612,22 +805,47 @@ private struct ProviderSettingsPane: View {
   }
 
   private var credentialStatus: String {
-    if settingsStore.isLoadingAPIKey { return "Loading this provider’s key from Keychain…" }
-    if settingsStore.isSavingAPIKey { return "Saving this provider’s key to Keychain…" }
-    return settingsStore.apiKey.isEmpty
+    settingsStore.apiKey.isEmpty
       ? "No key saved for \(settingsStore.settings.provider.provider.rawValue)"
-      : "In the Keychain for \(settingsStore.settings.provider.provider.rawValue)"
+      : "Saved for \(settingsStore.settings.provider.provider.rawValue)"
+  }
+
+  private func isCodexModel(_ model: String) -> Bool {
+    var codex = settingsStore.settings.provider
+    codex.authMode = .oauthCodex
+    return CodexBackend.fallbackModels.contains(model)
+      || modelCatalog.models(for: codex).contains(model)
+  }
+
+  private func setAuthMode(_ mode: AuthenticationMode) {
+    guard mode != settingsStore.settings.provider.authMode else { return }
+    modelCatalog.cancelFetch(for: settingsStore.settings.provider)
+    settingsStore.settings.provider.authMode = mode
+    // The two modes reach different catalogs, so a model that belongs to the
+    // one being left is swapped for the incoming mode's default. What counts as
+    // a Codex model is whatever the backend last listed, not only the built-in
+    // names — otherwise switching away and back discarded a model the account
+    // genuinely serves.
+    let model = settingsStore.settings.provider.model
+    if mode == .oauthCodex {
+      if !isCodexModel(model) {
+        settingsStore.settings.provider.model = CodexBackend.defaultModel
+      }
+    } else if isCodexModel(model) {
+      settingsStore.settings.provider.model = settingsStore.settings.provider.provider.defaultModel
+    }
+    refreshCatalogIfStale()
   }
 
   private func selectProvider(_ provider: ProviderKind) {
-    saveAPIKeyIfChanged()
+    persistAPIKeyDraft()
+    modelCatalog.cancelFetch(for: settingsStore.settings.provider)
     apiKeyDraft = ""
-    availableModels = []
-    modelCatalogStatus = nil
-    isFetchingModels = false
-    modelFetchID = UUID()
     settingsStore.selectProvider(provider)
     endpointStatus = nil
+    // The new provider's catalog is already on disk if it was ever fetched, so
+    // this only goes to the network when the cache is missing or a day old.
+    refreshCatalogIfStale()
   }
 
   private func validateEndpoint() {
@@ -642,41 +860,6 @@ private struct ProviderSettingsPane: View {
     }
   }
 
-  private func fetchModels() {
-    let configuration = settingsStore.settings.provider
-    let provider = configuration.provider
-    let apiKey = settingsStore.apiKey
-    let proxy = settingsStore.settings.proxy
-    let requestID = UUID()
-    modelFetchID = requestID
-    isFetchingModels = true
-    modelCatalogStatus = nil
-    Task {
-      do {
-        let models = try await ModelCatalogClient().fetchModels(
-          configuration: configuration,
-          apiKey: apiKey,
-          proxy: proxy
-        )
-        guard requestID == modelFetchID,
-          provider == settingsStore.settings.provider.provider
-        else { return }
-        availableModels = models
-        modelCatalogStatus = "Fetched \(models.count) models from \(provider.rawValue)."
-      } catch {
-        guard requestID == modelFetchID,
-          provider == settingsStore.settings.provider.provider
-        else { return }
-        availableModels = []
-        modelCatalogStatus = error.localizedDescription
-      }
-      if requestID == modelFetchID,
-        provider == settingsStore.settings.provider.provider
-      {
-        isFetchingModels = false
-      }
-    }
-  }
 }
 
 // MARK: - Shortcuts

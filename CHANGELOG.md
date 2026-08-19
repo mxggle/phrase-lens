@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sign in with your ChatGPT account.** OpenAI and ChatGPT API providers now offer
+  an authentication mode next to the API key: sign in through the browser with OAuth
+  2.0 PKCE, and translations run on your ChatGPT subscription through the Codex
+  Responses backend instead of a Platform API key. The token is refreshed on its own
+  when it expires, the models the subscription actually serves are listed from the
+  backend's own catalog, and signing out removes the token.
+
+### Changed
+
+- **Credentials no longer live in the Keychain.** A Keychain item can only be read
+  by the code signature that wrote it, so switching provider — which reads the key
+  for the provider you switched to — asked for the login password every time. Keys
+  and OAuth tokens now sit in a `0600` file in PhraseLens's own Application Support
+  folder, sealed with AES-GCM under a key derived from this Mac's hardware UUID, and
+  are read once per launch. Nothing reads the Keychain on its own any more: when an
+  earlier build left a key there, the provider's credential section offers an
+  "Import from Keychain" button, and only pressing it raises the password panel.
+- **One model control instead of two.** The model pop-up and the "Model ID override"
+  field both edited the same setting, so a catalog choice and a hand-typed id fought
+  over one value. There is now a single searchable model field: type to filter the
+  provider's catalog, or type an id it does not list and use that.
+- **The model catalog is remembered.** It used to live in the settings pane's own
+  state, so leaving the pane threw it away and every visit began with a manual
+  fetch. Catalogs are now stored per provider, endpoint and authentication mode,
+  refreshed in the background when they are more than a day old, and kept when a
+  refresh fails.
+
+### Fixed
+
+- Gemini's model list is paged, and only the first page was ever read — most of the
+  catalog was missing from the picker.
+- Catalogs that carry publication dates (OpenAI-compatible providers, Groq) list the
+  newest models first instead of alphabetically; undated catalogs keep the order the
+  provider chose.
+- Embedding, rerank, transcription, speech and image models are filtered out for
+  every provider, not just OpenAI. Picking one produced a failure that read like a
+  bad API key.
+- A failed catalog refresh no longer empties the model list.
+- **The ChatGPT OAuth model list was mostly wrong.** Two things went wrong at once.
+  The picker merged the fetched catalog with a hardcoded list, and six of those eight
+  built-in names — gpt-5.4-nano, gpt-5.3-codex, gpt-5.2, gpt-5.2-codex, gpt-5.1-codex,
+  gpt-5.1-codex-mini — are refused by the Codex backend for a ChatGPT account, so most
+  of what the menu offered could not be used. Meanwhile the catalog request claimed
+  client version 0.115.0, and the backend only lists models a client that old could
+  drive, which hid gpt-5.5 and the gpt-5.6 family. The fetched catalog now stands on
+  its own, and the request claims a version that reaches the current models.
+- Codex models are ordered by the backend's own ranking and hidden by its own
+  `visibility` field, rather than by a hand-kept list of slugs that went stale and a
+  guess at which names looked internal.
+
 ## [0.4.0] — 2026-08-16
 
 ### Added

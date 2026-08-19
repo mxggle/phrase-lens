@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2">
   <img src="https://img.shields.io/badge/UI-SwiftUI-007AFF?style=flat-square&logo=swift&logoColor=white" alt="SwiftUI">
   <img src="https://img.shields.io/badge/Runtime-100%25%20Native-5856D6?style=flat-square" alt="100% Native">
-  <img src="https://img.shields.io/badge/Privacy-Keychain%20Secured-34C759?style=flat-square" alt="Keychain Secured">
+  <img src="https://img.shields.io/badge/Privacy-Encrypted%20Locally-34C759?style=flat-square" alt="Encrypted Locally">
   <img src="https://img.shields.io/badge/AI-Cloud%20%2B%20Ollama-8A2BE2?style=flat-square" alt="Cloud + Ollama">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue?style=flat-square" alt="License: AGPL v3"></a>
 </p>
@@ -42,7 +42,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 
 - ⚡ **100% Native Swift & SwiftUI**: Zero Electron, zero webviews, zero heavy runtimes. Starts instantly with minimal memory usage.
 - 🎯 **In-Context Workflow**: Select text in any macOS application and look it up immediately without breaking your concentration.
-- 🔒 **Privacy-First Architecture**: Your API keys are stored in the macOS Keychain. Requests go directly from your Mac to the chosen provider or your local offline Ollama instance.
+- 🔒 **Privacy-First Architecture**: Your API keys are encrypted on your own disk, bound to your Mac. Requests go directly from your Mac to the chosen provider or your local offline Ollama instance.
 - 🎨 **macOS Native Aesthetics**: Carefully tuned native light and dark modes following Apple HIG principles.
 
 ---
@@ -184,7 +184,7 @@ dist/
 
 PhraseLens is designed with a zero-trust, privacy-first mindset:
 
-- **Keychain Storage**: All provider API keys and credentials are encrypted and stored in the **macOS Keychain**. Keys never touch `UserDefaults`, plaintext files, or application logs.
+- **Encrypted Local Credentials**: Provider API keys and OAuth tokens are sealed with AES-GCM under a key derived from your Mac's hardware identity, and written to a `0600` file inside PhraseLens's own Application Support folder. Keys never touch `UserDefaults`, plaintext files, or application logs, and the file is inert if copied to another machine. This deliberately replaces Keychain storage: the Keychain gates every read on the access-control list of the signature that wrote the item, which made an ordinary provider switch ask for your login password.
 - **Direct Network Communication**: API requests travel directly between your Mac and the target AI service. PhraseLens has no backend server, proxy, or analytics telemetry.
 - **HTTPS Enforcement**: Plain HTTP connections are strictly blocked, with an explicit exception only allowed for local `localhost` / `127.0.0.1` Ollama endpoints.
 - **Untrusted Context Isolation**: Text selected from external applications is bounded (1,600 characters max) and treated as untrusted prompt data to prevent prompt injection.

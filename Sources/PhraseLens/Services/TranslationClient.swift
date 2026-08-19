@@ -7,6 +7,7 @@ struct TranslationClient: Sendable {
     prompt: TranslationPrompt,
     configuration: ProviderConfiguration,
     apiKey: String,
+    accountId: String? = nil,
     proxy: ProxySettings
   ) -> AsyncThrowingStream<String, Error> {
     AsyncThrowingStream { continuation in
@@ -16,7 +17,11 @@ struct TranslationClient: Sendable {
         // delivered, text on screen is one that stopped partway.
         var emitted = false
         do {
-          if configuration.provider.usesAPIKey,
+          if configuration.provider.supportsOAuth && configuration.authMode == .oauthCodex {
+            if apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+              throw TranslationError.missingOAuthCredentials
+            }
+          } else if configuration.provider.usesAPIKey,
             apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
           {
             throw TranslationError.missingAPIKey
@@ -24,7 +29,8 @@ struct TranslationClient: Sendable {
           let request = try makeRequest(
             prompt: prompt,
             configuration: configuration,
-            apiKey: apiKey
+            apiKey: apiKey,
+            accountId: accountId
           )
           let session = makeSession(proxy: proxy)
           let (bytes, response) = try await session.bytes(for: request)
@@ -48,7 +54,10 @@ struct TranslationClient: Sendable {
           var truncation: String?
           for try await line in bytes.lines {
             try Task.checkCancellation()
-            let event = StreamDecoder.event(from: line, provider: configuration.provider)
+            let event =
+              (configuration.provider.supportsOAuth && configuration.authMode == .oauthCodex)
+              ? StreamDecoder.responsesEvent(from: line)
+              : StreamDecoder.event(from: line, provider: configuration.provider)
             if let chunk = event.text, !chunk.isEmpty {
               emitted = true
               continuation.yield(chunk)
@@ -89,8 +98,17 @@ struct TranslationClient: Sendable {
   func makeRequest(
     prompt: TranslationPrompt,
     configuration: ProviderConfiguration,
-    apiKey: String
+    apiKey: String,
+    accountId: String? = nil
   ) throws -> URLRequest {
+    if configuration.provider.supportsOAuth && configuration.authMode == .oauthCodex {
+      return try codexResponsesRequest(
+        prompt: prompt,
+        configuration: configuration,
+        accessToken: apiKey,
+        accountId: accountId
+      )
+    }
     switch configuration.provider {
     case .anthropic:
       return try anthropicRequest(
@@ -119,6 +137,57 @@ struct TranslationClient: Sendable {
         apiKey: apiKey
       )
     }
+  }
+
+  /// ChatGPT-subscription tokens only work against the Codex backend, which
+  /// speaks the Responses API and routes by account id — the user-editable
+  /// endpoint and any Platform-API fields (organization, temperature) do not
+  /// apply here.
+  private func codexResponsesRequest(
+    prompt: TranslationPrompt,
+    configuration: ProviderConfiguration,
+    accessToken: String,
+    accountId: String?
+  ) throws -> URLRequest {
+    guard let url = URL(string: CodexBackend.responsesEndpoint) else {
+      throw TranslationError.invalidEndpoint("the Codex backend URL is invalid")
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 120
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+    request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+    if let accountId, !accountId.isEmpty {
+      request.setValue(accountId, forHTTPHeaderField: "chatgpt-account-id")
+    }
+    request.setValue("responses=experimental", forHTTPHeaderField: "OpenAI-Beta")
+    request.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
+
+    let input: [[String: Any]] = prompt.messages.map { turn in
+      let contentType = turn.role == .assistant ? "output_text" : "input_text"
+      return [
+        "type": "message",
+        "role": turn.role.rawValue,
+        "content": [["type": contentType, "text": turn.content]],
+      ]
+    }
+    let body: [String: Any] = [
+      "model": configuration.model,
+      "instructions": prompt.system,
+      "input": input,
+      "tools": [],
+      "tool_choice": "auto",
+      "parallel_tool_calls": false,
+      // Translation is latency-sensitive, so the model gets the lightest
+      // reasoning effort the backend accepts.
+      "reasoning": ["effort": "low"],
+      "store": false,
+      "stream": true,
+      "include": ["reasoning.encrypted_content"],
+    ]
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    return request
   }
 
   private func openAICompatibleRequest(
@@ -317,12 +386,19 @@ struct TranslationClient: Sendable {
   }
 
   private func providerError(status: Int, body: String) -> String {
-    if let data = body.data(using: .utf8),
-      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let error = object["error"] as? [String: Any],
+    guard let data = body.data(using: .utf8),
+      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+      return "Provider error \(status)."
+    }
+    if let error = object["error"] as? [String: Any],
       let message = error["message"] as? String
     {
       return "Provider error \(status): \(message)"
+    }
+    // The ChatGPT backend reports failures in a `detail` field instead.
+    if let detail = object["detail"] as? String {
+      return "Provider error \(status): \(detail)"
     }
     return "Provider error \(status)."
   }
@@ -342,6 +418,90 @@ struct StreamEvent {
 enum StreamDecoder {
   static func content(from rawLine: String, provider: ProviderKind) -> String? {
     event(from: rawLine, provider: provider).text
+  }
+
+  /// Decodes SSE lines from the OpenAI Responses API (ChatGPT Codex backend).
+  static func responsesEvent(from rawLine: String) -> StreamEvent {
+    var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !line.isEmpty, !line.hasPrefix("event:") else { return StreamEvent() }
+    if line.hasPrefix("data:") {
+      line = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+    }
+    guard line != "[DONE]", let data = line.data(using: .utf8),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+      return StreamEvent()
+    }
+
+    let type = json["type"] as? String
+
+    var truncation: String?
+    if let responseObj = json["response"] as? [String: Any] {
+      if let status = responseObj["status"] as? String, status == "incomplete" {
+        if let details = responseObj["status_details"] as? [String: Any],
+          let reason = details["reason"] as? String
+        {
+          truncation = describe(openAI: reason) ?? "the model stopped early (\(reason))"
+        } else {
+          truncation = lengthLimit
+        }
+      }
+    }
+
+    if type == "response.text.delta" {
+      let text = json["delta"] as? String
+      return StreamEvent(text: text, truncation: truncation)
+    }
+
+    if type == "response.output_item.delta" {
+      if let deltaStr = json["delta"] as? String {
+        return StreamEvent(text: deltaStr, truncation: truncation)
+      }
+      if let deltaObj = json["delta"] as? [String: Any] {
+        if let text = deltaObj["text"] as? String {
+          return StreamEvent(text: text, truncation: truncation)
+        }
+        if let contentList = deltaObj["content"] as? [[String: Any]],
+          let first = contentList.first,
+          let text = first["text"] as? String
+        {
+          return StreamEvent(text: text, truncation: truncation)
+        }
+      }
+    }
+
+    if type == "response.content_part.delta" {
+      if let deltaStr = json["delta"] as? String {
+        return StreamEvent(text: deltaStr, truncation: truncation)
+      }
+      if let deltaObj = json["delta"] as? [String: Any],
+        let text = deltaObj["text"] as? String
+      {
+        return StreamEvent(text: text, truncation: truncation)
+      }
+    }
+
+    if let delta = json["delta"] as? String {
+      return StreamEvent(text: delta, truncation: truncation)
+    }
+    if json["text"] as? String != nil, type == "response.text.done" {
+      return StreamEvent(text: nil, truncation: truncation)
+    }
+
+    if let choices = json["choices"] as? [[String: Any]],
+      let first = choices.first
+    {
+      let openAITrunc = describe(openAI: first["finish_reason"] as? String)
+      if let delta = first["delta"] as? [String: Any] {
+        return StreamEvent(text: delta["content"] as? String, truncation: openAITrunc ?? truncation)
+      }
+      return StreamEvent(
+        text: (first["message"] as? [String: Any])?["content"] as? String,
+        truncation: openAITrunc ?? truncation
+      )
+    }
+
+    return StreamEvent(truncation: truncation)
   }
 
   /// Decodes a line once. Text and stop reason arrive on the same frames for

@@ -1568,3 +1568,193 @@ struct AppLogo: View {
   }()
 }
 
+
+/// A select for lists too long to hand to a menu.
+///
+/// `AppSelect` renders every option at once, which is fine for a fixed set of
+/// providers and unusable for a provider's model catalog: OpenAI alone returns
+/// dozens of ids that differ by a suffix. This one filters as you type, and the
+/// search field doubles as the way to enter a value the list does not contain,
+/// so a custom model id is the same control rather than a second field that
+/// silently edits the same setting.
+struct SearchableSelect: View {
+  let title: String
+  @Binding var selection: String
+  let options: [String]
+  var placeholder = "Nothing selected"
+  var searchPrompt = "Search"
+  var emptyMessage = "The list is empty."
+  var customValueLabel: (String) -> String = { "Use “\($0)”" }
+  var size: AppControlSize = .sm
+  var fillsWidth = true
+
+  @Environment(\.palette) private var palette
+  @Environment(\.isEnabled) private var isEnabled
+  @State private var isPresented = false
+  @State private var isHovering = false
+  @State private var query = ""
+  @FocusState private var isSearchFocused: Bool
+
+  private var matches: [String] {
+    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !needle.isEmpty else { return options }
+    return options.filter { $0.lowercased().contains(needle) }
+  }
+
+  private var customValue: String? {
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, !options.contains(trimmed) else { return nil }
+    return trimmed
+  }
+
+  var body: some View {
+    Button {
+      query = ""
+      isPresented = true
+    } label: {
+      HStack(spacing: AppSpacing.xs + 2) {
+        Text(selection.isEmpty ? placeholder : selection)
+          .font(size.font)
+          .foregroundStyle(selection.isEmpty ? palette.mutedForeground : palette.foreground)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        if fillsWidth { Spacer(minLength: AppSpacing.xs) }
+        Image(systemName: "chevron.up.chevron.down")
+          .font(.system(size: 8, weight: .semibold))
+          .foregroundStyle(palette.faintForeground)
+      }
+      .padding(.horizontal, AppSpacing.sm + 1)
+      .frame(height: size.height)
+      .frame(maxWidth: fillsWidth ? .infinity : nil)
+      .background(isHovering ? palette.muted : palette.surface, in: shape)
+      .overlay { shape.strokeBorder(palette.border, lineWidth: 1) }
+      .contentShape(shape)
+    }
+    .buttonStyle(.plain)
+    .opacity(isEnabled ? 1 : 0.45)
+    .onHover { isHovering = $0 && isEnabled }
+    .animation(.easeOut(duration: 0.12), value: isHovering)
+    .help(title)
+    .accessibilityLabel(title)
+    .accessibilityValue(selection)
+    .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+      picker
+    }
+  }
+
+  private var picker: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: AppSpacing.sm) {
+        Image(systemName: "magnifyingglass")
+          .font(.system(size: 11, weight: .medium))
+          .foregroundStyle(palette.faintForeground)
+        TextField(searchPrompt, text: $query)
+          .textFieldStyle(.plain)
+          .font(AppFont.body)
+          .foregroundStyle(palette.foreground)
+          .focused($isSearchFocused)
+          .onSubmit(commitFirstMatch)
+      }
+      .padding(.horizontal, AppSpacing.md)
+      .frame(height: 34)
+      Hairline()
+
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 0) {
+          ForEach(matches, id: \.self) { option in
+            row(option, isCustom: false)
+          }
+          if let customValue {
+            row(customValue, isCustom: true)
+          }
+          if matches.isEmpty && customValue == nil {
+            Text(emptyMessage)
+              .font(AppFont.caption)
+              .foregroundStyle(palette.mutedForeground)
+              .padding(AppSpacing.md)
+          }
+        }
+        .padding(AppSpacing.xs)
+      }
+      .frame(maxHeight: 260)
+    }
+    .frame(width: 320)
+    .background(palette.surfaceElevated)
+    // A popover takes the key window a frame after it appears, so asking for
+    // focus in `onAppear` is asking too early.
+    .task {
+      try? await Task.sleep(for: .milliseconds(50))
+      isSearchFocused = true
+    }
+  }
+
+  private func row(_ option: String, isCustom: Bool) -> some View {
+    Button {
+      selection = option
+      isPresented = false
+    } label: {
+      HStack(spacing: AppSpacing.sm) {
+        Image(systemName: "checkmark")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(palette.foreground)
+          .opacity(option == selection ? 1 : 0)
+          .frame(width: 12)
+        Text(isCustom ? customValueLabel(option) : option)
+          .font(AppFont.body)
+          .foregroundStyle(palette.foreground)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Spacer(minLength: 0)
+        if isCustom {
+          Text("Custom")
+            .font(AppFont.caption)
+            .foregroundStyle(palette.mutedForeground)
+        }
+      }
+      .padding(.horizontal, AppSpacing.sm)
+      .frame(height: 26)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+    }
+    .buttonStyle(RowHighlightButtonStyle())
+  }
+
+  private func commitFirstMatch() {
+    if let first = matches.first {
+      selection = first
+    } else if let customValue {
+      selection = customValue
+    }
+    isPresented = false
+  }
+
+  private var shape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: size.radius, style: .continuous)
+  }
+}
+
+/// Menu-style row feedback: the whole row lights up under the pointer, without
+/// the press-scale a regular button applies. The hover state lives in a view
+/// rather than in the style itself, because a `ButtonStyle` is rebuilt on every
+/// pass and cannot hold state of its own.
+private struct RowHighlightButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    Chrome(configuration: configuration)
+  }
+
+  private struct Chrome: View {
+    let configuration: Configuration
+
+    @Environment(\.palette) private var palette
+    @State private var isHovering = false
+
+    var body: some View {
+      configuration.label
+        .background(
+          RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
+            .fill(isHovering || configuration.isPressed ? palette.muted : Color.clear)
+        )
+        .onHover { isHovering = $0 }
+    }
+  }
+}

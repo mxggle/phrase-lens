@@ -22,12 +22,13 @@ This file maps the original desktop behaviors to their native implementation.
 | Launch at login | `SMAppService.mainApp` |
 | Proxy | Ephemeral `URLSessionConfiguration` proxy settings |
 | Theme and window behavior | System/light/dark, always-on-top, auto-hide, Dock policy |
-| Credential storage | macOS Keychain |
+| Credential storage | AES-GCM sealed file in Application Support, key derived from the Mac's hardware UUID |
 
 ## Verification boundaries
 
 The built-in self-test verifies prompt isolation, the 1,600-character context
-bound, endpoint policy, provider stream decoding, and shortcut parsing. The
+bound, endpoint policy, provider stream decoding, shortcut parsing, credential
+storage round-trips, and model catalog paging, ordering and cache keying. The
 release build runs with warnings treated as errors and the bundle is checked by
 strict `codesign` verification.
 

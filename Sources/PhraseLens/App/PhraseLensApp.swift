@@ -29,6 +29,7 @@ struct PhraseLensApp: App {
       RootView()
         .environmentObject(model)
         .environmentObject(model.settingsStore)
+        .environmentObject(model.modelCatalog)
         .frame(minWidth: AppMetrics.windowMinWidth, minHeight: AppMetrics.windowMinHeight)
     }
     .defaultSize(width: 1080, height: 720)
@@ -88,6 +89,7 @@ struct PhraseLensApp: App {
       SettingsView()
         .environmentObject(model)
         .environmentObject(model.settingsStore)
+        .environmentObject(model.modelCatalog)
     }
 
     MenuBarExtra("PhraseLens", systemImage: "character.bubble") {
