@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-08-22
+
+### Changed
+
+- **The source box is always editable.** Text captured from another app used to
+  arrive read-only, and editing it meant reaching for a pencil button in the pane's
+  footer first. The box is now a plain editor whatever the text came from: a click
+  puts the caret where it lands, and looking one word up and typing the next no
+  longer costs a trip to the footer.
+- **The translator's controls moved into the chrome they belong to.** The strip that
+  held the action tabs and both language pickers above the split is gone. The tabs
+  sit beside the section title in the top bar, each language picker sits in the
+  header of the pane it describes with the swap button between them, and Collect and
+  Copy sit in the result header — leaving the foot of that pane to the follow-up
+  question alone.
+
+### Fixed
+
+- Editing captured text now drops the sentence that was captured around it. A word
+  typed over a selection was still translated against the surrounding sentence of the
+  *previous* selection.
+- The language and action pickers draw their own fill, border, and trailing chevron.
+  The menu style they used handed the label to an AppKit cell that kept the text and
+  discarded the rest, then drew the indicator on the wrong edge.
+
 ## [0.5.0] — 2026-08-19
 
 ### Added
@@ -166,7 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/mxggle/phrase-lens/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/mxggle/phrase-lens/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/mxggle/phrase-lens/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/mxggle/phrase-lens/compare/v0.3.0...v0.3.1
