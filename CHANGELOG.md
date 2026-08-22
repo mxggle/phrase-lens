@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-22
+
+### Added
+
+- **Saved words are filed for you, and the collection can be cut apart.** A vocabulary
+  list past a screenful was a wall: a headword, a fixed expression and a whole sentence
+  kept for its shape tiled together with nothing to tell them apart, and the only way
+  back to one of them was remembering how it was spelled. Every word is now filed along
+  five dimensions as it is saved — what kind of thing it is, its part of speech, the
+  subject it belongs to, its register, and how hard it is, with the native rung ("N2",
+  "B1") kept alongside for the languages that have one. Four of the five are closed
+  sets, which is what lets the filter rail draw stable rows; topic is open, because what
+  a reader's material is about is decided by the material, and a request offers the
+  topics already in use back to the model so a collection converges on a handful of
+  buckets instead of coining a synonym every twenty words.
+- **A filter rail with counts that stay honest.** Rows inside a dimension widen the
+  result; rows across dimensions narrow it. Each dimension's counts are taken with its
+  own choices lifted, so arming *Word* leaves *Phrase* and *Sentence* standing with
+  their real totals rather than collapsing every sibling to zero — no click lands
+  somewhere empty. The rail folds into a pull-down on a narrow window.
+- **Grouping.** Break the collection into pinned sections by any of the same dimensions,
+  or by the month you collected it. Closed dimensions keep their declared order rather
+  than sorting by size, and a word filed under two topics is browsable under both.
+- **Organize.** Words collected before this existed are picked up by one pass, twenty per
+  request through the provider you already configured, saving each batch as it lands so
+  a cancelled or dropped run keeps everything it finished.
+
+Every tag is optional at every layer. Words saved before this existed decode untouched,
+a model that cannot judge a dimension is told to leave it out rather than guess, and
+anything unfiled stays reachable through a *Not tagged* row instead of dropping out of
+the collection. Tags are read on every launch from the file that holds the words
+themselves, so an unrecognized value costs that value and not the collection.
+
+### Fixed
+
+- **The answer comes back in the language you picked, even when the source is a wall of
+  another one.** Summarize, Analyze and Explain in Context all ended their command
+  prompt with the material itself, and a model that reads several hundred words of
+  Japanese last answers in Japanese. Each now closes on the line naming the target
+  language, and the shared answer-language rule states outright that the material never
+  overrides it. Words, examples and quotes stay in the source language; everything
+  written *about* them is in yours.
+
 ## [0.5.3] — 2026-08-22
 
 ### Fixed
@@ -225,7 +268,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/mxggle/phrase-lens/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/mxggle/phrase-lens/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/mxggle/phrase-lens/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/mxggle/phrase-lens/compare/v0.5.0...v0.5.1
