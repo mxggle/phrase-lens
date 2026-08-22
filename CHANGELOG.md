@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-08-22
+
+### Fixed
+
+- **The beachball after a screenshot capture is gone.** A crop holding no text raised
+  the error alert, and that alert arrived while the main window was still coming back
+  from being hidden for the capture — so its backing surfaces were allocated and
+  synchronised against a render server that was already rebuilding the window behind
+  it, and the main thread sat there. Sampling a capture over a blank region put 929 ms
+  on the main thread, 668 ms of it inside a Core Animation commit; the same capture
+  over text cost 138 ms, because that path raises no alert. An empty crop is an outcome
+  rather than a failure, so it now takes the route an empty selection already takes — a
+  line in the status bar — and the same capture costs 103 ms.
+
 ## [0.5.2] — 2026-08-22
 
 ### Fixed
@@ -211,7 +225,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/mxggle/phrase-lens/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/mxggle/phrase-lens/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/mxggle/phrase-lens/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/mxggle/phrase-lens/compare/v0.4.0...v0.5.0
