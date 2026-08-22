@@ -90,6 +90,19 @@ enum SelfTestRunner {
         "\(builtIn.name) prompt never names the language to answer in",
         failures: &failures
       )
+      // These three end their command prompt with the material itself, and a
+      // model that reads a wall of source-language text last answers in that
+      // language. The closing line naming the target keeps the instruction
+      // the answer has to follow in view after the quoted text.
+      if let mode = builtIn.mode,
+        [ActionMode.explainContext, .summarize, .analyze].contains(mode)
+      {
+        check(
+          String(filled.user.suffix(200)).contains("简体中文"),
+          "\(builtIn.name) prompt ends on source material instead of the answer language",
+          failures: &failures
+        )
+      }
     }
     let compareAction = TranslationAction.builtIns.first { $0.mode == .compareSynonyms }!
     let comparePrompt = PromptBuilder.build(

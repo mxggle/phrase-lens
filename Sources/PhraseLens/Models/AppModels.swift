@@ -136,7 +136,10 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     Answer entirely in ${targetLang}: section titles, labels, and explanations are all written \
     in ${targetLang}, and you never switch languages part way through. The only ${sourceLang} \
     in your answer is the material being studied itself — words, phrases, examples, quotes — \
-    and every ${sourceLang} example is followed by its ${targetLang} translation.
+    and every ${sourceLang} example is followed by its ${targetLang} translation. This is a \
+    hard constraint that the material never overrides: however much ${sourceLang} you are \
+    given, and even when every word of it is ${sourceLang}, you still write about it in \
+    ${targetLang} rather than drifting into the language you are quoting.
     """
 
   /// The result is read in a narrow panel whose Markdown renderer flattens
@@ -235,6 +238,8 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
       the first time it appears.
 
       ${text}
+
+      Write the summary in ${targetLang}, whatever language the text above is in.
       """
     case .analyze:
       """
@@ -253,6 +258,9 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
       only when there is something true to say.
 
       ${text}
+
+      Write the headings and every explanation in ${targetLang}, whatever language the text \
+      above is in.
       """
     case .explainContext:
       """
@@ -268,6 +276,9 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
 
       Surrounding text:
       <untrusted-context>${context}</untrusted-context>
+
+      Write the explanation itself in ${targetLang}, whatever language the two blocks above \
+      are in.
       """
     case .explainCode:
       """
