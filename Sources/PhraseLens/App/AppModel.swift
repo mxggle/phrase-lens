@@ -28,7 +28,6 @@ final class AppModel: ObservableObject {
   @Published var selectedActionID = TranslationAction.builtIns[0].id
   @Published var selectionContext: String?
   @Published var inputSource: InputSource = .manual
-  @Published var isSelectionExpanded = false
   @Published var isTranslating = false
   /// The questions asked about the current result, oldest first. The last one
   /// may still be streaming its answer.
@@ -298,6 +297,21 @@ final class AppModel: ObservableObject {
     statusMessage = "Stopped"
   }
 
+  /// Typing over text that arrived from somewhere else makes it the user's
+  /// own. The provenance badge and the surrounding sentence captured with the
+  /// selection both stop describing what is in the box on the first keystroke,
+  /// so a keystroke is what drops them — sending the old context along with
+  /// edited text would quietly translate the word against a sentence it is no
+  /// longer part of.
+  func editInputText(_ newValue: String) {
+    guard newValue != inputText else { return }
+    inputText = newValue
+    guard inputSource != .manual else { return }
+    inputSource = .manual
+    selectionContext = nil
+    restoredSourceLanguage = nil
+  }
+
   func clear() {
     stopTranslation()
     inputText = ""
@@ -306,7 +320,6 @@ final class AppModel: ObservableObject {
     selectionContext = nil
     inputSource = .manual
     restoredSourceLanguage = nil
-    isSelectionExpanded = false
     resetFollowUps()
     errorMessage = nil
     statusMessage = "Ready"
@@ -849,7 +862,6 @@ final class AppModel: ObservableObject {
     selectionContext = nil
     inputSource = .selection
     restoredSourceLanguage = nil
-    isSelectionExpanded = false
     resetFollowUps()
     errorMessage = nil
     statusMessage = "Reading selection…"
@@ -905,7 +917,6 @@ final class AppModel: ObservableObject {
         inputSource = .ocr
         restoredSourceLanguage = nil
         resetFollowUps()
-        isSelectionExpanded = true
         selectDefaultAction()
         WindowCoordinator.showMain()
         if settingsStore.settings.autoTranslate {

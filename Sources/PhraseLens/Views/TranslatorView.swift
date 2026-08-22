@@ -17,12 +17,16 @@ struct TranslatorView: View {
     AppMotion.state(reduceMotion: reduceMotion)
   }
 
-  /// Selection captures stay read-only until the user asks to edit them, so an
-  /// accidental keystroke cannot destroy text grabbed from another app.
-  private var showsSelectionPreview: Bool {
-    model.inputSource == .selection
-      && settingsStore.settings.useCompactSelectionPreview
-      && !model.isSelectionExpanded
+  /// The source box is always editable, whatever the text came from. Captured
+  /// text used to arrive read-only behind a pencil button, which cost a click
+  /// on the way to the common move: look a word up, then type the next one.
+  /// Typing is what makes the text the user's own, so the binding — not a
+  /// mode — is where the capture's provenance is dropped.
+  private var inputBinding: Binding<String> {
+    Binding(
+      get: { model.inputText },
+      set: { model.editInputText($0) }
+    )
   }
 
   var body: some View {
@@ -55,7 +59,6 @@ struct TranslatorView: View {
     .animation(motion, value: model.isTranslating)
     .animation(motion, value: model.outputText.isEmpty)
     .animation(motion, value: model.followUps.count)
-    .animation(motion, value: showsSelectionPreview)
   }
 
   // MARK: - Language pickers
@@ -116,13 +119,6 @@ struct TranslatorView: View {
           model.captureOCR()
         }
 
-        if showsSelectionPreview {
-          IconButton(title: "Edit the captured text", symbol: "pencil") {
-            model.isSelectionExpanded = true
-            inputFocused = true
-          }
-        }
-
         IconButton(
           title: "Clear",
           symbol: "eraser",
@@ -151,48 +147,28 @@ struct TranslatorView: View {
     }
   }
 
-  @ViewBuilder
   private var sourceBody: some View {
-    if showsSelectionPreview {
-      ScrollView {
-        Text(model.inputText)
-          .font(.system(size: settingsStore.settings.fontSize))
-          .lineSpacing(3)
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(AppMetrics.readingInset)
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .transition(.opacity)
-    } else {
-      ZStack(alignment: .topLeading) {
-        TextEditor(text: $model.inputText)
-          .font(.system(size: settingsStore.settings.fontSize))
-          .lineSpacing(3)
-          .foregroundStyle(palette.foreground)
-          .scrollContentBackground(.hidden)
-          .focused($inputFocused)
-          .padding(.horizontal, AppMetrics.readingInset - 5)
-          .padding(.vertical, AppMetrics.readingInset - 8)
-          .onTapGesture {
-            if model.inputSource == .selection {
-              model.inputSource = .manual
-            }
-          }
+    ZStack(alignment: .topLeading) {
+      TextEditor(text: inputBinding)
+        .font(.system(size: settingsStore.settings.fontSize))
+        .lineSpacing(3)
+        .foregroundStyle(palette.foreground)
+        .scrollContentBackground(.hidden)
+        .focused($inputFocused)
+        .padding(.horizontal, AppMetrics.readingInset - 5)
+        .padding(.vertical, AppMetrics.readingInset - 8)
 
-        if model.inputText.isEmpty {
-          Text("Type or paste text here.")
-            .font(.system(size: settingsStore.settings.fontSize))
-            .foregroundStyle(palette.mutedForeground)
-            .padding(.horizontal, AppMetrics.readingInset)
-            .padding(.vertical, AppMetrics.readingInset - 8)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
+      if model.inputText.isEmpty {
+        Text("Type or paste text here.")
+          .font(.system(size: settingsStore.settings.fontSize))
+          .foregroundStyle(palette.mutedForeground)
+          .padding(.horizontal, AppMetrics.readingInset)
+          .padding(.vertical, AppMetrics.readingInset - 8)
+          .allowsHitTesting(false)
+          .accessibilityHidden(true)
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .transition(.opacity)
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   // MARK: - Result pane
@@ -308,9 +284,6 @@ struct TranslatorView: View {
       // The language pair used to be repeated here. It is set two rows up, in
       // the pane headers, and a status bar that echoes a control the eye can
       // already see is a line of text nobody reads.
-      if showsSelectionPreview {
-        Badge(text: "Read-only capture", variant: .neutral, symbol: "lock.fill")
-      }
     }
     .font(AppFont.caption)
     .foregroundStyle(palette.mutedForeground)
