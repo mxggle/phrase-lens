@@ -96,15 +96,42 @@ actor LibraryStore {
   }
 
   func addVocabulary(_ entry: VocabularyEntry) throws {
+    var entry = entry
     var items = try vocabulary()
     if let index = items.firstIndex(where: {
       $0.word.localizedCaseInsensitiveCompare(entry.word) == .orderedSame
     }) {
+      // Collecting a word twice replaces the explanation, and the fresh one is
+      // what the next tagging run reads. Until that run lands the old filing is
+      // still the best answer there is, so the card keeps its badges instead of
+      // blanking and refilling.
+      entry.tags = entry.tags ?? items[index].tags
       items[index] = entry
     } else {
       items.insert(entry, at: 0)
     }
     try vocabularyFile.save(items)
+  }
+
+  /// Files tags against whatever is on disk now, and hands back the result.
+  ///
+  /// Tagging runs in the background while the reader keeps collecting and
+  /// deleting, so a batch sent a minute ago describes a list that has since
+  /// moved. Merging into the current file rather than writing back the
+  /// snapshot the batch was built from is what keeps a slow reply from
+  /// resurrecting a word that was deleted while it was in flight.
+  func applyVocabularyTags(_ tags: [UUID: VocabularyTags]) throws -> [VocabularyEntry] {
+    guard !tags.isEmpty else { return try vocabulary() }
+    var items = try vocabulary()
+    var changed = false
+    for index in items.indices {
+      guard let update = tags[items[index].id] else { continue }
+      items[index].tags = update
+      changed = true
+    }
+    guard changed else { return items }
+    try vocabularyFile.save(items)
+    return items
   }
 
   func removeVocabulary(ids: Set<UUID>) throws {

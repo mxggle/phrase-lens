@@ -142,14 +142,48 @@ private struct LibraryCard<Content: View>: View {
   }
 }
 
+/// A run of rows under one heading. A collection that is not grouped is a
+/// single section with no heading, so both shapes go down the same path.
+private struct LibraryListSection<Item: Identifiable>: Identifiable {
+  let id: String
+  let title: String?
+  let items: [Item]
+}
+
 /// Scrolling body shared by both collections.
 private struct LibraryList<Item: Identifiable, Row: View>: View {
-  let items: [Item]
+  let sections: [LibraryListSection<Item>]
   /// Widest a single column may get before the grid adds another one.
   var columnMinWidth: CGFloat?
   @ViewBuilder var row: (Item) -> Row
 
   @Environment(\.layoutWidth) private var layoutWidth
+
+  init(
+    items: [Item],
+    columnMinWidth: CGFloat? = nil,
+    @ViewBuilder row: @escaping (Item) -> Row
+  ) {
+    self.sections = [LibraryListSection(id: "all", title: nil, items: items)]
+    self.columnMinWidth = columnMinWidth
+    self.row = row
+  }
+
+  init(
+    sections: [LibraryListSection<Item>],
+    columnMinWidth: CGFloat? = nil,
+    @ViewBuilder row: @escaping (Item) -> Row
+  ) {
+    self.sections = sections
+    self.columnMinWidth = columnMinWidth
+    self.row = row
+  }
+
+  /// Headings only pin when there are headings; an ungrouped list must not pay
+  /// for a pinned empty view at the top of its scroller.
+  private var pinnedViews: PinnedScrollableViews {
+    sections.contains { $0.title != nil } ? [.sectionHeaders] : []
+  }
 
   var body: some View {
     ScrollView {
@@ -163,19 +197,67 @@ private struct LibraryList<Item: Identifiable, Row: View>: View {
             )
           ],
           alignment: .leading,
-          spacing: AppSpacing.md
+          spacing: AppSpacing.md,
+          pinnedViews: pinnedViews
         ) {
-          ForEach(items) { row($0) }
+          content
         }
         .padding(AppSpacing.lg)
       } else {
-        LazyVStack(spacing: AppSpacing.sm) {
-          ForEach(items) { row($0) }
+        LazyVStack(spacing: AppSpacing.sm, pinnedViews: pinnedViews) {
+          content
         }
         .padding(AppSpacing.lg)
       }
     }
     .scrollIndicators(.automatic)
+  }
+
+  @ViewBuilder
+  private var content: some View {
+    ForEach(sections) { section in
+      Section {
+        ForEach(section.items) { row($0) }
+      } header: {
+        if let title = section.title {
+          LibrarySectionHeader(title: title, count: section.items.count)
+        }
+      }
+    }
+  }
+}
+
+/// The heading over one group.
+private struct LibrarySectionHeader: View {
+  let title: String
+  let count: Int
+
+  @Environment(\.palette) private var palette
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: AppSpacing.sm) {
+      Text(title)
+        .font(AppFont.heading)
+        .foregroundStyle(palette.foreground)
+        .lineLimit(1)
+        .truncationMode(.tail)
+      Text("\(count)")
+        .font(AppFont.caption)
+        .monospacedDigit()
+        .foregroundStyle(palette.mutedForeground)
+      Spacer(minLength: 0)
+    }
+    .padding(.top, AppSpacing.sm)
+    .padding(.bottom, AppSpacing.xs)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    // The heading stays put while its cards scroll under it, so the fill has
+    // to reach past the grid's own padding — otherwise a card slides through
+    // the gutter beside the heading in plain view. Only horizontally: growing
+    // it vertically would overlap the row above whenever it is not pinned.
+    .background { palette.background.padding(.horizontal, -AppSpacing.lg) }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("\(title), \(count) words")
+    .accessibilityAddTraits(.isHeader)
   }
 }
 
@@ -376,57 +458,96 @@ private struct HistoryRow: View {
 
 struct VocabularyView: View {
   @EnvironmentObject private var model: AppModel
+  @Environment(\.palette) private var palette
   @Environment(\.layoutWidth) private var layoutWidth
   @State private var searchText = ""
   @State private var selection = Set<UUID>()
   @State private var pendingDelete = Set<UUID>()
   @State private var isConfirmingDelete = false
+  @State private var filter = VocabularyFilter()
+  @State private var grouping: VocabularyGrouping = .none
+  @State private var isFilterPresented = false
 
-  private var filtered: [VocabularyEntry] {
+  /// What search left, before the rail has had its turn.
+  ///
+  /// The order matters for the counts: a rail built over the whole collection
+  /// would offer "Verb · 28" beside a search that only matched three words,
+  /// and every one of those rows would lead somewhere empty.
+  private var searchMatches: [VocabularyEntry] {
     guard !searchText.isEmpty else { return model.vocabulary }
-    return model.vocabulary.filter {
-      $0.word.localizedCaseInsensitiveContains(searchText)
-        || $0.explanation.localizedCaseInsensitiveContains(searchText)
+    return model.vocabulary.filter { entry in
+      entry.word.localizedCaseInsensitiveContains(searchText)
+        || entry.explanation.localizedCaseInsensitiveContains(searchText)
+        || (entry.tags?.topics ?? []).contains {
+          $0.localizedCaseInsensitiveContains(searchText)
+        }
     }
   }
 
   var body: some View {
-    let filteredEntries = filtered
+    let matches = searchMatches
+    let sections = VocabularyFacets.sections(for: matches, filter: filter)
+    let entries = VocabularyFacets.apply(filter, to: matches)
+    let unfiled = model.unfiledVocabularyCount
+    let showsRail = !layoutWidth.isCompact && !sections.isEmpty
+    let showsOrganizeBar = model.isOrganizingVocabulary || unfiled > 0
+
     LibraryScaffold(
       searchText: $searchText,
       searchPrompt: "Search vocabulary",
-      count: filteredEntries.count,
-      countNoun: filteredEntries.count == 1 ? "word" : "words"
+      count: entries.count,
+      countNoun: entries.count == 1 ? "word" : "words"
     ) {
-      Button {
-        confirmDelete(of: selection)
-      } label: {
-        AdaptiveLabel(title: "Delete", symbol: "trash", iconOnly: layoutWidth.isCompact)
-      }
-      .appButton(.destructiveGhost, size: .sm)
-      .disabled(selection.isEmpty)
-      .help("Delete the selected words")
-      .accessibilityLabel("Delete the selected words")
+      toolbar(sections: sections)
     } content: {
-      if filteredEntries.isEmpty {
-        emptyState
-      } else {
-        // Vocabulary entries are short and self-contained, so they tile into
-        // however many columns the window can hold.
-        LibraryList(items: filteredEntries, columnMinWidth: 300) { entry in
-          LibraryCard(
-            isSelected: selection.contains(entry.id),
-            onSelect: { extending in select(entry.id, extending: extending) }
-          ) {
-            VocabularyRow(entry: entry)
+      HStack(spacing: 0) {
+        if showsRail {
+          VocabularyFacetRail(sections: sections, filter: $filter)
+            .frame(width: 212)
+          Rectangle()
+            .fill(palette.border)
+            .frame(width: 1)
+            .accessibilityHidden(true)
+        }
+
+        VStack(spacing: 0) {
+          if showsOrganizeBar {
+            VocabularyOrganizeBar(
+              progress: model.vocabularyOrganizing,
+              unfiled: unfiled,
+              organize: { model.organizeVocabulary() },
+              cancel: { model.cancelVocabularyOrganizing() }
+            )
+            Hairline()
           }
-          .contextMenu {
-            Button("Copy Explanation") { copyExplanation(of: entry) }
-            Divider()
-            Button("Delete", role: .destructive) { confirmDelete(of: [entry.id]) }
+          if entries.isEmpty {
+            emptyState
+          } else if grouping == .none {
+            // The rail costs the grid a column's worth of width, so the
+            // tiles are allowed to run a little narrower before they give one
+            // up — otherwise turning the rail on at a common window size drops
+            // the collection to a single stretched column.
+            LibraryList(items: entries, columnMinWidth: 280) { entry in
+              card(for: entry)
+            }
+          } else {
+            LibraryList(
+              sections: VocabularyFacets.groups(of: entries, by: grouping).map {
+                LibraryListSection(id: $0.key, title: $0.title, items: $0.entries)
+              },
+              columnMinWidth: 280
+            ) { entry in
+              card(for: entry)
+            }
           }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
+    }
+    // A topic whose last word was deleted leaves a choice armed against a row
+    // that is no longer drawn, which shows an empty grid and no way out of it.
+    .onChange(of: model.vocabulary) { _, updated in
+      filter.prune(to: VocabularyFacets.availableValues(for: updated))
     }
     .libraryDeleteConfirmation(
       isPresented: $isConfirmingDelete,
@@ -438,6 +559,68 @@ struct VocabularyView: View {
       selection.subtract(pendingDelete)
       pendingDelete.removeAll()
     }
+  }
+
+  private func card(for entry: VocabularyEntry) -> some View {
+    LibraryCard(
+      isSelected: selection.contains(entry.id),
+      onSelect: { extending in select(entry.id, extending: extending) }
+    ) {
+      VocabularyRow(entry: entry)
+    }
+    .contextMenu {
+      Button("Copy Explanation") { copyExplanation(of: entry) }
+      Button("Organize Again") { model.retagVocabulary(ids: [entry.id]) }
+        .disabled(model.isOrganizingVocabulary)
+      Divider()
+      Button("Delete", role: .destructive) { confirmDelete(of: [entry.id]) }
+    }
+  }
+
+  @ViewBuilder
+  private func toolbar(sections: [VocabularyFacetSection]) -> some View {
+    if layoutWidth.isCompact, !sections.isEmpty {
+      Button {
+        isFilterPresented = true
+      } label: {
+        AdaptiveLabel(
+          title: filter.isEmpty ? "Filters" : "Filters (\(filter.count))",
+          symbol: "line.3.horizontal.decrease",
+          iconOnly: false
+        )
+      }
+      .appButton(filter.isEmpty ? .outline : .secondary, size: .sm)
+      .help("Narrow the collection by type, topic, or level")
+      .popover(isPresented: $isFilterPresented, arrowEdge: .bottom) {
+        VocabularyFacetRail(sections: sections, filter: $filter)
+          .frame(width: 240, height: 360)
+      }
+    }
+
+    AppSelect(
+      title: "Group the collection into sections",
+      selection: $grouping,
+      options: VocabularyGrouping.allCases,
+      // Narrow windows get the bare axis: the bar is already carrying a search
+      // field and two commands, and "Group: Part of speech" is wider than the
+      // room left for it.
+      label: { grouping in
+        if layoutWidth.isCompact || grouping == .none { return grouping.title }
+        return "Group: \(grouping.title)"
+      },
+      size: .sm,
+      symbol: "square.stack.3d.up"
+    )
+
+    Button {
+      confirmDelete(of: selection)
+    } label: {
+      AdaptiveLabel(title: "Delete", symbol: "trash", iconOnly: layoutWidth.isCompact)
+    }
+    .appButton(.destructiveGhost, size: .sm)
+    .disabled(selection.isEmpty)
+    .help("Delete the selected words")
+    .accessibilityLabel("Delete the selected words")
   }
 
   private func confirmDelete(of ids: Set<UUID>) {
@@ -456,13 +639,16 @@ struct VocabularyView: View {
 
   @ViewBuilder
   private var emptyState: some View {
-    if searchText.isEmpty {
+    if !filter.isEmpty {
       EmptyState(
-        symbol: "books.vertical",
-        title: "No saved words",
-        message: "Choose Collect under a short translation to save it here."
-      )
-    } else {
+        symbol: "line.3.horizontal.decrease",
+        title: "No matches",
+        message: "No saved word is filed under every one of those at once."
+      ) {
+        Button("Clear Filters") { filter.clear() }
+          .appButton(.outline, size: .sm)
+      }
+    } else if !searchText.isEmpty {
       EmptyState(
         symbol: "magnifyingglass",
         title: "No matches",
@@ -471,12 +657,171 @@ struct VocabularyView: View {
         Button("Clear Search") { searchText = "" }
           .appButton(.outline, size: .sm)
       }
+    } else {
+      EmptyState(
+        symbol: "books.vertical",
+        title: "No saved words",
+        message: "Choose Collect under a short translation to save it here."
+      )
     }
   }
 
   private func copyExplanation(of entry: VocabularyEntry) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(entry.explanation, forType: .string)
+  }
+}
+
+/// The strip that offers to file what is not filed, and reports on the filing
+/// while it runs.
+///
+/// It sits above the collection rather than in a dialog because filing is
+/// optional: the collection is fully usable unfiled, and a modal would make a
+/// convenience look like a requirement.
+private struct VocabularyOrganizeBar: View {
+  let progress: VocabularyOrganizeProgress?
+  let unfiled: Int
+  let organize: () -> Void
+  let cancel: () -> Void
+
+  @Environment(\.palette) private var palette
+
+  var body: some View {
+    HStack(spacing: AppSpacing.sm) {
+      if let progress {
+        Spinner(size: 12)
+        Text("Organizing \(progress.completed) of \(progress.total)…")
+          .font(AppFont.caption)
+          .foregroundStyle(palette.secondaryForeground)
+          .monospacedDigit()
+        Spacer(minLength: AppSpacing.sm)
+        Button("Stop", action: cancel)
+          .appButton(.ghost, size: .xs)
+      } else {
+        Image(systemName: "sparkles")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(palette.mutedForeground)
+        Text(
+          unfiled == 1
+            ? "1 word has not been sorted into categories yet."
+            : "\(unfiled) words have not been sorted into categories yet."
+        )
+        .font(AppFont.caption)
+        .foregroundStyle(palette.secondaryForeground)
+        Spacer(minLength: AppSpacing.sm)
+        Button("Organize", action: organize)
+          .appButton(.outline, size: .xs)
+          .help("Have the model file these under type, topic, part of speech, and level")
+      }
+    }
+    .padding(.horizontal, AppSpacing.lg)
+    .padding(.vertical, AppSpacing.sm)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(palette.muted)
+    .accessibilityElement(children: .contain)
+  }
+}
+
+/// Every dimension the collection can be cut along, with a live count on each
+/// value.
+///
+/// Values inside a section are an OR and sections are ANDed together, and the
+/// counts are taken with the section's own choices lifted — so arming one verb
+/// leaves the other parts of speech standing beside it with their real totals
+/// rather than collapsing them all to zero.
+private struct VocabularyFacetRail: View {
+  let sections: [VocabularyFacetSection]
+  @Binding var filter: VocabularyFilter
+
+  @Environment(\.palette) private var palette
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: AppSpacing.sm) {
+        Eyebrow(text: "Filter")
+        Spacer(minLength: AppSpacing.xs)
+        if !filter.isEmpty {
+          Button("Clear") { filter.clear() }
+            .appButton(.ghost, size: .xs)
+            .accessibilityLabel("Clear all filters")
+        }
+      }
+      .frame(height: AppMetrics.paneHeaderHeight)
+      .padding(.horizontal, AppSpacing.md)
+
+      Hairline()
+
+      ScrollView {
+        VStack(alignment: .leading, spacing: AppSpacing.lg) {
+          ForEach(sections) { section in
+            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+              Eyebrow(text: section.facet.title)
+                .padding(.horizontal, AppSpacing.sm)
+                .padding(.bottom, AppSpacing.xxs)
+              ForEach(section.rows) { row in
+                VocabularyFacetRow(row: row, isOn: filter.isOn(row.value)) {
+                  filter.toggle(row.value)
+                }
+              }
+            }
+          }
+        }
+        .padding(.vertical, AppSpacing.md)
+        .padding(.horizontal, AppSpacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .scrollIndicators(.automatic)
+    }
+    .background(palette.chrome)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Vocabulary filters")
+  }
+}
+
+private struct VocabularyFacetRow: View {
+  let row: VocabularyFacetSection.Row
+  let isOn: Bool
+  let toggle: () -> Void
+
+  @Environment(\.palette) private var palette
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var isHovering = false
+
+  var body: some View {
+    Button(action: toggle) {
+      HStack(spacing: AppSpacing.sm) {
+        Image(systemName: isOn ? "checkmark.square.fill" : "square")
+          .font(.system(size: 11, weight: .medium))
+          .foregroundStyle(isOn ? palette.foreground : palette.faintForeground)
+        Text(row.value.label)
+          .font(AppFont.labelRegular)
+          .foregroundStyle(
+            row.value.isUntagged ? palette.mutedForeground : palette.secondaryForeground
+          )
+          .lineLimit(1)
+          .truncationMode(.tail)
+        Spacer(minLength: AppSpacing.xs)
+        Text("\(row.count)")
+          .font(AppFont.caption)
+          .monospacedDigit()
+          .foregroundStyle(palette.mutedForeground)
+      }
+      .padding(.horizontal, AppSpacing.sm)
+      .frame(height: 25)
+      .background(fill, in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+      .contentShape(RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .onHover { isHovering = $0 }
+    .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isHovering)
+    .help(row.value.label)
+    .accessibilityLabel("\(row.value.label), \(row.count) words")
+    .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : [.isButton])
+  }
+
+  private var fill: Color {
+    if isOn { return palette.accentFill }
+    return isHovering ? palette.mutedHover : .clear
   }
 }
 
@@ -510,6 +855,19 @@ private struct VocabularyRow: View {
         .multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .topLeading)
 
+      // What the card was filed under. The strip keeps its line whether or not
+      // there is anything on it, for the same reason the preview reserves its
+      // four: a card that grows a row the moment a batch lands would shuffle
+      // every tile below it while the reader is reading them.
+      HStack(spacing: AppSpacing.xs) {
+        ForEach(Self.tagLabels(for: entry), id: \.self) { label in
+          Badge(text: label, variant: .neutral)
+        }
+        Spacer(minLength: 0)
+      }
+      .frame(height: 18)
+      .clipped()
+
       // The two pieces of metadata share the last line: the pair is smaller
       // than the word and the prose above it, and reads as the card's footer
       // rather than as a third thing to look at.
@@ -526,7 +884,37 @@ private struct VocabularyRow: View {
           .layoutPriority(1)
       }
     }
-    .accessibilityLabel("\(entry.word). \(entry.explanation)")
+    .accessibilityLabel(
+      ([entry.word, entry.explanation] + Self.tagLabels(for: entry)).joined(separator: ". ")
+    )
+  }
+
+  /// At most three badges, in the order a reader scanning a card wants them.
+  ///
+  /// A phrase or a sentence leads with what it is, because that is the thing
+  /// that separates it from everything around it; a single word leads with its
+  /// part of speech, since "Word" beside a word says nothing. The native rung
+  /// ("N2") beats the shared scale wherever the language has one.
+  private static func tagLabels(for entry: VocabularyEntry) -> [String] {
+    guard let tags = entry.tags else { return [] }
+    var labels: [String] = []
+    switch tags.unit {
+    case .phrase, .sentence:
+      if let unit = tags.unit { labels.append(unit.displayName) }
+    case .word, nil:
+      if let part = tags.partOfSpeech {
+        labels.append(part.displayName)
+      } else if let unit = tags.unit {
+        labels.append(unit.displayName)
+      }
+    }
+    if let level = tags.levelLabel {
+      labels.append(level)
+    } else if let difficulty = tags.difficulty {
+      labels.append(difficulty.displayName)
+    }
+    if let topic = tags.topics?.first { labels.append(topic) }
+    return labels
   }
 }
 

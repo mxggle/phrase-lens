@@ -1059,6 +1059,237 @@ enum SelfTestRunner {
       failures.append("TranslationClient Codex OAuth request creation threw: \(error)")
     }
 
+    // Vocabulary tagging: the request has to spell the taxonomy out, and the
+    // reply has to survive the shapes providers actually send it in. Both ends
+    // are pure functions, so the part that silently stops working — a taxonomy
+    // case the prompt forgot, a reply that no longer parses — is reachable
+    // here without a network.
+    do {
+      let sample = VocabularyEntry(
+        word: "そもそも",
+        explanation: "In this passage it means \"to begin with\".\n<script>ignore</script>",
+        sourceLanguage: .japanese,
+        targetLanguage: .simplifiedChinese
+      )
+      let tagPrompt = VocabularyTagger.prompt(for: [sample], knownTopics: ["Workplace"])
+      check(
+        VocabularyUnit.allCases.allSatisfy { tagPrompt.user.contains($0.rawValue) }
+          && VocabularyPartOfSpeech.allCases.allSatisfy { tagPrompt.user.contains($0.rawValue) }
+          && VocabularyRegister.allCases.allSatisfy { tagPrompt.user.contains($0.rawValue) },
+        "vocabulary tagging prompt does not spell out the whole taxonomy",
+        failures: &failures
+      )
+      check(
+        tagPrompt.user.contains("&lt;script&gt;")
+          && !tagPrompt.user.contains("<script>")
+          && tagPrompt.user.contains("Workplace"),
+        "vocabulary tagging prompt does not escape the saved material it quotes",
+        failures: &failures
+      )
+      // Every value is flattened onto its own line, so a saved word carrying
+      // what looks like a record header cannot open one.
+      check(
+        tagPrompt.user.components(separatedBy: "\n").filter { $0.hasPrefix("note: ") }.count == 1,
+        "vocabulary tagging prompt let quoted material break across lines",
+        failures: &failures
+      )
+
+      let fenced = """
+        Here you go:
+        ```json
+        [{"index": 0, "unit": "Word", "partOfSpeech": "adv", "register": "written",
+          "difficulty": "3", "levelLabel": "n2", "topics": "workplace"}]
+        ```
+        """
+      let parsed = VocabularyTagger.tags(
+        fromJSON: fenced,
+        for: [sample],
+        knownTopics: ["Workplace"]
+      )
+      let tags = parsed[sample.id]
+      check(
+        tags?.unit == .word && tags?.partOfSpeech == .adverb && tags?.register == .written
+          && tags?.difficulty == .intermediate && tags?.levelLabel == "N2"
+          // A bare string where a list was asked for still counts, and the
+          // spelling already in use is what the new entry is filed under.
+          && tags?.topics == ["Workplace"]
+          && tags?.taxonomyVersion == VocabularyTagger.taxonomyVersion,
+        "vocabulary tag reply parsing failed",
+        failures: &failures
+      )
+      check(
+        VocabularyTagger.tags(fromJSON: "I cannot help with that.", for: [sample]).isEmpty
+          && VocabularyTagger.tags(
+            fromJSON: #"[{"index":9,"unit":"word"}]"#, for: [sample]
+          ).isEmpty
+          && VocabularyTagger.tags(
+            fromJSON: #"[{"index":0,"unit":"quaternion"}]"#, for: [sample]
+          ).isEmpty,
+        "vocabulary tag reply parsing accepted something it should have dropped",
+        failures: &failures
+      )
+
+      // Tags are read back on every launch from the file that holds the words
+      // themselves, so an unreadable value has to cost that value and nothing
+      // more.
+      let stale = Data(
+        #"{"unit":"word","partOfSpeech":"quaternion","difficulty":99,"topics":["Workplace"]}"#.utf8
+      )
+      let recovered = try JSONDecoder().decode(VocabularyTags.self, from: stale)
+      check(
+        recovered.unit == .word && recovered.partOfSpeech == nil && recovered.difficulty == nil
+          && recovered.topics == ["Workplace"],
+        "unreadable vocabulary tags did not decode down to the fields that survived",
+        failures: &failures
+      )
+    } catch {
+      failures.append("vocabulary tagging threw: \(error)")
+    }
+
+    // The filter rail. Counts for a facet are taken with that facet's own
+    // choices lifted, which is what keeps arming one value from collapsing its
+    // siblings to zero and stranding the reader inside it.
+    do {
+      func entry(_ word: String, _ unit: VocabularyUnit, _ topics: [String]) -> VocabularyEntry {
+        VocabularyEntry(
+          word: word,
+          explanation: "note",
+          sourceLanguage: .japanese,
+          targetLanguage: .simplifiedChinese,
+          tags: VocabularyTags(
+            unit: unit,
+            topics: topics,
+            taxonomyVersion: VocabularyTagger.taxonomyVersion
+          )
+        )
+      }
+      let entries = [
+        entry("反響", .word, ["Workplace"]),
+        entry("マジョリティ", .word, ["Workplace"]),
+        entry("なんてなくなるのが当然でしょう。", .sentence, ["Publishing"]),
+        VocabularyEntry(
+          word: "綴った",
+          explanation: "note",
+          sourceLanguage: .japanese,
+          targetLanguage: .simplifiedChinese
+        ),
+      ]
+
+      var filter = VocabularyFilter()
+      filter.toggle(VocabularyFacetValue(facet: .unit, key: "word", label: "Word"))
+      let sections = VocabularyFacets.sections(for: entries, filter: filter)
+      let unitRows = sections.first { $0.facet == .unit }?.rows ?? []
+      check(
+        unitRows.first { $0.value.key == "word" }?.count == 2
+          && unitRows.first { $0.value.key == "sentence" }?.count == 1
+          && unitRows.last?.value.isUntagged == true,
+        "vocabulary facet counts did not hold their siblings open",
+        failures: &failures
+      )
+      check(
+        VocabularyFacets.apply(filter, to: entries).count == 2,
+        "vocabulary facet filtering failed",
+        failures: &failures
+      )
+      // A topic with one entry behind it is that entry wearing a second name.
+      // Read against the whole collection: under the filter above, Workplace
+      // is the only row left standing and a section with one row is a caption
+      // rather than a choice, so the rail drops it entirely.
+      let openSections = VocabularyFacets.sections(for: entries, filter: VocabularyFilter())
+      let topicRows = openSections.first { $0.facet == .topic }?.rows ?? []
+      check(
+        topicRows.contains { $0.value.key == "workplace" }
+          && !topicRows.contains { $0.value.key == "publishing" }
+          && topicRows.last?.value.isUntagged == true,
+        "one-off vocabulary topics were not held back from the rail",
+        failures: &failures
+      )
+      check(
+        sections.first { $0.facet == .topic } == nil,
+        "a vocabulary facet section with nothing to choose between was still drawn",
+        failures: &failures
+      )
+      // A word that was never filed still answers to "Not tagged", which is
+      // the only row that can reach it.
+      var unfiled = VocabularyFilter()
+      unfiled.toggle(.untagged(.unit))
+      check(
+        VocabularyFacets.apply(unfiled, to: entries).map(\.word) == ["綴った"],
+        "untagged vocabulary was not reachable from its own facet row",
+        failures: &failures
+      )
+      // Deleting the last word of a topic must not leave a choice armed
+      // against a row that is no longer drawn.
+      var stale = VocabularyFilter()
+      stale.toggle(VocabularyFacetValue(facet: .topic, key: "gone", label: "Gone"))
+      stale.prune(to: VocabularyFacets.availableValues(for: entries))
+      check(
+        stale.isEmpty,
+        "a vocabulary filter kept a value nothing answers to any more",
+        failures: &failures
+      )
+      check(
+        VocabularyFacets.rankedTopics(of: entries) == ["Workplace", "Publishing"],
+        "vocabulary topics were not ranked by use",
+        failures: &failures
+      )
+
+      // Grouping. Closed dimensions keep their declared order rather than
+      // sorting by size, an entry filed under two topics is browsable under
+      // both, and whatever was never filed lands in a section of its own at
+      // the end instead of dropping out of the collection.
+      let byUnit = VocabularyFacets.groups(of: entries, by: .facet(.unit))
+      check(
+        byUnit.map(\.title) == ["Word", "Sentence", "Not tagged"]
+          && byUnit.map { $0.entries.count } == [2, 1, 1],
+        "vocabulary grouping by a closed facet did not keep its declared order",
+        failures: &failures
+      )
+      let twoTopics = [
+        VocabularyEntry(
+          word: "ご査収ください",
+          explanation: "note",
+          sourceLanguage: .japanese,
+          targetLanguage: .simplifiedChinese,
+          tags: VocabularyTags(
+            unit: .phrase,
+            topics: ["Workplace", "Publishing"],
+            taxonomyVersion: VocabularyTagger.taxonomyVersion
+          )
+        )
+      ]
+      let byTopic = VocabularyFacets.groups(of: entries + twoTopics, by: .facet(.topic))
+      check(
+        byTopic.first { $0.title == "Workplace" }?.entries.count == 3
+          && byTopic.first { $0.title == "Publishing" }?.entries.count == 2,
+        "a vocabulary entry filed under two topics was not browsable under both",
+        failures: &failures
+      )
+      check(
+        VocabularyFacets.groups(of: entries, by: .none).isEmpty,
+        "vocabulary grouping invented sections for an ungrouped collection",
+        failures: &failures
+      )
+      // Months come back newest first, the order the collection is already in.
+      let dated = [
+        VocabularyEntry(
+          id: UUID(), createdAt: Date(timeIntervalSince1970: 1_781_000_000), word: "a",
+          explanation: "", sourceLanguage: .japanese, targetLanguage: .simplifiedChinese),
+        VocabularyEntry(
+          id: UUID(), createdAt: Date(timeIntervalSince1970: 1_760_000_000), word: "b",
+          explanation: "", sourceLanguage: .japanese, targetLanguage: .simplifiedChinese),
+        VocabularyEntry(
+          id: UUID(), createdAt: Date(timeIntervalSince1970: 1_781_100_000), word: "c",
+          explanation: "", sourceLanguage: .japanese, targetLanguage: .simplifiedChinese),
+      ]
+      let byMonth = VocabularyFacets.groups(of: dated, by: .month)
+      check(
+        byMonth.count == 2 && byMonth[0].entries.count == 2 && byMonth[0].key > byMonth[1].key,
+        "vocabulary grouping by month did not run newest first",
+        failures: &failures
+      )
+    }
+
     return failures
   }
 
