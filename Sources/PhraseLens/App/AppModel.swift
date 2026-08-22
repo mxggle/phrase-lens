@@ -925,6 +925,14 @@ final class AppModel: ObservableObject {
       } catch let error as TranslationError where error == .cancelled {
         WindowCoordinator.showMain()
         statusMessage = "OCR cancelled"
+      } catch let error as TranslationError where error == .noTextRecognized {
+        // A crop that holds no text is an outcome, not a failure, and it is
+        // reported the way an empty selection already is. The modal this used to
+        // raise arrived while the window was still coming back from being hidden,
+        // and its backing surfaces blocked the main thread in the render server
+        // for most of a second — the beachball the user actually saw.
+        WindowCoordinator.showMain()
+        statusMessage = error.localizedDescription
       } catch {
         WindowCoordinator.showMain()
         errorMessage = error.localizedDescription

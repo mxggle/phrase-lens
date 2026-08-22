@@ -1028,6 +1028,7 @@ enum TranslationError: LocalizedError, Equatable {
   case noInput
   case selectionUnavailable
   case accessibilityPermissionRequired
+  case noTextRecognized
   case cancelled
 
   var errorDescription: String? {
@@ -1046,6 +1047,8 @@ enum TranslationError: LocalizedError, Equatable {
       "Selected text could not be read. Keep it selected in the other app, release the shortcut keys, and press ⌥F again."
     case .accessibilityPermissionRequired:
       "Accessibility permission is required for selected-text and writing tools."
+    case .noTextRecognized:
+      "No text was found in that area. Try a tighter crop around the text."
     case .cancelled: "Translation cancelled."
     }
   }

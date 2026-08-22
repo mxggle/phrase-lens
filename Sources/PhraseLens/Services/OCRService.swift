@@ -47,11 +47,7 @@ struct OCRService: Sendable {
         .compactMap { $0.topCandidates(1).first?.string }
         .filter { !$0.isEmpty } ?? []
       let result = lines.joined(separator: "\n")
-      guard !result.isEmpty else {
-        throw TranslationError.provider(
-          "No text was found in that area. Try selecting a tighter crop around the text."
-        )
-      }
+      guard !result.isEmpty else { throw TranslationError.noTextRecognized }
       return result
     }.value
   }
