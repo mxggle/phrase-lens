@@ -867,6 +867,10 @@ struct VocabularyEntry: Codable, Identifiable, Hashable, Sendable {
   var explanation: String
   var sourceLanguage: LanguageCode
   var targetLanguage: LanguageCode
+  /// How the entry is filed for browsing, written by `VocabularyTagger`.
+  /// Optional so that words saved before tagging existed still decode, and so
+  /// that a tagging run that never succeeded leaves the entry as it was.
+  var tags: VocabularyTags?
 }
 
 /// One role-tagged message in an exchange with the provider.

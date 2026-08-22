@@ -496,11 +496,53 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
 .tile.in .wave i:nth-child(2){animation-delay:.1s}.tile.in .wave i:nth-child(3){animation-delay:.2s}
 .tile.in .wave i:nth-child(4){animation-delay:.3s}.tile.in .wave i:nth-child(5){animation-delay:.15s}
 @keyframes eq{from{height:9px}to{height:42px}}
-/* vocab */
-.vocab{position:absolute;left:22px;top:22px;display:flex;flex-direction:column;gap:6px}
-.vocab .vc{padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:var(--muted);font-size:11.5px;color:var(--fg3)}
-.tile:hover .vocab .vc:first-child,.tile.in .vocab .vc:first-child{animation:fly 2.4s var(--ease) infinite;border-color:var(--accent);color:var(--accent-ink)}
-@keyframes fly{0%{transform:translate(38px,-14px) scale(1.04);opacity:0}25%{transform:none;opacity:1}100%{transform:none;opacity:1}}
+/* vocabulary library */
+.vlib{overflow:hidden;margin-bottom:16px}
+.vlib-bar{display:flex;align-items:center;gap:11px;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--chrome)}
+.vlib-search{flex:1;max-width:250px;padding:5px 10px;border-radius:var(--r-ctl);border:1px solid var(--border);background:var(--surface);color:var(--fg4);font-size:12px}
+.vlib-count{font-size:11.5px;color:var(--fg3);font-variant-numeric:tabular-nums}
+.vlib-group{margin-left:auto;padding:5px 10px;border-radius:var(--r-ctl);border:1px solid var(--border);background:var(--surface);font-size:12px;color:var(--fg2);white-space:nowrap}
+.vlib-body{display:grid;grid-template-columns:196px 1fr}
+.vlib-rail{border-right:1px solid var(--border);background:var(--chrome);padding:13px 9px}
+.vlib-eye{font-size:10px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--fg3);padding:0 8px;margin:15px 0 5px}
+.vlib-rail>.vlib-eye:first-child{margin-top:0}
+.vlib-row{display:flex;align-items:center;gap:8px;padding:0 8px;height:25px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.vlib-row .bx{width:11px;height:11px;border-radius:3px;border:1px solid var(--border2);flex:none}
+.vlib-row .n{margin-left:auto;font-size:11px;color:var(--fg3);font-variant-numeric:tabular-nums}
+.vlib-row.off{color:var(--fg3)}
+.vlib-row.on{background:var(--accent-dim);color:var(--accent-ink)}
+.vlib-row.on .bx{background:var(--accent);border-color:var(--accent)}
+.vlib-row.on .n{color:var(--accent-ink)}
+/* The rail is the point of the section, so it assembles itself rather than
+   arriving whole — one row after another, in the order a reader scans them. */
+.vlib.in .vlib-row{animation:vrow .5s var(--ease) backwards}
+.vlib.in .vlib-row:nth-child(2){animation-delay:.05s}
+.vlib.in .vlib-row:nth-child(3){animation-delay:.10s}
+.vlib.in .vlib-row:nth-child(4){animation-delay:.15s}
+.vlib.in .vlib-row:nth-child(5){animation-delay:.20s}
+@keyframes vrow{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.vlib-note{display:flex;align-items:center;gap:9px;padding:9px 14px;border-bottom:1px solid var(--border);background:var(--muted);font-size:11.5px;color:var(--fg3)}
+.vlib-note b{margin-left:auto;padding:3px 9px;border:1px solid var(--border2);border-radius:6px;font-size:11px;color:var(--fg2);font-weight:500;white-space:nowrap}
+.vlib-sec{display:flex;align-items:baseline;gap:8px;padding:15px 14px 9px;font-size:13.5px;font-weight:600;color:var(--fg)}
+.vlib-sec i{font-style:normal;font-size:11px;font-weight:400;color:var(--fg3);font-variant-numeric:tabular-nums}
+.vlib-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:0 14px}
+.vlib-grid:last-child{padding-bottom:14px}
+.vcard{border:1px solid var(--border);border-radius:10px;background:var(--surface);padding:11px 12px}
+.vcard .w{font-size:14px;font-weight:600;margin-bottom:4px}
+.vcard .g{font-size:11.5px;color:var(--fg3);line-height:1.55;margin-bottom:9px}
+.vcard .tg{display:inline-block;font-size:10px;padding:2px 7px;border-radius:99px;background:var(--muted);color:var(--fg3);margin-right:4px}
+.vnotes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.vnote{padding:16px 18px}
+.vnote h4{font-size:13.5px;margin-bottom:5px}
+.vnote p{font-size:12.8px;color:var(--fg3);line-height:1.55}
+@media (max-width:860px){
+  .vlib-body{grid-template-columns:1fr}
+  .vlib-rail{border-right:0;border-bottom:1px solid var(--border)}
+  .vlib-grid{grid-template-columns:1fr}
+  .vnotes{grid-template-columns:1fr}
+}
+@media (max-width:560px){ .vlib-count{display:none} }
+
 /* history */
 .hist{position:absolute;left:22px;right:22px;top:20px;display:flex;flex-direction:column;gap:6px}
 .hist .hr{height:15px;border-radius:5px;background:var(--muted);border:1px solid var(--border)}
@@ -749,6 +791,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
       <a href="#followups">Follow-ups</a>
+      <a href="#vocabulary">Vocabulary</a>
       <a href="#providers">Providers</a>
       <a href="#privacy">Privacy</a>
     </div>
@@ -1040,6 +1083,92 @@ footer{border-top:1px solid var(--border);padding:30px 0}
   </div>
 </section>
 
+<!-- ═══════════════════════════ VOCABULARY ═══════════════════════════ -->
+<section class="sec" id="vocabulary" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head rv" style="max-width:720px">
+      <div class="eyebrow">Vocabulary <span class="tag">New</span></div>
+      <h2 class="h">Fifty words in, a word list stops being a list.</h2>
+      <p class="sub">
+        A headword, a fixed expression and a whole sentence you kept for its shape all tile
+        together, and the only way back to one of them is remembering how it was spelled.
+        So every word you save is filed as it lands — what kind of thing it is, what it's
+        about, which register it belongs to, how hard it is.
+      </p>
+    </div>
+
+    <div class="card vlib rv" data-viz>
+      <div class="vlib-bar">
+        <span class="vlib-search">🔍 Search vocabulary</span>
+        <span class="vlib-count">26 words</span>
+        <span class="vlib-group">☰ Group: Topic</span>
+      </div>
+      <div class="vlib-body">
+        <aside class="vlib-rail">
+          <div class="vlib-eye">Type</div>
+          <div class="vlib-row on"><i class="bx"></i>Word<span class="n">26</span></div>
+          <div class="vlib-row"><i class="bx"></i>Phrase<span class="n">11</span></div>
+          <div class="vlib-row"><i class="bx"></i>Sentence<span class="n">7</span></div>
+          <div class="vlib-row off"><i class="bx"></i>Not tagged<span class="n">3</span></div>
+          <div class="vlib-eye">Topic</div>
+          <div class="vlib-row"><i class="bx"></i>Rhetoric<span class="n">8</span></div>
+          <div class="vlib-row"><i class="bx"></i>Workplace<span class="n">6</span></div>
+          <div class="vlib-row"><i class="bx"></i>Finance<span class="n">5</span></div>
+          <div class="vlib-row"><i class="bx"></i>Science<span class="n">4</span></div>
+          <div class="vlib-eye">Level</div>
+          <div class="vlib-row"><i class="bx"></i>B1<span class="n">4</span></div>
+          <div class="vlib-row"><i class="bx"></i>B2<span class="n">11</span></div>
+          <div class="vlib-row"><i class="bx"></i>C1<span class="n">8</span></div>
+        </aside>
+        <div class="vlib-main">
+          <div class="vlib-note">✦ 3 words haven't been sorted into categories yet. <b>Organize</b></div>
+          <div class="vlib-sec">Rhetoric <i>8</i></div>
+          <div class="vlib-grid">
+            <div class="vcard">
+              <div class="w">obfuscation</div>
+              <div class="g">刻意把话说得含混，让人抓不住要点。</div>
+              <span class="tg">Noun</span><span class="tg">C1</span><span class="tg">Rhetoric</span>
+            </div>
+            <div class="vcard">
+              <div class="w">ambiguous</div>
+              <div class="g">可以有多种解读，而且往往是故意留出的余地。</div>
+              <span class="tg">Adjective</span><span class="tg">B2</span><span class="tg">Rhetoric</span>
+            </div>
+          </div>
+          <div class="vlib-sec">Workplace <i>6</i></div>
+          <div class="vlib-grid">
+            <div class="vcard">
+              <div class="w">shipped</div>
+              <div class="g">交付上线；在工作语境里指东西真的发出去了。</div>
+              <span class="tg">Verb</span><span class="tg">B1</span><span class="tg">Workplace</span>
+            </div>
+            <div class="vcard">
+              <div class="w">resilient</div>
+              <div class="g">受得住冲击，压力过去之后还能恢复原状。</div>
+              <span class="tg">Adjective</span><span class="tg">B2</span><span class="tg">Workplace</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="vnotes">
+      <div class="card vnote rv">
+        <h4>Filed as it lands</h4>
+        <p>Save a word and it's already sorted. Whatever you collected before this existed gets picked up by one Organize pass.</p>
+      </div>
+      <div class="card vnote rv d1">
+        <h4>Narrow it down</h4>
+        <p>Rows inside a dimension widen the result; rows across dimensions narrow it. Arming <i>Word</i> above leaves its siblings standing with their real totals, so no click lands somewhere empty.</p>
+      </div>
+      <div class="card vnote rv d2">
+        <h4>Or read straight through</h4>
+        <p>Group the collection by any of the same dimensions — or by the month you collected it — and browse it in sections instead.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ═══════════════════════════ BENTO ═══════════════════════════ -->
 <section class="sec" style="padding-top:0">
   <div class="wrap">
@@ -1071,15 +1200,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
         <div class="t-sub">Edge Neural or macOS voices</div>
       </div>
 
-      <div class="card tile rv d1" data-viz>
-        <div class="viz"><div class="vocab">
-          <span class="vc">resilient</span><span class="vc">obfuscation</span>
-        </div></div>
-        <h4>Keep the word.</h4>
-        <div class="t-sub">Vocabulary collection, searchable</div>
-      </div>
-
-      <div class="card tile rv d2" data-viz>
+      <div class="card tile big rv d1" data-viz>
         <div class="viz"><div class="hist"><div class="hr"></div><div class="hr"></div><div class="hr"></div><div class="hr"></div></div></div>
         <h4>Every lookup, kept.</h4>
         <div class="t-sub">Local history with search &amp; favorites</div>

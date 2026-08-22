@@ -9,6 +9,16 @@ enum InputSource: Sendable {
   case history
 }
 
+/// How far along a run of the vocabulary tagger is.
+///
+/// Only the runs a reader asked for report here. A word filed the moment it is
+/// collected reports nothing: that work is meant to be invisible, and a
+/// progress strip appearing on its own would be the only sign of it.
+struct VocabularyOrganizeProgress: Equatable, Sendable {
+  var completed: Int
+  var total: Int
+}
+
 /// How the result pane should lay the output out.
 enum OutputRendering: Sendable {
   /// The armed action asked for plain text.
@@ -44,6 +54,8 @@ final class AppModel: ObservableObject {
   @Published var errorMessage: String?
   @Published var history: [HistoryEntry] = []
   @Published var vocabulary: [VocabularyEntry] = []
+  /// The filing run the reader started, or nil when none is running.
+  @Published private(set) var vocabularyOrganizing: VocabularyOrganizeProgress?
   @Published var customActions: [TranslationAction] = []
   @Published var shortcutErrors: [String] = []
   @Published private(set) var isAccessibilityTrusted = false
@@ -53,10 +65,12 @@ final class AppModel: ObservableObject {
   let speech = SpeechService()
 
   private let client = TranslationClient()
+  private let tagger = VocabularyTagger()
   private let library = LibraryStore()
   private let accessibility = AccessibilityService()
   private let ocr = OCRService()
   private var translationTask: Task<Void, Never>?
+  private var vocabularyTaggingTask: Task<Void, Never>?
   private var followUpTask: Task<Void, Never>?
   private var requestID = UUID()
   private var followUpRequestID = UUID()
@@ -637,6 +651,11 @@ final class AppModel: ObservableObject {
         }
         vocabulary.insert(entry, at: 0)
         statusMessage = "Added to vocabulary"
+        // Filed straight away, so the word is already browsable by the time
+        // the reader next opens the library. It runs unattended: a failure
+        // here leaves the word saved and unfiled, which the Organize command
+        // picks up later.
+        tagVocabulary([entry], announcing: false)
       } catch {
         errorMessage = error.localizedDescription
       }
@@ -691,6 +710,111 @@ final class AppModel: ObservableObject {
         errorMessage = error.localizedDescription
       }
     }
+  }
+
+  // MARK: - Filing saved words
+
+  /// Words that have never been filed, or were filed under an older taxonomy.
+  var unfiledVocabulary: [VocabularyEntry] {
+    vocabulary.filter {
+      ($0.tags?.taxonomyVersion ?? 0) < VocabularyTagger.taxonomyVersion
+    }
+  }
+
+  /// How many there are, without building the list to find out — the library
+  /// view asks on every layout pass.
+  var unfiledVocabularyCount: Int {
+    vocabulary.reduce(into: 0) { total, entry in
+      if (entry.tags?.taxonomyVersion ?? 0) < VocabularyTagger.taxonomyVersion { total += 1 }
+    }
+  }
+
+  var isOrganizingVocabulary: Bool { vocabularyOrganizing != nil }
+
+  /// Files everything that is not filed yet.
+  func organizeVocabulary() {
+    tagVocabulary(unfiledVocabulary, announcing: true)
+  }
+
+  /// Files the given words again, whatever they are filed under now.
+  func retagVocabulary(ids: Set<UUID>) {
+    tagVocabulary(vocabulary.filter { ids.contains($0.id) }, announcing: true)
+  }
+
+  func cancelVocabularyOrganizing() {
+    vocabularyTaggingTask?.cancel()
+    vocabularyTaggingTask = nil
+    vocabularyOrganizing = nil
+    statusMessage = "Organizing stopped"
+  }
+
+  /// Sends words to the tagger in batches, saving each batch as it lands.
+  ///
+  /// Saving per batch rather than at the end is what makes a long run
+  /// survivable: cancelling it, or losing the connection halfway through,
+  /// keeps everything filed so far instead of spending the whole run for
+  /// nothing.
+  private func tagVocabulary(_ entries: [VocabularyEntry], announcing: Bool) {
+    guard !entries.isEmpty else { return }
+    if announcing {
+      vocabularyTaggingTask?.cancel()
+    }
+
+    let batches = stride(from: 0, to: entries.count, by: VocabularyTagger.batchSize).map {
+      Array(entries[$0..<min($0 + VocabularyTagger.batchSize, entries.count)])
+    }
+    let configuration = settingsStore.settings.provider
+    let proxy = settingsStore.settings.proxy
+    var topics = VocabularyFacets.rankedTopics(of: vocabulary)
+
+    if announcing {
+      vocabularyOrganizing = VocabularyOrganizeProgress(completed: 0, total: entries.count)
+    }
+
+    let task = Task { [tagger, library, settingsStore] in
+      var filed = 0
+      do {
+        let (key, accountId) = try await settingsStore.validCredentials()
+        for batch in batches {
+          try Task.checkCancellation()
+          let tags = try await tagger.tag(
+            batch,
+            knownTopics: topics,
+            configuration: configuration,
+            apiKey: key,
+            accountId: accountId,
+            proxy: proxy
+          )
+          let updated = try await library.applyVocabularyTags(tags)
+          vocabulary = updated
+          // Later batches are offered the topics the earlier ones named, so a
+          // single run converges on one set of buckets instead of coining a
+          // synonym every twenty words.
+          topics = VocabularyFacets.rankedTopics(of: updated)
+          filed += batch.count
+          if announcing {
+            vocabularyOrganizing = VocabularyOrganizeProgress(
+              completed: filed,
+              total: entries.count
+            )
+          }
+        }
+        if announcing {
+          statusMessage = filed == 1 ? "1 word organized" : "\(filed) words organized"
+        }
+      } catch is CancellationError {
+        // Stopped on purpose; whatever landed before the stop is already saved.
+      } catch TranslationError.cancelled {
+      } catch {
+        if announcing { errorMessage = error.localizedDescription }
+      }
+      if announcing {
+        vocabularyOrganizing = nil
+        vocabularyTaggingTask = nil
+      }
+    }
+
+    if announcing { vocabularyTaggingTask = task }
   }
 
   func deleteVocabulary(ids: Set<UUID>) {
