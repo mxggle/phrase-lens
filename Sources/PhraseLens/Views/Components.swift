@@ -715,7 +715,14 @@ struct AppSelect<Value: Hashable>: View {
       .overlay { shape.strokeBorder(palette.border, lineWidth: 1) }
       .contentShape(shape)
     }
-    .menuStyle(.borderlessButton)
+    // `.borderlessButton` hands the label to an AppKit pull-down cell, which
+    // keeps only the first image and the text and throws the rest away: the
+    // fill, the hairline, and — on a picker with no leading glyph — the
+    // trailing chevron, which the cell then redraws on the *leading* edge.
+    // `.button` renders the label as written, so the control looks like the
+    // control it is.
+    .menuStyle(.button)
+    .buttonStyle(.plain)
     .menuIndicator(.hidden)
     .fixedSize(horizontal: !fillsWidth, vertical: true)
     .opacity(isEnabled ? 1 : 0.45)

@@ -51,6 +51,13 @@ enum LanguageCode: String, Codable, CaseIterable, Identifiable, Sendable {
     }
   }
 
+  /// Compact form for tight chrome. The pane headers carry the picker beside
+  /// the text it applies to, where "Detect language" spends room the words
+  /// need.
+  var shortDisplayName: String {
+    self == .auto ? "Auto" : displayName
+  }
+
   var localeIdentifier: String {
     switch self {
     case .auto: Locale.current.identifier

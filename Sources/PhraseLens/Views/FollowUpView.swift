@@ -149,8 +149,8 @@ struct FollowUpComposer: View {
         }
         field
       }
-      .padding(.horizontal, AppSpacing.sm + 2)
-      .padding(.vertical, AppSpacing.sm)
+      .padding(.horizontal, AppSpacing.md)
+      .padding(.vertical, AppSpacing.md)
       .background(palette.chrome)
     }
     // A question the model hands back — one that was stopped or that failed
@@ -170,13 +170,12 @@ struct FollowUpComposer: View {
   /// pane can hold and drops the rest, in the order a reader reaches for them.
   private var chips: some View {
     ViewThatFits(in: .horizontal) {
-      chipRow(5)
       chipRow(4)
       chipRow(3)
       chipRow(2)
       chipRow(1)
     }
-    .frame(height: AppControlSize.xs.height)
+    .frame(height: AppControlSize.sm.height)
   }
 
   private func chipRow(_ count: Int) -> some View {
@@ -194,11 +193,11 @@ struct FollowUpComposer: View {
     } label: {
       HStack(spacing: AppSpacing.xs) {
         Image(systemName: suggestion.symbol)
-          .font(.system(size: 9.5, weight: .semibold))
+          .font(.system(size: 10.5, weight: .semibold))
         Text(suggestion.label)
       }
     }
-    .appButton(.outline, size: .xs)
+    .appButton(.outline, size: .sm)
     .disabled(!model.canAskFollowUp || model.isAnsweringFollowUp)
     .help(suggestion.question)
     .accessibilityLabel(suggestion.question)
@@ -214,7 +213,7 @@ struct FollowUpComposer: View {
           : "Ask another…",
         text: $draft,
         symbol: "text.bubble",
-        size: .sm,
+        size: .md,
         onSubmit: send,
         focusToken: model.followUpFocusToken
       )
@@ -228,10 +227,10 @@ struct FollowUpComposer: View {
         }
       } label: {
         Image(systemName: model.isAnsweringFollowUp ? "stop.fill" : "arrow.up")
-          .font(.system(size: 11, weight: .semibold))
+          .font(.system(size: 12.5, weight: .semibold))
           .contentTransition(.symbolEffect(.replace))
       }
-      .appButton(model.isAnsweringFollowUp ? .secondary : .primary, size: .iconSmall)
+      .appButton(model.isAnsweringFollowUp ? .secondary : .primary, size: .icon)
       .disabled(!model.isAnsweringFollowUp && !canSend)
       .help(model.isAnsweringFollowUp ? "Stop answering (⌘.)" : "Ask (↩)")
       .accessibilityLabel(model.isAnsweringFollowUp ? "Stop answering" : "Ask")

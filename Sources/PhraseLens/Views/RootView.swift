@@ -37,6 +37,15 @@ enum AppSection: String, CaseIterable, Identifiable {
     }
   }
 
+  /// Whether the top bar spells the caption out under the title.
+  ///
+  /// A section whose bar carries controls does not: a standing tagline beside
+  /// a live control strip is decoration, and it spends the width the controls
+  /// need.
+  var showsCaption: Bool {
+    self != .translator
+  }
+
   /// Sidebar grouping.
   var group: Group {
     switch self {
@@ -388,13 +397,21 @@ private struct NavBar: View {
         Text(section.title)
           .font(AppFont.title)
           .foregroundStyle(palette.foreground)
-        if !layoutWidth.isCompact {
+        if section.showsCaption, !layoutWidth.isCompact {
           Text(section.caption)
             .font(AppFont.caption)
             .foregroundStyle(palette.mutedForeground)
             .lineLimit(1)
         }
       }
+      .fixedSize(horizontal: true, vertical: false)
+      .layoutPriority(2)
+
+      // Section controls share the bar with the title rather than opening a
+      // band of their own below it: one strip of chrome between the window's
+      // edge and the work, not two.
+      NavBarControls(section: section)
+        .layoutPriority(1)
 
       Spacer(minLength: AppSpacing.sm)
 
@@ -405,9 +422,15 @@ private struct NavBar: View {
               + model.shortcutErrors.joined(separator: "\n")
           )
           .accessibilityLabel("Shortcut registration problem")
+          .layoutPriority(2)
       }
 
+      // The bar's fixed ends — title, warnings, the run command — claim their
+      // width first. Whatever is left is what the control strip measures
+      // itself against, so it sheds labels instead of pushing the primary
+      // command off the edge.
       NavBarActions(section: section)
+        .layoutPriority(2)
     }
     .padding(.horizontal, AppSpacing.lg)
     .frame(height: AppMetrics.navBarHeight)
@@ -415,6 +438,38 @@ private struct NavBar: View {
     .background(palette.chrome)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("\(section.title) toolbar")
+  }
+}
+
+/// The current section's own controls, in the window's top bar.
+///
+/// Split out of `NavBar` for the same reason as `NavBarActions`: the strip
+/// tracks the model, the bar around it does not have to.
+private struct NavBarControls: View {
+  let section: AppSection
+
+  @EnvironmentObject private var model: AppModel
+  @EnvironmentObject private var settingsStore: SettingsStore
+
+  var body: some View {
+    switch section {
+    case .translator:
+      ActionTabBar(actions: model.visibleActions, selection: actionSelection)
+    case .history, .vocabulary, .actions:
+      EmptyView()
+    }
+  }
+
+  private var actionSelection: Binding<UUID> {
+    Binding(
+      get: { model.selectedActionID },
+      set: { id in
+        model.selectedActionID = id
+        if settingsStore.settings.autoTranslate, !model.inputText.isEmpty {
+          model.translate()
+        }
+      }
+    )
   }
 }
 
