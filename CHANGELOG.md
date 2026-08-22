@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-08-22
+
+### Fixed
+
+- **Screenshot OCR reads Chinese and Japanese again.** The recognizer was handed a
+  fixed language list with English at its head. Vision does not try those languages in
+  turn — it picks one model from the head of the list — so a Latin language in first
+  place meant CJK text was dropped outright: a screenshot of Chinese or Japanese came
+  back empty as "no text was found", and one that mixed scripts kept the English and
+  turned the rest into glyph soup. The script is now detected from the screenshot
+  itself, and a shot carrying Japanese, both Chinese scripts and English at once reads
+  correctly.
+- A capture could be read before it had finished being written. `screencapture` hands
+  the interactive selection to a helper and can exit before that helper has flushed the
+  PNG, so the single check for the finished file sometimes ran first and the capture was
+  reported as cancelled. It now waits for the file to settle.
+- A click that never became a drag no longer raises an error. The empty capture it
+  writes used to travel all the way to a failed recognition; it is treated as a
+  cancelled selection now, the same as pressing Escape.
+
 ## [0.5.1] — 2026-08-22
 
 ### Changed
@@ -191,7 +211,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/mxggle/phrase-lens/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/mxggle/phrase-lens/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/mxggle/phrase-lens/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/mxggle/phrase-lens/compare/v0.3.1...v0.4.0
