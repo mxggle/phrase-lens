@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "wiktionary-zh",
+  "name": "中文维基词典",
+  "revision": "2026-09-01-824207e0d50a",
+  "sourceLanguages": [
+    "en",
+    "ja"
+  ],
+  "definitionLanguages": [
+    "zh"
+  ],
+  "attribution": "中文维基词典 contributors · extracted by Wiktextract / Kaikki",
+  "license": "CC BY-SA 4.0",
+  "licenseURL": "https://creativecommons.org/licenses/by-sa/4.0/",
+  "sourceURL": "https://kaikki.org/zhwiktionary/rawdata.html",
+  "sourceSHA256": "824207e0d50a1e55983ba817639490ec47ed337720e4452b5d421b047bebf43c",
+  "dumpDate": "2026-09-01",
+  "canPersist": true,
+  "canUseWithAI": true,
+  "statistics": {
+    "ja_source_records": 137247,
+    "ja_entries": 44587,
+    "ja_without_definition": 92629,
+    "en_source_records": 96738,
+    "en_entries": 58747,
+    "en_without_definition": 37978
+  }
+}

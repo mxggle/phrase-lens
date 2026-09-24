@@ -230,8 +230,31 @@ struct TranslationClient: Sendable {
       "temperature": 0.2,
       "messages": [["role": "system", "content": prompt.system]] + Self.chatMessages(prompt),
     ]
+    let lowerModel = configuration.model.lowercased()
+    if (configuration.provider == .openAI || configuration.provider == .chatGPT),
+      (lowerModel.hasPrefix("gpt-5") || lowerModel.hasPrefix("gpt-6")
+        || lowerModel.hasPrefix("o1") || lowerModel.hasPrefix("o3")
+        || lowerModel.hasPrefix("o4"))
+    {
+      // Reasoning models reject a custom sampling temperature unless their
+      // effective reasoning effort is none. Let the model use its default.
+      body.removeValue(forKey: "temperature")
+    }
+    if (configuration.provider == .kimi || configuration.provider == .moonshot),
+      lowerModel.hasPrefix("kimi-k3")
+    {
+      body.removeValue(forKey: "temperature")
+      body["reasoning_effort"] = "low"
+      body["max_completion_tokens"] = 4_096
+    }
     if configuration.provider == .miniMax {
-      body["tokens_to_generate"] = 4_096
+      if url.path.hasSuffix("/text/chatcompletion_v2") {
+        body["tokens_to_generate"] = 4_096
+      } else {
+        // The current OpenAI-compatible API puts thinking in separate fields
+        // so the translation stream can display only the final answer.
+        body["reasoning_split"] = true
+      }
     }
     if configuration.supportsReasoningControl {
       body["reasoning_effort"] = configuration.reasoningEnabled ? "high" : "none"
@@ -389,18 +412,18 @@ struct TranslationClient: Sendable {
     guard let data = body.data(using: .utf8),
       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else {
-      return "Provider error \(status)."
+      return L10n.isChinese ? "服务商错误 (\(status))。" : "Provider error \(status)."
     }
     if let error = object["error"] as? [String: Any],
       let message = error["message"] as? String
     {
-      return "Provider error \(status): \(message)"
+      return L10n.isChinese ? "服务商错误 (\(status))：\(message)" : "Provider error \(status): \(message)"
     }
     // The ChatGPT backend reports failures in a `detail` field instead.
     if let detail = object["detail"] as? String {
-      return "Provider error \(status): \(detail)"
+      return L10n.isChinese ? "服务商错误 (\(status))：\(detail)" : "Provider error \(status): \(detail)"
     }
-    return "Provider error \(status)."
+    return L10n.isChinese ? "服务商错误 (\(status))。" : "Provider error \(status)."
   }
 }
 

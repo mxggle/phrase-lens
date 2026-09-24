@@ -16,10 +16,17 @@ enum VocabularyUnit: String, Codable, CaseIterable, Identifiable, Sendable {
   var id: String { rawValue }
 
   var displayName: String {
+    if L10n.isChinese {
+      switch self {
+      case .word: return "单词"
+      case .phrase: return "短语"
+      case .sentence: return "句子"
+      }
+    }
     switch self {
-    case .word: "Word"
-    case .phrase: "Phrase"
-    case .sentence: "Sentence"
+    case .word: return "Word"
+    case .phrase: return "Phrase"
+    case .sentence: return "Sentence"
     }
   }
 
@@ -50,14 +57,25 @@ enum VocabularyPartOfSpeech: String, Codable, CaseIterable, Identifiable, Sendab
   var id: String { rawValue }
 
   var displayName: String {
+    if L10n.isChinese {
+      switch self {
+      case .noun: return "名词"
+      case .verb: return "动词"
+      case .adjective: return "形容词"
+      case .adverb: return "副词"
+      case .conjunction: return "连词"
+      case .particle: return "助词"
+      case .expression: return "常用语/短语"
+      }
+    }
     switch self {
-    case .noun: "Noun"
-    case .verb: "Verb"
-    case .adjective: "Adjective"
-    case .adverb: "Adverb"
-    case .conjunction: "Conjunction"
-    case .particle: "Particle"
-    case .expression: "Expression"
+    case .noun: return "Noun"
+    case .verb: return "Verb"
+    case .adjective: return "Adjective"
+    case .adverb: return "Adverb"
+    case .conjunction: return "Conjunction"
+    case .particle: return "Particle"
+    case .expression: return "Expression"
     }
   }
 
@@ -95,12 +113,21 @@ enum VocabularyRegister: String, Codable, CaseIterable, Identifiable, Sendable {
   var id: String { rawValue }
 
   var displayName: String {
+    if L10n.isChinese {
+      switch self {
+      case .spoken: return "口语"
+      case .written: return "书面语"
+      case .formal: return "正式"
+      case .slang: return "俚语与网络用语"
+      case .honorific: return "敬语"
+      }
+    }
     switch self {
-    case .spoken: "Spoken"
-    case .written: "Written"
-    case .formal: "Formal"
-    case .slang: "Slang & internet"
-    case .honorific: "Honorific"
+    case .spoken: return "Spoken"
+    case .written: return "Written"
+    case .formal: return "Formal"
+    case .slang: return "Slang & internet"
+    case .honorific: return "Honorific"
     }
   }
 
@@ -138,12 +165,21 @@ enum VocabularyDifficulty: Int, Codable, CaseIterable, Identifiable, Sendable {
   var id: Int { rawValue }
 
   var displayName: String {
+    if L10n.isChinese {
+      switch self {
+      case .beginner: return "初级"
+      case .elementary: return "基础"
+      case .intermediate: return "中级"
+      case .advanced: return "高级"
+      case .expert: return "精通"
+      }
+    }
     switch self {
-    case .beginner: "Beginner"
-    case .elementary: "Elementary"
-    case .intermediate: "Intermediate"
-    case .advanced: "Advanced"
-    case .expert: "Expert"
+    case .beginner: return "Beginner"
+    case .elementary: return "Elementary"
+    case .intermediate: return "Intermediate"
+    case .advanced: return "Advanced"
+    case .expert: return "Expert"
     }
   }
 }

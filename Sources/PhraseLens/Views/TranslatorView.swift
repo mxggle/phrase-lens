@@ -6,6 +6,7 @@ struct TranslatorView: View {
   @Environment(\.palette) private var palette
   @Environment(\.layoutWidth) private var layoutWidth
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.openSettings) private var openSettings
 
   @FocusState private var inputFocused: Bool
   @State private var swapAngle = 0.0
@@ -31,6 +32,23 @@ struct TranslatorView: View {
 
   var body: some View {
     VStack(spacing: AppSpacing.md) {
+      if !settingsStore.hasBasicProviderConfiguration {
+        HStack(spacing: AppSpacing.sm) {
+          Image(systemName: "exclamationmark.circle")
+            .foregroundStyle(palette.warning)
+          Text(L10n.isChinese ? "连接服务商以使用 AI 翻译。离线词典现已就绪。" : "Connect a provider to use AI translation. Offline dictionary lookup is available now.")
+            .font(AppFont.caption)
+            .foregroundStyle(palette.secondaryForeground)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          Button(L10n.isChinese ? "配置服务商" : "Set up provider") {
+            SettingsNavigation.show(.provider) { openSettings() }
+          }
+          .appButton(.outline, size: .sm)
+        }
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.vertical, AppSpacing.sm)
+        .cardSurface(palette)
+      }
       ResizableSplit(
         fraction: $splitFraction,
         leadingMin: AppMetrics.paneMinWidth,
@@ -56,6 +74,15 @@ struct TranslatorView: View {
     .padding(.bottom, AppSpacing.md)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(palette.background)
+    .onChange(of: model.selectedResultTab) { _, _ in
+      copyResetTask?.cancel()
+      didCopy = false
+    }
+    .onChange(of: model.inputText) { _, _ in
+      copyResetTask?.cancel()
+      didCopy = false
+    }
+    .onDisappear { copyResetTask?.cancel() }
     .animation(motion, value: model.isTranslating)
     .animation(motion, value: model.outputText.isEmpty)
     .animation(motion, value: model.followUps.count)
@@ -81,19 +108,19 @@ struct TranslatorView: View {
     .disabled(settingsStore.settings.sourceLanguage == .auto)
     .help(
       settingsStore.settings.sourceLanguage == .auto
-        ? "Choose a source language to swap"
-        : "Swap the source and target languages"
+        ? (L10n.isChinese ? "请选择具体的源语言以切换" : "Choose a source language to swap")
+        : (L10n.isChinese ? "切换源语言与目标语言" : "Swap the source and target languages")
     )
-    .accessibilityLabel("Swap languages")
+    .accessibilityLabel(L10n.isChinese ? "切换语言" : "Swap languages")
   }
 
   // MARK: - Source pane
 
   private var sourcePane: some View {
     PaneContainer {
-      PaneHeader(label: "Source") {
+      PaneHeader(label: L10n.isChinese ? "原文" : "Source") {
         AppSelect(
-          title: "Source language",
+          title: L10n.isChinese ? "源语言" : "Source language",
           selection: $settingsStore.settings.sourceLanguage,
           options: model.visibleSourceLanguages,
           label: { $0.shortDisplayName },
@@ -108,19 +135,19 @@ struct TranslatorView: View {
 
       PaneFooter {
         IconButton(
-          title: model.speech.isSpeaking ? "Stop speaking" : "Speak source text",
-          symbol: model.speech.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2",
+          title: L10n.isChinese ? (model.isSpeaking(.source) ? "停止朗读" : "朗读原文") : (model.isSpeaking(.source) ? "Stop speaking" : "Speak source text"),
+          symbol: model.isSpeaking(.source) ? "speaker.slash.fill" : "speaker.wave.2",
           isDisabled: model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         ) {
           model.speakInput()
         }
 
-        IconButton(title: "Capture text from the screen", symbol: "viewfinder") {
+        IconButton(title: L10n.isChinese ? "截屏识别文字 (OCR)" : "Capture text from the screen", symbol: "viewfinder") {
           model.captureOCR()
         }
 
         IconButton(
-          title: "Clear",
+          title: L10n.isChinese ? "清空" : "Clear",
           symbol: "eraser",
           isDisabled: model.inputText.isEmpty && model.outputText.isEmpty
         ) {
@@ -133,16 +160,16 @@ struct TranslatorView: View {
           .font(AppFont.caption)
           .monospacedDigit()
           .foregroundStyle(palette.mutedForeground)
-          .accessibilityLabel("\(model.inputText.count) characters in the source text")
+          .accessibilityLabel(L10n.isChinese ? "原文共 \(model.inputText.count) 个字符" : "\(model.inputText.count) characters in the source text")
       }
     }
   }
 
   private var sourceBadge: Badge? {
     switch model.inputSource {
-    case .selection: Badge(text: "Selection", variant: .outline, symbol: "cursorarrow")
-    case .ocr: Badge(text: "Screen", variant: .outline, symbol: "viewfinder")
-    case .history: Badge(text: "History", variant: .outline, symbol: "clock")
+    case .selection: Badge(text: L10n.isChinese ? "划选" : "Selection", variant: .outline, symbol: "cursorarrow")
+    case .ocr: Badge(text: L10n.isChinese ? "截屏" : "Screen", variant: .outline, symbol: "viewfinder")
+    case .history: Badge(text: L10n.isChinese ? "历史" : "History", variant: .outline, symbol: "clock")
     case .manual: nil
     }
   }
@@ -159,7 +186,7 @@ struct TranslatorView: View {
         .padding(.vertical, AppMetrics.readingInset - 8)
 
       if model.inputText.isEmpty {
-        Text("Type or paste text here.")
+        Text(L10n.isChinese ? "在此输入或粘贴文本…" : "Type or paste text here.")
           .font(.system(size: settingsStore.settings.fontSize))
           .foregroundStyle(palette.mutedForeground)
           .padding(.horizontal, AppMetrics.readingInset)
@@ -175,19 +202,28 @@ struct TranslatorView: View {
 
   private var resultPane: some View {
     PaneContainer {
-      PaneHeader(label: "Result") {
-        AppSelect(
-          title: "Target language",
-          selection: $settingsStore.settings.targetLanguage,
-          options: model.visibleTargetLanguages,
-          label: { $0.shortDisplayName }
-        )
+      ResultTabBar()
+      PaneHeader(label: L10n.isChinese ? "译文与结果" : "Result") {
+        if model.dictionaryVisible {
+          Label(L10n.isChinese ? "离线词典" : "Offline", systemImage: "book.closed").font(AppFont.caption)
+        } else {
+          AppSelect(
+            title: L10n.isChinese ? "目标语言" : "Target language",
+            selection: $settingsStore.settings.targetLanguage,
+            options: model.visibleTargetLanguages,
+            label: { $0.shortDisplayName }
+          )
+        }
         if model.isTranslating {
           Spinner()
             .transition(.opacity)
         }
       } trailing: {
-        resultCommands
+        if model.dictionaryVisible {
+          IconButton(title: didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝词条释义与出处" : "Copy dictionary entries with sources"), symbol: didCopy ? "checkmark" : "doc.on.doc", isDisabled: !model.canCopyResult) {
+            copyOutput()
+          }
+        } else { resultCommands }
       }
 
       resultBody
@@ -200,7 +236,7 @@ struct TranslatorView: View {
       // chips, field, buttons — under every answer. They are commands *on* the
       // result, so they read just as well from the pane's own strip, and the
       // question keeps the foot of the pane to itself.
-      if !model.outputText.isEmpty {
+      if !model.dictionaryVisible && !model.outputText.isEmpty {
         FollowUpComposer()
           .transition(.opacity)
       }
@@ -211,41 +247,64 @@ struct TranslatorView: View {
     HStack(spacing: 0) {
       IconButton(
         title: model.isCurrentWordCollected
-          ? "Remove this word from Vocabulary"
-          : "Save this word and its explanation to Vocabulary",
+          ? (L10n.isChinese ? "从生词本中移除此词" : "Remove this word from Vocabulary")
+          : (L10n.isChinese ? "将此词与释义保存至生词本" : "Save this word and its explanation to Vocabulary"),
         symbol: model.isCurrentWordCollected ? "bookmark.fill" : "bookmark",
         isDisabled: !model.isCurrentWordCollected
           && (model.outputText.isEmpty || model.inputText.count > 80)
       ) {
         model.toggleCollectCurrentWord()
       }
-      .accessibilityLabel(model.isCurrentWordCollected ? "Collected" : "Collect")
+      .accessibilityLabel(model.isCurrentWordCollected ? (L10n.isChinese ? "已收藏" : "Collected") : (L10n.isChinese ? "收藏" : "Collect"))
+
+      // The result is what a learner has to say out loud, so it speaks in the
+      // target language's voice rather than sharing the source pane's button.
+      IconButton(
+        title: model.isSpeaking(.result) ? (L10n.isChinese ? "停止朗读" : "Stop speaking") : (L10n.isChinese ? "朗读译文" : "Speak the translation"),
+        // A speaker with a bubble: the answer being spoken, told apart at a
+        // glance from the plain speaker that reads the source text.
+        symbol: model.isSpeaking(.result) ? "speaker.slash.fill" : "speaker.wave.2.bubble.left",
+        // Half an answer is not worth hearing, but audio already playing when
+        // the next translation starts still has to be stoppable.
+        isDisabled: model.outputText.isEmpty
+          || (model.isTranslating && !model.isSpeaking(.result))
+      ) {
+        model.speakOutput()
+      }
+      .accessibilityLabel(L10n.isChinese ? "朗读译文" : "Speak translation")
 
       IconButton(
-        title: didCopy ? "Copied" : "Copy the translation (⇧⌘C)",
+        title: didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝译文 (⇧⌘C)" : "Copy the translation (⇧⌘C)"),
         symbol: didCopy ? "checkmark" : "doc.on.doc",
         isDisabled: model.outputText.isEmpty
       ) {
         copyOutput()
       }
-      .accessibilityLabel("Copy translation")
+      .accessibilityLabel(didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝译文" : "Copy translation"))
     }
   }
 
   @ViewBuilder
   private var resultBody: some View {
-    if model.outputText.isEmpty {
+    if model.dictionaryVisible {
+      DictionaryResultsView()
+    } else if model.outputText.isEmpty {
       EmptyState(
         symbol: model.isTranslating ? "ellipsis" : "character.bubble",
-        title: model.isTranslating ? "Translating…" : "No translation yet",
+        title: model.isTranslating ? (L10n.isChinese ? "正在翻译…" : "Translating…") : model.isLookingUpDictionary ? (L10n.isChinese ? "正在查词…" : "Checking word…") : (L10n.isChinese ? "暂无翻译内容" : "No translation yet"),
         message: model.inputText.isEmpty
-          ? "Enter text on the left, or press ⌥F while text is selected in another app."
-          : "Press ⌘↩ to translate."
+          ? (L10n.isChinese ? "在左侧输入文本，或在其他应用中划选文字后按下 ⌥F。" : "Enter text on the left, or press ⌥F while text is selected in another app.")
+          : (L10n.isChinese ? "按下 ⌘↩ 开始翻译。" : "Press ⌘↩ to translate.")
       )
       .transition(.opacity)
     } else {
+      // Only the follow-up thread follows its stream. A translation or an
+      // analysis is read from the top down, so dragging the view along with
+      // the tokens pulls the opening lines away from someone who is still
+      // reading them; an answer to a question they just asked is the one
+      // thing they are waiting to see appear at the bottom.
       FollowingScrollView(
-        isFollowing: model.isTranslating || model.isAnsweringFollowUp,
+        isFollowing: model.isAnsweringFollowUp,
         trigger: model.resultLength
       ) {
         VStack(alignment: .leading, spacing: 0) {
@@ -290,7 +349,7 @@ struct TranslatorView: View {
     .frame(height: AppMetrics.statusBarHeight)
     .frame(maxWidth: .infinity)
     .accessibilityElement(children: .combine)
-    .accessibilityLabel("Status: \(model.statusMessage)")
+    .accessibilityLabel(L10n.isChinese ? "状态：\(model.statusMessage)" : "Status: \(model.statusMessage)")
   }
 
   private func copyOutput() {

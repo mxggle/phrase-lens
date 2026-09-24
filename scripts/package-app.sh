@@ -8,14 +8,18 @@ PRODUCT_NAME="PhraseLens"
 EXECUTABLE_NAME="PhraseLens"
 PRODUCT_IDENTIFIER="com.harry.phraselens"
 BUILD_DIR="${PROJECT_DIR}/.build"
+ARM64_BUILD_DIR="${BUILD_DIR}/arm64-apple-macosx/release"
+X86_64_BUILD_DIR="${BUILD_DIR}/x86_64-apple-macosx/release"
 OUTPUT_DIR="${PROJECT_DIR}/dist"
 APP_PATH="${OUTPUT_DIR}/${PRODUCT_NAME}.app"
-EXECUTABLE_PATH="${BUILD_DIR}/release/${EXECUTABLE_NAME}"
+EXECUTABLE_PATH="${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
 
 cd "${PROJECT_DIR}"
-# The distributable favors code size; framework-heavy work still runs in the
-# system frameworks, while this keeps PhraseLens's own Swift code compact.
-swift build --disable-sandbox -c release -Xswiftc -Osize -Xswiftc -warnings-as-errors
+# Build both supported macOS architectures. This keeps the download compatible
+# with Apple Silicon and Intel Macs, as advertised on the product site.
+for target in arm64-apple-macosx14.0 x86_64-apple-macosx14.0; do
+    swift build --disable-sandbox -c release --triple "${target}" -Xswiftc -Osize -Xswiftc -warnings-as-errors
+done
 
 EXPECTED_PATH="${PROJECT_DIR}/dist/${PRODUCT_NAME}.app"
 if [[ "${APP_PATH}" != "${EXPECTED_PATH}" ]]; then
@@ -26,7 +30,23 @@ fi
 mkdir -p "${OUTPUT_DIR}"
 rm -rf "${APP_PATH}"
 mkdir -p "${APP_PATH}/Contents/MacOS" "${APP_PATH}/Contents/Resources"
-cp "${EXECUTABLE_PATH}" "${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
+xcrun lipo -create \
+    "${ARM64_BUILD_DIR}/${EXECUTABLE_NAME}" \
+    "${X86_64_BUILD_DIR}/${EXECUTABLE_NAME}" \
+    -output "${EXECUTABLE_PATH}"
+ARCHS="$(xcrun lipo -archs "${EXECUTABLE_PATH}")"
+if [[ "${ARCHS}" != *arm64* || "${ARCHS}" != *x86_64* ]]; then
+    print -u2 "Expected a universal arm64+x86_64 executable, got: ${ARCHS}"
+    exit 1
+fi
+# The dictionary loader uses the signed application's resources directory.
+cp -R "${ARM64_BUILD_DIR}/PhraseLens_PhraseLens.bundle" "${APP_PATH}/Contents/Resources/PhraseLens_PhraseLens.bundle"
+# Copy localization resource bundles to top-level Resources for macOS native bundle resolution
+for lproj in en.lproj zh-Hans.lproj; do
+    if [[ -d "${PROJECT_DIR}/Sources/PhraseLens/Resources/${lproj}" ]]; then
+        cp -R "${PROJECT_DIR}/Sources/PhraseLens/Resources/${lproj}" "${APP_PATH}/Contents/Resources/${lproj}"
+    fi
+done
 # Keep SwiftPM's release binary unstripped for local crash symbolication, but
 # remove local symbols from the distributable copy before it is signed.
 /usr/bin/strip -x "${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
@@ -34,6 +54,17 @@ cp "${PROJECT_DIR}/packaging/Info.plist" "${APP_PATH}/Contents/Info.plist"
 PLIST_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${APP_PATH}/Contents/Info.plist")"
 if [[ "${PLIST_IDENTIFIER}" != "${PRODUCT_IDENTIFIER}" ]]; then
     print -u2 "Unexpected bundle identifier: ${PLIST_IDENTIFIER}"
+    exit 1
+fi
+# Validate CFBundleLocalizations contains both English and Simplified Chinese
+EN_LOC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleLocalizations:0' "${APP_PATH}/Contents/Info.plist" 2>/dev/null || true)"
+ZH_LOC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleLocalizations:1' "${APP_PATH}/Contents/Info.plist" 2>/dev/null || true)"
+if [[ "${EN_LOC}" != "en" || "${ZH_LOC}" != "zh-Hans" ]]; then
+    print -u2 "Missing or incorrect CFBundleLocalizations in Info.plist (expected 'en' and 'zh-Hans', got '${EN_LOC}' and '${ZH_LOC}')"
+    exit 1
+fi
+if [[ ! -d "${APP_PATH}/Contents/Resources/PhraseLens_PhraseLens.bundle" ]]; then
+    print -u2 "Missing resource bundle in ${APP_PATH}/Contents/Resources"
     exit 1
 fi
 if [[ -f "${PROJECT_DIR}/packaging/AppIcon.icns" ]]; then

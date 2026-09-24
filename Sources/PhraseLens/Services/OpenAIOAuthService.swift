@@ -360,28 +360,34 @@ actor OpenAIOAuthService {
       if let errorParam {
         htmlResponse = Self.callbackHTML(
           status: .error,
-          title: "Authentication Failed",
-          message: "Unable to complete authentication with your ChatGPT account. Please close this window and try again.",
+          title: L10n.isChinese ? "身份验证失败" : "Authentication Failed",
+          message: L10n.isChinese
+            ? "无法完成 ChatGPT 账号身份验证。请关闭此窗口后重试。"
+            : "Unable to complete authentication with your ChatGPT account. Please close this window and try again.",
           detailMessage: errorDescription ?? errorParam,
-          buttonTitle: "Close Window",
+          buttonTitle: L10n.isChinese ? "关闭窗口" : "Close Window",
           showCountdown: false
         )
       } else if code != nil, state == expectedState {
         htmlResponse = Self.callbackHTML(
           status: .success,
-          title: "Authentication Successful",
-          message: "You have successfully signed in with your ChatGPT account for PhraseLens.<br>You can safely return to the app.",
+          title: L10n.isChinese ? "身份验证成功" : "Authentication Successful",
+          message: L10n.isChinese
+            ? "您已在 PhraseLens 中成功登录 ChatGPT 账号。<br>现在可以返回应用。"
+            : "You have successfully signed in with your ChatGPT account for PhraseLens.<br>You can safely return to the app.",
           detailMessage: nil,
-          buttonTitle: "Return to PhraseLens",
+          buttonTitle: L10n.isChinese ? "返回 PhraseLens" : "Return to PhraseLens",
           showCountdown: true
         )
       } else {
         htmlResponse = Self.callbackHTML(
           status: .warning,
-          title: "Invalid Authorization State",
-          message: "The authorization callback security state did not match. Please return to PhraseLens and try signing in again.",
-          detailMessage: "OAuth state parameter mismatch",
-          buttonTitle: "Close Window",
+          title: L10n.isChinese ? "授权状态无效" : "Invalid Authorization State",
+          message: L10n.isChinese
+            ? "授权回调的安全状态不匹配。请返回 PhraseLens 并重新登录。"
+            : "The authorization callback security state did not match. Please return to PhraseLens and try signing in again.",
+          detailMessage: L10n.isChinese ? "OAuth 状态参数不匹配" : "OAuth state parameter mismatch",
+          buttonTitle: L10n.isChinese ? "关闭窗口" : "Close Window",
           showCountdown: false
         )
       }
@@ -423,17 +429,17 @@ actor OpenAIOAuthService {
 
     var tagText: String {
       switch self {
-      case .success: "PhraseLens Authorization"
-      case .error: "Authorization Failed"
-      case .warning: "Security Verification"
+      case .success: L10n.isChinese ? "PhraseLens 授权" : "PhraseLens Authorization"
+      case .error: L10n.isChinese ? "授权失败" : "Authorization Failed"
+      case .warning: L10n.isChinese ? "安全验证" : "Security Verification"
       }
     }
 
     var statusRowLabel: String {
       switch self {
-      case .success: "Active & Connected"
-      case .error: "Authorization Error"
-      case .warning: "Verification Mismatch"
+      case .success: L10n.isChinese ? "已连接" : "Active & Connected"
+      case .error: L10n.isChinese ? "授权错误" : "Authorization Error"
+      case .warning: L10n.isChinese ? "验证不匹配" : "Verification Mismatch"
       }
     }
 
@@ -514,11 +520,20 @@ actor OpenAIOAuthService {
     buttonTitle: String = "Return to PhraseLens",
     showCountdown: Bool = true
   ) -> String {
+    let detailsLabel = L10n.isChinese ? "详情" : "Details"
+    let providerLabel = L10n.isChinese ? "服务商" : "Provider"
+    let statusLabel = L10n.isChinese ? "状态" : "Status"
+    let closeHintLead = L10n.isChinese ? "或按下" : "Or press"
+    let closeHintTail = L10n.isChinese ? "关闭此标签页" : "to close this tab"
+    let countdownLabel = L10n.isChinese ? "标签页将在" : "Auto-closing tab in"
+    let countdownSuffix = L10n.isChinese ? "秒后自动关闭…" : "s…"
+    let switchBackLabel = L10n.isChinese ? "切回 PhraseLens" : "Switch back to PhraseLens"
+
     let detailsRowHTML: String
     if let detailMessage, !detailMessage.isEmpty {
       detailsRowHTML = """
         <div class="meta-row">
-          <span class="meta-label">Details</span>
+          <span class="meta-label">\(detailsLabel)</span>
           <span class="meta-value" style="font-family: monospace; font-size: 0.78rem; word-break: break-all;">\(detailMessage)</span>
         </div>
         """
@@ -528,7 +543,7 @@ actor OpenAIOAuthService {
 
     let countdownHTML = showCountdown ? """
       <div id="countdownNote" class="countdown-text">
-        Auto-closing tab in <span id="timer">4</span>s…
+        \(countdownLabel) <span id="timer">4</span>\(countdownSuffix)
       </div>
       """ : ""
 
@@ -565,7 +580,7 @@ actor OpenAIOAuthService {
 
     return """
       <!DOCTYPE html>
-      <html lang="en">
+      <html lang="\(L10n.isChinese ? "zh-CN" : "en")">
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1022,11 +1037,11 @@ actor OpenAIOAuthService {
             <!-- Meta Box -->
             <div class="meta-box">
               <div class="meta-row">
-                <span class="meta-label">Provider</span>
+                <span class="meta-label">\(providerLabel)</span>
                 <span class="meta-value">OpenAI / ChatGPT</span>
               </div>
               <div class="meta-row">
-                <span class="meta-label">Status</span>
+                <span class="meta-label">\(statusLabel)</span>
                 <span class="meta-value"><span class="meta-value-dot"></span> \(status.statusRowLabel)</span>
               </div>
               \(detailsRowHTML)
@@ -1043,10 +1058,10 @@ actor OpenAIOAuthService {
               </button>
 
               <div class="shortcut-hint">
-                <span>Or press</span>
+                <span>\(closeHintLead)</span>
                 <kbd>⌘</kbd>
                 <kbd>W</kbd>
-                <span>to close this tab</span>
+                <span>\(closeHintTail)</span>
               </div>
             </div>
 
@@ -1061,7 +1076,7 @@ actor OpenAIOAuthService {
             window.close();
             const btn = document.getElementById('closeBtn');
             if (btn) {
-              btn.innerHTML = '<span>Switch back to PhraseLens</span>';
+              btn.innerHTML = '<span>\(switchBackLabel)</span>';
             }
           }
         </script>
@@ -1101,16 +1116,16 @@ enum OAuthError: LocalizedError, Equatable {
 
   var errorDescription: String? {
     switch self {
-    case .invalidURL: "Invalid OAuth URL."
-    case .invalidResponse: "The OAuth authorization server returned an invalid response."
-    case .invalidState: "OAuth security state mismatch. Please try signing in again."
-    case .portUnavailable: "Local callback port (1455) is already in use by another application."
-    case .listenerFailed(let reason): "Failed to start OAuth callback listener: \(reason)"
-    case .exchangeFailed(let reason): "Failed to exchange OAuth token: \(reason)"
-    case .refreshFailed(let reason): "Failed to refresh ChatGPT token: \(reason)"
-    case .remoteError(let reason): "OAuth authorization failed: \(reason)"
-    case .missingRefreshToken: "No refresh token available. Please sign in again."
-    case .cancelled: "OAuth authentication was cancelled."
+    case .invalidURL: L10n.isChinese ? "OAuth 地址无效。" : "Invalid OAuth URL."
+    case .invalidResponse: L10n.isChinese ? "OAuth 授权服务器返回了无效响应。" : "The OAuth authorization server returned an invalid response."
+    case .invalidState: L10n.isChinese ? "OAuth 安全状态不匹配。请重新登录。" : "OAuth security state mismatch. Please try signing in again."
+    case .portUnavailable: L10n.isChinese ? "本地回调端口 (1455) 已被其他应用占用。" : "Local callback port (1455) is already in use by another application."
+    case .listenerFailed(let reason): L10n.isChinese ? "无法启动 OAuth 回调侦听器：\(reason)" : "Failed to start OAuth callback listener: \(reason)"
+    case .exchangeFailed(let reason): L10n.isChinese ? "无法交换 OAuth 令牌：\(reason)" : "Failed to exchange OAuth token: \(reason)"
+    case .refreshFailed(let reason): L10n.isChinese ? "无法刷新 ChatGPT 令牌：\(reason)" : "Failed to refresh ChatGPT token: \(reason)"
+    case .remoteError(let reason): L10n.isChinese ? "OAuth 授权失败：\(reason)" : "OAuth authorization failed: \(reason)"
+    case .missingRefreshToken: L10n.isChinese ? "没有可用的刷新令牌。请重新登录。" : "No refresh token available. Please sign in again."
+    case .cancelled: L10n.isChinese ? "OAuth 身份验证已取消。" : "OAuth authentication was cancelled."
     }
   }
 }

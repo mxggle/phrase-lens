@@ -12,15 +12,15 @@ enum SpeechServiceError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .invalidText:
-      "Edge TTS supports between 1 and 20,000 bytes of text."
+      L10n.isChinese ? "Edge TTS 支持 1 至 20,000 字节的文本。" : "Edge TTS supports between 1 and 20,000 bytes of text."
     case .invalidResponse(let detail):
-      "Edge TTS returned an invalid response: \(detail)"
+      L10n.isChinese ? "Edge TTS 返回了无效响应：\(detail)" : "Edge TTS returned an invalid response: \(detail)"
     case .noAudio:
-      "Edge TTS returned no audio. Check your network connection and try again."
+      L10n.isChinese ? "Edge TTS 未返回音频。请检查网络连接后重试。" : "Edge TTS returned no audio. Check your network connection and try again."
     case .playbackFailed:
-      "The generated Edge TTS audio could not be played."
+      L10n.isChinese ? "无法播放生成的 Edge TTS 音频。" : "The generated Edge TTS audio could not be played."
     case .timedOut:
-      "Edge TTS timed out after 30 seconds. Check your network connection and try again."
+      L10n.isChinese ? "Edge TTS 请求超过 30 秒仍未完成。请检查网络连接后重试。" : "Edge TTS timed out after 30 seconds. Check your network connection and try again."
     }
   }
 }

@@ -12,10 +12,10 @@ enum HotKeyAction: UInt32, CaseIterable, Sendable {
   /// names the row the user has to change.
   var displayName: String {
     switch self {
-    case .translateSelection: "Selection pop-up"
-    case .showWindow: "Full translator window"
-    case .screenshotOCR: "Screenshot OCR"
-    case .writing: "Translate focused input"
+    case .translateSelection: L10n.isChinese ? "划选翻译浮窗" : "Selection pop-up"
+    case .showWindow: L10n.isChinese ? "完整翻译窗口" : "Full translator window"
+    case .screenshotOCR: L10n.isChinese ? "截屏文字识别" : "Screenshot OCR"
+    case .writing: L10n.isChinese ? "翻译当前输入框" : "Translate focused input"
     }
   }
 }
@@ -178,13 +178,13 @@ enum HotKeyError: LocalizedError {
 
   var errorDescription: String? {
     switch self {
-    case .unsupportedShortcut(let value): "Unsupported shortcut \(value)"
+    case .unsupportedShortcut(let value): L10n.isChinese ? "不支持此快捷键：\(value)" : "Unsupported shortcut \(value)"
     case .registrationFailed(let status):
       // The one status a user can act on: something outside this app, macOS
       // itself included, already owns the combination.
       status == OSStatus(eventHotKeyExistsErr)
-        ? "Another app already uses this shortcut."
-        : "Registration failed (\(status))"
+        ? (L10n.isChinese ? "此快捷键已被其他应用占用。" : "Another app already uses this shortcut.")
+        : (L10n.isChinese ? "快捷键注册失败 (\(status))" : "Registration failed (\(status))")
     }
   }
 }

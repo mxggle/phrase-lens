@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
+  case setup
   case translator
   case history
   case vocabulary
@@ -10,15 +11,17 @@ enum AppSection: String, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
-    case .translator: "Translator"
-    case .history: "History"
-    case .vocabulary: "Vocabulary"
-    case .actions: "Actions"
+    case .setup: L10n.isChinese ? "新手引导" : "Getting Started"
+    case .translator: L10n.isChinese ? "翻译" : "Translator"
+    case .history: L10n.isChinese ? "历史记录" : "History"
+    case .vocabulary: L10n.isChinese ? "生词本" : "Vocabulary"
+    case .actions: L10n.isChinese ? "动作配置" : "Actions"
     }
   }
 
   var symbol: String {
     switch self {
+    case .setup: "checklist"
     case .translator: "character.bubble"
     case .history: "clock.arrow.circlepath"
     case .vocabulary: "books.vertical"
@@ -30,10 +33,11 @@ enum AppSection: String, CaseIterable, Identifiable {
   /// for, so the window never shows a bare noun with no context.
   var caption: String {
     switch self {
-    case .translator: "Translate, rewrite, and explain text"
-    case .history: "Every translation saved on this Mac"
-    case .vocabulary: "Words you collected while reading"
-    case .actions: "The prompts behind each action"
+    case .setup: L10n.isChinese ? "连接服务商、启用快捷键并体验首次翻译" : "Connect a provider, enable shortcuts, and try a translation"
+    case .translator: L10n.isChinese ? "翻译、润色与解析文本" : "Translate, rewrite, and explain text"
+    case .history: L10n.isChinese ? "保存在本机的所有翻译记录" : "Every translation saved on this Mac"
+    case .vocabulary: L10n.isChinese ? "阅读时收集的高频词汇" : "Words you collected while reading"
+    case .actions: L10n.isChinese ? "定制每个动作背后的提示词" : "The prompts behind each action"
     }
   }
 
@@ -49,6 +53,7 @@ enum AppSection: String, CaseIterable, Identifiable {
   /// Sidebar grouping.
   var group: Group {
     switch self {
+    case .setup: .configure
     case .translator: .workspace
     case .history, .vocabulary: .library
     case .actions: .configure
@@ -61,6 +66,14 @@ enum AppSection: String, CaseIterable, Identifiable {
     case configure = "Configure"
 
     var id: String { rawValue }
+
+    var title: String {
+      switch self {
+      case .workspace: L10n.isChinese ? "工作区" : "Workspace"
+      case .library: L10n.isChinese ? "资源库" : "Library"
+      case .configure: L10n.isChinese ? "设置" : "Configure"
+      }
+    }
   }
 }
 
@@ -111,26 +124,29 @@ struct RootView: View {
       WindowCoordinator.registerMainWindowOpener {
         openWindow(id: WindowCoordinator.mainWindowSceneID)
       }
+      if settingsStore.shouldShowSetupGuide { selection = .setup }
     }
+    .onChange(of: model.translatorFocusToken) { _, _ in selection = .translator }
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
+    .environment(\.locale, settingsStore.resolvedLocale)
     .alert(
       "PhraseLens",
       isPresented: Binding(
-        get: { model.errorMessage != nil },
+        get: { model.visibleErrorMessage != nil },
         set: { if !$0 { model.errorMessage = nil } }
       )
     ) {
       if model.isAccessibilityPermissionError {
-        Button("Open System Settings") {
+        Button(L10n.isChinese ? "打开系统设置" : "Open System Settings") {
           model.errorMessage = nil
           model.openAccessibilitySettings()
         }
-        Button("Not Now", role: .cancel) { model.errorMessage = nil }
+        Button(L10n.isChinese ? "以后再说" : "Not Now", role: .cancel) { model.errorMessage = nil }
       } else {
-        Button("OK", role: .cancel) { model.errorMessage = nil }
+        Button(L10n.isChinese ? "好" : "OK", role: .cancel) { model.errorMessage = nil }
       }
     } message: {
-      Text(model.errorMessage ?? "")
+      Text(model.visibleErrorMessage ?? "")
     }
   }
 
@@ -181,6 +197,9 @@ private struct Shell: View {
       Hairline()
       WidthReader { _, _ in
         switch selection {
+        case .setup: SetupGuideView {
+          selection = .translator
+        }
         case .translator: TranslatorView()
         case .history: HistoryView()
         case .vocabulary: VocabularyView()
@@ -205,6 +224,7 @@ private struct SidebarView: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
   @Environment(\.palette) private var palette
+  @Environment(\.openSettings) private var openSettings
 
   private var isCollapsed: Bool { mode == .rail }
 
@@ -225,7 +245,7 @@ private struct SidebarView: View {
             if !sections.isEmpty {
               VStack(alignment: .leading, spacing: 2) {
                 if !isCollapsed {
-                  Eyebrow(text: group.rawValue)
+                  Eyebrow(text: group.title)
                     .padding(.horizontal, AppSpacing.sm + 2)
                     .padding(.bottom, AppSpacing.xs)
                 }
@@ -258,7 +278,7 @@ private struct SidebarView: View {
     .frame(maxHeight: .infinity)
     .background(palette.chrome)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Sections")
+    .accessibilityLabel(L10n.tr("sidebar.sections"))
   }
 
   // MARK: Brand
@@ -272,7 +292,7 @@ private struct SidebarView: View {
       if isCollapsed {
         if canToggle {
           IconButton(
-            title: "Expand the sidebar",
+            title: L10n.isChinese ? "展开边栏" : "Expand the sidebar",
             symbol: "sidebar.leading",
             action: onToggle
           )
@@ -286,7 +306,7 @@ private struct SidebarView: View {
           Text("PhraseLens")
             .font(AppFont.bodyMedium)
             .foregroundStyle(palette.foreground)
-          Text("Language workspace")
+          Text(L10n.isChinese ? "语言学习与翻译工作区" : "Language workspace")
             .font(AppFont.caption)
             .foregroundStyle(palette.mutedForeground)
         }
@@ -296,7 +316,7 @@ private struct SidebarView: View {
 
         if canToggle {
           IconButton(
-            title: "Collapse the sidebar",
+            title: L10n.isChinese ? "收起边栏" : "Collapse the sidebar",
             symbol: "sidebar.leading",
             action: onToggle
           )
@@ -311,6 +331,7 @@ private struct SidebarView: View {
 
   private func badgeText(for section: AppSection) -> String? {
     switch section {
+    case .setup: nil
     case .history: model.history.isEmpty ? nil : "\(model.history.count)"
     case .vocabulary: model.vocabulary.isEmpty ? nil : "\(model.vocabulary.count)"
     case .actions: model.customActions.isEmpty ? nil : "\(model.customActions.count)"
@@ -321,14 +342,16 @@ private struct SidebarView: View {
   // MARK: Provider
 
   private var isProviderConfigured: Bool {
-    settingsStore.settings.provider.provider == .ollama || !settingsStore.apiKey.isEmpty
+    settingsStore.hasBasicProviderConfiguration
   }
 
   @ViewBuilder
   private var providerCard: some View {
     let provider = settingsStore.settings.provider
 
-    SettingsLink {
+    Button {
+      SettingsNavigation.show(.provider) { openSettings() }
+    } label: {
       Group {
         if isCollapsed {
           StatusDot(color: isProviderConfigured ? palette.success : palette.warning)
@@ -340,7 +363,7 @@ private struct SidebarView: View {
               Text(provider.provider.rawValue)
                 .font(AppFont.captionMedium)
                 .foregroundStyle(palette.foreground)
-              Text(provider.model.isEmpty ? "No model selected" : provider.model)
+              Text(provider.model.isEmpty ? (L10n.isChinese ? "未选择模型" : "No model selected") : provider.model)
                 .font(AppFont.caption)
                 .foregroundStyle(palette.mutedForeground)
                 .lineLimit(1)
@@ -368,8 +391,12 @@ private struct SidebarView: View {
     .buttonStyle(.plain)
     .help(
       isProviderConfigured
-        ? "\(provider.provider.rawValue) · \(provider.model) — open Settings to change it"
-        : "No API key saved for \(provider.provider.rawValue) — open Settings"
+        ? (L10n.isChinese
+          ? "\(provider.provider.rawValue) · \(provider.model) — 点按前往“设置”修改"
+          : "\(provider.provider.rawValue) · \(provider.model) — open Settings to change it")
+        : (L10n.isChinese
+          ? "前往“设置”完成 \(provider.provider.rawValue) 配置"
+          : "Finish configuring \(provider.provider.rawValue) in Settings")
     )
     .accessibilityLabel(
       "Provider \(provider.provider.rawValue), model \(provider.model). Opens Settings."
@@ -416,13 +443,19 @@ private struct NavBar: View {
       Spacer(minLength: AppSpacing.sm)
 
       if !model.shortcutErrors.isEmpty {
-        Badge(text: "Shortcuts", variant: .warning, symbol: "exclamationmark.triangle.fill")
-          .help(
-            "Some global shortcuts could not be registered:\n"
+        Badge(
+          text: L10n.isChinese ? "快捷键" : "Shortcuts",
+          variant: .warning,
+          symbol: "exclamationmark.triangle.fill"
+        )
+        .help(
+          L10n.isChinese
+            ? "部分全局快捷键注册失败：\n" + model.shortcutErrors.joined(separator: "\n")
+            : "Some global shortcuts could not be registered:\n"
               + model.shortcutErrors.joined(separator: "\n")
-          )
-          .accessibilityLabel("Shortcut registration problem")
-          .layoutPriority(2)
+        )
+        .accessibilityLabel(L10n.isChinese ? "快捷键注册问题" : "Shortcut registration problem")
+        .layoutPriority(2)
       }
 
       // The bar's fixed ends — title, warnings, the run command — claim their
@@ -437,7 +470,7 @@ private struct NavBar: View {
     .frame(maxWidth: .infinity)
     .background(palette.chrome)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("\(section.title) toolbar")
+    .accessibilityLabel(L10n.isChinese ? "\(section.title)工具栏" : "\(section.title) toolbar")
   }
 }
 
@@ -455,7 +488,7 @@ private struct NavBarControls: View {
     switch section {
     case .translator:
       ActionTabBar(actions: model.visibleActions, selection: actionSelection)
-    case .history, .vocabulary, .actions:
+    case .setup, .history, .vocabulary, .actions:
       EmptyView()
     }
   }
@@ -464,6 +497,7 @@ private struct NavBarControls: View {
     Binding(
       get: { model.selectedActionID },
       set: { id in
+        model.resetDictionary()
         model.selectedActionID = id
         if settingsStore.settings.autoTranslate, !model.inputText.isEmpty {
           model.translate()
@@ -485,7 +519,7 @@ private struct NavBarActions: View {
     switch section {
     case .translator:
       translateButton
-    case .history, .vocabulary, .actions:
+    case .setup, .history, .vocabulary, .actions:
       EmptyView()
     }
   }
@@ -507,14 +541,22 @@ private struct NavBarActions: View {
           .font(.system(size: 11, weight: .semibold))
           .contentTransition(.symbolEffect(.replace))
         if !layoutWidth.isCompact {
-          Text(model.isTranslating ? "Stop" : "Translate")
+          Text(model.isTranslating ? (L10n.isChinese ? "停止" : "Stop") : model.primaryActionTitle)
         }
       }
     }
     .appButton(.primary, size: .md)
     .keyboardShortcut(.return, modifiers: [.command])
     .disabled(!model.isTranslating && isInputEmpty)
-    .help(model.isTranslating ? "Stop translating (⌘.)" : "Translate (⌘↩)")
-    .accessibilityLabel(model.isTranslating ? "Stop translating" : "Translate")
+    .help(
+      model.isTranslating
+        ? (L10n.isChinese ? "停止翻译 (⌘.)" : "Stop translating (⌘.)")
+        : (L10n.isChinese ? "\(model.primaryActionTitle) (⌘↩)" : "\(model.primaryActionTitle) (⌘↩)")
+    )
+    .accessibilityLabel(
+      model.isTranslating
+        ? (L10n.isChinese ? "停止翻译" : "Stop translating")
+        : model.primaryActionTitle
+    )
   }
 }

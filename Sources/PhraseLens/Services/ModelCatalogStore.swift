@@ -50,7 +50,7 @@ final class ModelCatalogStore: ObservableObject {
   /// its own catalog).
   nonisolated static func key(for configuration: ProviderConfiguration) -> String {
     if configuration.provider.supportsOAuth && configuration.authMode == .oauthCodex {
-      return "\(configuration.provider.rawValue)|oauth"
+      return "\(configuration.provider.rawValue)|oauth|\(CodexBackend.clientVersion)"
     }
     let endpoint = configuration.endpoint
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -103,6 +103,14 @@ final class ModelCatalogStore: ObservableObject {
     let key = Self.key(for: configuration)
     tasks[key]?.cancel()
     finish(key, generation: generations[key])
+  }
+
+  func invalidate(for configuration: ProviderConfiguration) {
+    let key = Self.key(for: configuration)
+    cancelFetch(for: configuration)
+    snapshots.removeValue(forKey: key)
+    errors[key] = nil
+    persistSnapshots()
   }
 
   private func fetch(
@@ -158,6 +166,10 @@ final class ModelCatalogStore: ObservableObject {
         snapshots.removeValue(forKey: entry.key)
       }
     }
+    persistSnapshots()
+  }
+
+  private func persistSnapshots() {
     guard let data = try? JSONEncoder.catalog.encode(snapshots) else { return }
     defaults.set(data, forKey: Self.storageKey)
   }

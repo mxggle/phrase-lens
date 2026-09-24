@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Settings panes, in the order the sidebar lists them.
-private enum SettingsPane: String, CaseIterable, Identifiable {
+enum SettingsPane: String, CaseIterable, Identifiable {
   case general
   case provider
   case shortcuts
@@ -14,12 +14,12 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
-    case .general: "General"
-    case .provider: "Provider"
-    case .shortcuts: "Shortcuts"
-    case .speech: "Speech"
-    case .network: "Network"
-    case .about: "About"
+    case .general: L10n.isChinese ? "常规" : "General"
+    case .provider: L10n.isChinese ? "模型服务商" : "Provider"
+    case .shortcuts: L10n.isChinese ? "快捷键" : "Shortcuts"
+    case .speech: L10n.isChinese ? "语音朗读" : "Speech"
+    case .network: L10n.isChinese ? "网络代理" : "Network"
+    case .about: L10n.isChinese ? "关于" : "About"
     }
   }
 
@@ -36,13 +36,25 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
   var caption: String {
     switch self {
-    case .general: "Languages, translation behavior, and the window"
-    case .provider: "Which model answers, and the credential it uses"
-    case .shortcuts: "Global keys and the permission they need"
-    case .speech: "Voice playback and writing replacement"
-    case .network: "Proxy configuration"
-    case .about: "Version and licensing"
+    case .general: L10n.isChinese ? "界面语言、翻译行为与窗口外观" : "Languages, translation behavior, and the window"
+    case .provider: L10n.isChinese ? "应答模型及 API 密钥配置" : "Which model answers, and the credential it uses"
+    case .shortcuts: L10n.isChinese ? "全局快捷键与系统权限" : "Global keys and the permission they need"
+    case .speech: L10n.isChinese ? "语音播放引擎与朗读参数" : "Voice playback and writing replacement"
+    case .network: L10n.isChinese ? "代理服务器与直连白名单" : "Proxy configuration"
+    case .about: L10n.isChinese ? "版本号与开源许可协议" : "Version and licensing"
     }
+  }
+}
+
+@MainActor
+enum SettingsNavigation {
+  static var requestedPane: SettingsPane?
+  static let didRequestPane = Notification.Name("PhraseLensSettingsPaneRequested")
+
+  static func show(_ pane: SettingsPane, openSettings: () -> Void) {
+    requestedPane = pane
+    openSettings()
+    NotificationCenter.default.post(name: didRequestPane, object: nil)
   }
 }
 
@@ -64,11 +76,22 @@ struct SettingsView: View {
     .environmentObject(model)
     .environmentObject(settingsStore)
     .environmentObject(modelCatalog)
+    .environment(\.locale, settingsStore.resolvedLocale)
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
     // macOS may restore the SwiftUI Settings scene on relaunch. Settings is
     // only useful when the user asked for it, so keep its window out of
     // window restoration entirely.
     .background(SettingsWindowConfig().frame(width: 0, height: 0))
+    .onAppear { applyRequestedPane() }
+    .onReceive(NotificationCenter.default.publisher(for: SettingsNavigation.didRequestPane)) { _ in
+      applyRequestedPane()
+    }
+  }
+
+  private func applyRequestedPane() {
+    guard let requested = SettingsNavigation.requestedPane else { return }
+    pane = requested
+    SettingsNavigation.requestedPane = nil
   }
 }
 
@@ -94,6 +117,7 @@ private struct SettingsWindowConfig: NSViewRepresentable {
 private struct SettingsShell: View {
   @Binding var pane: SettingsPane
 
+  @EnvironmentObject private var settingsStore: SettingsStore
   @Environment(\.palette) private var palette
 
   var body: some View {
@@ -109,7 +133,7 @@ private struct SettingsShell: View {
 
   private var sidebar: some View {
     VStack(alignment: .leading, spacing: 2) {
-      Text("Settings")
+      Text(L10n.isChinese ? "设置" : "Settings")
         .font(AppFont.title)
         .foregroundStyle(palette.foreground)
         .padding(.horizontal, AppSpacing.sm + 2)
@@ -133,7 +157,7 @@ private struct SettingsShell: View {
     .frame(maxHeight: .infinity)
     .background(palette.chrome)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Settings sections")
+    .accessibilityLabel(L10n.isChinese ? "设置选项" : "Settings sections")
   }
 
   private var content: some View {
@@ -187,10 +211,25 @@ private struct GeneralSettingsPane: View {
 
   var body: some View {
     PaneStack {
-      SettingsCard("Languages") {
-        SettingsRow("Default target", detail: "The language new translations aim for.") {
+      SettingsCard(L10n.isChinese ? "语言偏好" : "Languages") {
+        SettingsRow(
+          L10n.isChinese ? "界面语言" : "App language",
+          detail: L10n.isChinese ? "切换 PhraseLens 的显示语言，即时生效。" : "Choose the interface display language."
+        ) {
           AppSelect(
-            title: "Default target language",
+            title: L10n.isChinese ? "界面语言" : "App language",
+            selection: $settingsStore.settings.appLanguage,
+            options: AppLanguage.allCases,
+            label: { $0.displayName }
+          )
+        }
+        Hairline()
+        SettingsRow(
+          L10n.isChinese ? "默认目标语言" : "Default target",
+          detail: L10n.isChinese ? "新翻译默认转换的目标语言。" : "The language new translations aim for."
+        ) {
+          AppSelect(
+            title: L10n.isChinese ? "默认目标语言" : "Default target language",
             selection: $settingsStore.settings.targetLanguage,
             options: selectableLanguages,
             label: { $0.displayName }
@@ -199,10 +238,12 @@ private struct GeneralSettingsPane: View {
         Hairline()
         SettingsBlock {
           VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            Text("Languages in the translator")
+            Text(L10n.isChinese ? "翻译快捷选择语言" : "Languages in the translator")
               .font(AppFont.body)
             Text(
-              "At least one language stays enabled. Chinese, Japanese, and English are the defaults."
+              L10n.isChinese
+                ? "至少保留一种可用语言。默认包含中文、日语与英语。"
+                : "At least one language stays enabled. Chinese, Japanese, and English are the defaults."
             )
             .font(AppFont.caption)
             .foregroundStyle(palette.mutedForeground)
@@ -213,101 +254,161 @@ private struct GeneralSettingsPane: View {
         }
       }
 
-      SettingsCard("Translation") {
-        SettingsRow("Default action") {
+      SettingsCard(L10n.isChinese ? "离线词典" : "Dictionary") {
+        SettingsRow(
+          L10n.isChinese ? "取词词典" : "Word dictionary",
+          detail: L10n.isChinese
+            ? "单词优先调取离线词典并附带 AI 翻译选项；句子直接使用 AI 翻译。"
+            : "Words open offline definitions with a Translation tab. Sentences use translation only."
+        ) {
+          Toggle(
+            L10n.isChinese ? "取词词典" : "Word dictionary",
+            isOn: $settingsStore.settings.dictionaryEnabled
+          )
+          .labelsHidden()
+        }
+        Hairline()
+        SettingsRow(
+          L10n.isChinese ? "词典释义语言" : "Definitions",
+          detail: L10n.isChinese
+            ? "中文词条保留原文语种字形。其他语言需要对应的离线词典包。"
+            : "Chinese entries preserve the source's original script. Other languages require a matching dictionary pack."
+        ) {
           AppSelect(
-            title: "Default action",
+            title: L10n.isChinese ? "词典释义语言" : "Dictionary definition language",
+            selection: $settingsStore.settings.dictionaryDefinitionLanguage,
+            options: model.dictionaryDefinitionOptions,
+            label: DictionaryLanguages.name
+          )
+        }
+      }
+
+      SettingsCard(L10n.isChinese ? "翻译与交互" : "Translation") {
+        SettingsRow(L10n.isChinese ? "默认动作" : "Default action") {
+          AppSelect(
+            title: L10n.isChinese ? "默认动作" : "Default action",
             selection: Binding(
               get: { settingsStore.settings.defaultActionID },
               set: { model.setDefaultAction($0) }
             ),
             options: model.visibleActions.map(\.id),
             label: { id in
-              model.visibleActions.first { $0.id == id }?.name ?? "Default action"
+              model.visibleActions.first { $0.id == id }?.name ?? (L10n.isChinese ? "默认动作" : "Default action")
             }
           )
         }
         Hairline()
         switchRow(
-          "Translate automatically",
-          detail: "Runs as soon as text arrives from a selection or from screen capture.",
+          L10n.isChinese ? "自动开始翻译" : "Translate automatically",
+          detail: L10n.isChinese
+            ? "划选文字或完成截屏后立即自动执行翻译。"
+            : "Runs as soon as text arrives from a selection or from screen capture.",
           isOn: $settingsStore.settings.autoTranslate
         )
         Hairline()
         switchRow(
-          "Show selections in a pop-up",
-          detail: "Translates selected text in a floating panel instead of the main window.",
+          L10n.isChinese ? "在划选浮窗中呈现结果" : "Show selections in a pop-up",
+          detail: L10n.isChinese
+            ? "在光标附近的悬浮面板中呈现译文，而不是激活主窗口。"
+            : "Translates selected text in a floating panel instead of the main window.",
           isOn: $settingsStore.settings.useCompactSelectionPreview
         )
         Hairline()
         SettingsRow(
-          "Pop-up position",
-          detail: settingsStore.settings.selectionPanelPlacement == .nearPointer
-            ? "Opens beside the pointer on the active display."
-            : "Drag the pop-up once; future pop-ups return to that position."
+          L10n.isChinese ? "浮窗弹出位置" : "Pop-up position",
+          detail: L10n.isChinese
+            ? (settingsStore.settings.selectionPanelPlacement == .nearPointer
+              ? "在当前屏幕的鼠标光标旁弹出。"
+              : "记忆上次拖动的位置，后续弹窗均在固定位置打开。")
+            : (settingsStore.settings.selectionPanelPlacement == .nearPointer
+              ? "Opens beside the pointer on the active display."
+              : "Drag the pop-up once; future pop-ups return to that position.")
         ) {
           AppSelect(
-            title: "Pop-up position",
+            title: L10n.isChinese ? "浮窗弹出位置" : "Pop-up position",
             selection: $settingsStore.settings.selectionPanelPlacement,
             options: SelectionPanelPlacementMode.allCases,
-            label: { $0.displayName }
+            label: { mode in
+              switch mode {
+              case .nearPointer: L10n.isChinese ? "跟随光标" : mode.displayName
+              case .fixed: L10n.isChinese ? "固定位置" : mode.displayName
+              }
+            }
           )
           .disabled(!settingsStore.settings.useCompactSelectionPreview)
         }
         Hairline()
         switchRow(
-          "Keep the pop-up open",
-          detail:
-            "Stays on screen when you click elsewhere; close it with Escape or the close button. "
-            + "The pin in the pop-up's title bar toggles this too.",
+          L10n.isChinese ? "保持浮窗常驻显示（固定）" : "Keep the pop-up open",
+          detail: L10n.isChinese
+            ? "点击其他应用窗口时不自动隐藏，按 Escape 键或点按关闭按钮关闭。亦可通过浮窗标题栏的图钉图标快捷切换。"
+            : "Stays on screen when you click elsewhere; close it with Escape or the close button. "
+              + "The pin in the pop-up's title bar toggles this too.",
           isOn: $settingsStore.settings.selectionPanelPinned
         )
         Hairline()
         switchRow(
-          "Copy as a fallback",
-          detail:
-            "Uses the clipboard for web and document selections that cannot be read directly.",
+          L10n.isChinese ? "剪贴板取词兜底" : "Copy as a fallback",
+          detail: L10n.isChinese
+            ? "当遇到无法直接读取辅助功能文本的网页或文档时，自动通过模拟拷贝读取。"
+            : "Uses the clipboard for web and document selections that cannot be read directly.",
           isOn: $settingsStore.settings.useClipboardFallback
         )
       }
 
-      SettingsCard("Window") {
-        SettingsRow("Appearance") {
+      SettingsCard(L10n.isChinese ? "窗口与外观" : "Window") {
+        SettingsRow(L10n.isChinese ? "外观主题" : "Appearance") {
           AppSelect(
-            title: "Appearance",
+            title: L10n.isChinese ? "外观主题" : "Appearance",
             selection: $settingsStore.settings.theme,
             options: AppTheme.allCases,
-            label: { $0.title }
+            label: { theme in
+              switch theme {
+              case .system: L10n.isChinese ? "跟随系统" : theme.title
+              case .light: L10n.isChinese ? "浅色" : theme.title
+              case .dark: L10n.isChinese ? "深色" : theme.title
+              }
+            }
           )
         }
         Hairline()
-        switchRow("Always on top", isOn: $settingsStore.settings.alwaysOnTop)
+        switchRow(
+          L10n.isChinese ? "主窗口置顶" : "Always on top",
+          isOn: $settingsStore.settings.alwaysOnTop
+        )
         Hairline()
         switchRow(
-          "Hide when inactive",
-          detail: "Puts the window away when you switch to another app.",
+          L10n.isChinese ? "失焦自动隐藏" : "Hide when inactive",
+          detail: L10n.isChinese
+            ? "切换到其他应用程序时自动收起主窗口。"
+            : "Puts the window away when you switch to another app.",
           isOn: $settingsStore.settings.autoHideWhenInactive
         )
         Hairline()
         switchRow(
-          "Show Dock icon",
+          L10n.isChinese ? "在程序坞 (Dock) 中显示图标" : "Show Dock icon",
           isOn: $settingsStore.settings.showDockIcon
         )
         Hairline()
         switchRow(
-          "Launch at login",
+          L10n.isChinese ? "登录时自动启动" : "Launch at login",
           isOn: Binding(
             get: { settingsStore.settings.launchAtLogin },
             set: { model.applyLaunchAtLogin($0) }
           )
         )
         Hairline()
-        SettingsRow("Text size", detail: "Applies to the source text and the result.") {
+        SettingsRow(
+          L10n.isChinese ? "文本字体大小" : "Text size",
+          detail: L10n.isChinese
+            ? "同时应用于原文输入框与译文呈现区。"
+            : "Applies to the source text and the result."
+        ) {
           HStack(spacing: AppSpacing.sm) {
             Slider(value: $settingsStore.settings.fontSize, in: 12...24, step: 1)
               .frame(width: 200)
               .tint(palette.foreground)
-              .accessibilityLabel("Text size")
+              .accessibilityLabel(L10n.isChinese ? "文本字体大小" : "Text size")
             Text("\(Int(settingsStore.settings.fontSize)) pt")
               .font(AppFont.caption)
               .monospacedDigit()
@@ -383,10 +484,10 @@ private struct ProviderSettingsPane: View {
 
   var body: some View {
     PaneStack {
-      SettingsCard("AI provider") {
-        SettingsRow("Provider") {
+      SettingsCard(L10n.isChinese ? "模型服务商" : "AI provider") {
+        SettingsRow(L10n.isChinese ? "服务商" : "Provider") {
           AppSelect(
-            title: "Provider",
+            title: L10n.isChinese ? "服务商" : "Provider",
             selection: Binding(
               get: { settingsStore.settings.provider.provider },
               set: { selectProvider($0) }
@@ -399,11 +500,13 @@ private struct ProviderSettingsPane: View {
         if settingsStore.settings.provider.provider.supportsOAuth {
           Hairline()
           SettingsRow(
-            "Authentication mode",
-            detail: "Choose between a Platform API key or your ChatGPT account."
+            L10n.isChinese ? "认证方式" : "Authentication mode",
+            detail: L10n.isChinese
+              ? "支持使用开放平台 API 密钥或登录 ChatGPT 账号。"
+              : "Choose between a Platform API key or your ChatGPT account."
           ) {
             AppSelect(
-              title: "Authentication mode",
+              title: L10n.isChinese ? "认证方式" : "Authentication mode",
               selection: Binding(
                 get: { settingsStore.settings.provider.authMode },
                 set: { setAuthMode($0) }
@@ -416,20 +519,20 @@ private struct ProviderSettingsPane: View {
 
         Hairline()
         SettingsRow(
-          "Model",
-          detail: "Search the provider's catalog, or type any model id to use one that is not listed.",
+          L10n.isChinese ? "模型名称" : "Model name",
+          detail: L10n.tr("settings.provider.model_detail"),
           stacksControl: true
         ) {
           VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack(spacing: AppSpacing.sm) {
               SearchableSelect(
-                title: "Model",
+                title: L10n.isChinese ? "模型名称" : "Model name",
                 selection: $settingsStore.settings.provider.model,
                 options: catalogModels,
-                placeholder: "No model selected",
-                searchPrompt: "Search models, or type an id",
+                placeholder: L10n.tr("sidebar.no_model"),
+                searchPrompt: L10n.tr("settings.provider.search_prompt"),
                 emptyMessage: emptyCatalogMessage,
-                customValueLabel: { "Use “\($0)” as the model id" }
+                customValueLabel: { L10n.tr("settings.provider.use_custom_model", $0) }
               )
               Button {
                 refreshCatalog()
@@ -437,13 +540,13 @@ private struct ProviderSettingsPane: View {
                 if isFetchingCatalog {
                   Spinner(size: 12)
                 } else {
-                  AdaptiveLabel(title: "Refresh", symbol: "arrow.clockwise")
+                  AdaptiveLabel(title: L10n.tr("common.refresh"), symbol: "arrow.clockwise")
                 }
               }
               .appButton(.outline, size: .sm)
               .disabled(isFetchingCatalog || !canFetchCatalog)
               .help(refreshHelp)
-              .accessibilityLabel("Refresh the model catalog")
+              .accessibilityLabel(L10n.tr("settings.provider.refresh_models"))
             }
             if let error = modelCatalog.error(for: settingsStore.settings.provider) {
               InlineNote(text: error, kind: .error)
@@ -457,7 +560,7 @@ private struct ProviderSettingsPane: View {
 
         if !isOAuthMode {
           Hairline()
-          SettingsRow("API endpoint", stacksControl: true) {
+          SettingsRow(L10n.isChinese ? "接口地址 (Endpoint)" : "Endpoint URL", stacksControl: true) {
             AppTextField(
               placeholder: "https://…",
               text: $settingsStore.settings.provider.endpoint,
@@ -470,21 +573,21 @@ private struct ProviderSettingsPane: View {
         if !isOAuthMode && settingsStore.settings.provider.supportsReasoningControl {
           Hairline()
           SettingsRow(
-            "Enable reasoning",
-            detail: "Off by default. When off, the request tells the model not to think."
+            L10n.isChinese ? "深度思考 / 推理模式" : "Enable reasoning",
+            detail: L10n.tr("settings.provider.reasoning_detail")
           ) {
             Toggle("", isOn: $settingsStore.settings.provider.reasoningEnabled)
               .toggleStyle(AppSwitchStyle())
               .labelsHidden()
-              .accessibilityLabel("Enable reasoning")
+              .accessibilityLabel(L10n.isChinese ? "深度思考 / 推理模式" : "Enable reasoning")
           }
         }
 
         if !isOAuthMode && settingsStore.settings.provider.provider == .azure {
           Hairline()
-          SettingsRow("API version", stacksControl: true) {
+          SettingsRow(L10n.tr("settings.provider.api_version"), stacksControl: true) {
             AppTextField(
-              placeholder: "2024-10-21",
+                placeholder: "2024-10-21",
               text: $settingsStore.settings.provider.apiVersion,
               size: .sm,
               monospaced: true
@@ -494,7 +597,7 @@ private struct ProviderSettingsPane: View {
 
         if !isOAuthMode && settingsStore.settings.provider.provider == .openAI {
           Hairline()
-          SettingsRow("Organization", detail: "Optional.", stacksControl: true) {
+          SettingsRow(L10n.tr("settings.provider.organization"), detail: L10n.isChinese ? "可选。" : "Optional.", stacksControl: true) {
             AppTextField(
               placeholder: "org-…",
               text: $settingsStore.settings.provider.organization,
@@ -506,43 +609,45 @@ private struct ProviderSettingsPane: View {
 
         if !isOAuthMode && settingsStore.settings.provider.provider == .anthropic {
           Hairline()
-          SettingsRow("Extended thinking") {
+          SettingsRow(L10n.isChinese ? "深度思考 / 推理模式" : "Extended thinking") {
             Toggle("", isOn: $settingsStore.settings.provider.extendedThinking)
               .toggleStyle(AppSwitchStyle())
               .labelsHidden()
-              .accessibilityLabel("Extended thinking")
+              .accessibilityLabel(L10n.isChinese ? "深度思考 / 推理模式" : "Extended thinking")
           }
         }
       }
 
       if isOAuthMode {
         SettingsCard(
-          "ChatGPT account",
-          caption: "Uses your ChatGPT subscription via OpenAI OAuth 2.0 PKCE."
+          L10n.tr("settings.provider.chatgpt_account"),
+          caption: L10n.tr("settings.provider.chatgpt_caption")
         ) {
           SettingsBlock {
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
               if let creds = settingsStore.oauthCredentials, !creds.accessToken.isEmpty {
                 HStack(spacing: AppSpacing.sm) {
                   Badge(
-                    text: creds.isExpired ? "Expired" : "Signed In",
+                    text: creds.isExpired ? L10n.tr("settings.provider.expired") : L10n.tr("settings.provider.signed_in"),
                     variant: creds.isExpired ? .warning : .success,
                     symbol: creds.isExpired ? "exclamationmark.triangle" : "checkmark.circle"
                   )
                   if let email = creds.email, !email.isEmpty {
-                    Text(email)
+                    Text(L10n.isChinese ? "已登录账号：\(email)" : "Signed in as \(email)")
                       .font(AppFont.body)
                       .foregroundStyle(palette.foreground)
                   }
                   Spacer()
-                  Button("Sign Out") {
+                  Button(L10n.isChinese ? "退出登录" : "Sign Out") {
                     settingsStore.logoutOAuth()
                   }
                   .appButton(.destructiveGhost, size: .sm)
                 }
 
                 Text(
-                  "Token active until \(creds.expiresAt.formatted(date: .abbreviated, time: .shortened)) (auto-refreshed as needed)"
+                  L10n.isChinese
+                    ? "令牌有效期至 \(creds.expiresAt.formatted(date: .abbreviated, time: .shortened))（需要时自动刷新）"
+                    : "Token active until \(creds.expiresAt.formatted(date: .abbreviated, time: .shortened)) (auto-refreshed as needed)"
                 )
                 .font(AppFont.caption)
                 .foregroundStyle(palette.mutedForeground)
@@ -550,16 +655,16 @@ private struct ProviderSettingsPane: View {
                 HStack(spacing: AppSpacing.sm) {
                   if settingsStore.isAuthenticatingOAuth {
                     Spinner(size: 14)
-                    Text("Waiting for browser authorization (Port 1455)…")
+                    Text(L10n.tr("settings.provider.waiting_browser"))
                       .font(AppFont.caption)
                       .foregroundStyle(palette.mutedForeground)
                     Spacer()
-                    Button("Cancel") {
+                    Button(L10n.tr("common.cancel")) {
                       settingsStore.cancelOAuthLogin()
                     }
                     .appButton(.outline, size: .sm)
                   } else {
-                    Button("Sign in with ChatGPT") {
+                    Button(L10n.isChinese ? "登录 ChatGPT" : "Sign in with ChatGPT") {
                       settingsStore.startOAuthLogin()
                     }
                     .appButton(.primary, size: .sm)
@@ -577,30 +682,30 @@ private struct ProviderSettingsPane: View {
         }
       } else if settingsStore.settings.provider.provider.usesAPIKey {
         SettingsCard(
-          "Credential",
-          caption: "Keys are stored per provider, encrypted in PhraseLens's own application support folder."
+          L10n.tr("settings.provider.credential"),
+          caption: L10n.tr("settings.provider.credential_caption")
         ) {
           SettingsBlock {
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
               HStack(spacing: AppSpacing.sm) {
                 AppTextField(
-                  placeholder: "API key",
+                  placeholder: L10n.isChinese ? "输入 API 密钥" : "Enter API key",
                   text: $apiKeyDraft,
                   isSecure: true,
                   size: .sm,
                   onSubmit: { saveAPIKeyIfChanged() }
                 )
 
-                Button("Save Key") {
+                Button(L10n.tr("settings.provider.save_key")) {
                   saveAPIKeyIfChanged()
                 }
                 .appButton(.primary, size: .sm)
                 .disabled(!hasUnsavedAPIKey)
 
                 if !settingsStore.apiKey.isEmpty {
-                  Button("Remove") { isConfirmingKeyRemoval = true }
+                  Button(L10n.isChinese ? "清除密钥" : "Remove") { isConfirmingKeyRemoval = true }
                     .appButton(.destructiveGhost, size: .sm)
-                    .help("Delete this provider's saved key")
+                  .help(L10n.isChinese ? "删除此服务商已保存的密钥" : "Delete this provider's saved key")
                 }
               }
 
@@ -611,9 +716,19 @@ private struct ProviderSettingsPane: View {
                   symbol: settingsStore.apiKey.isEmpty ? "exclamationmark" : "checkmark"
                 )
                 if hasUnsavedAPIKey {
-                  Badge(text: "Unsaved", variant: .warning, symbol: "pencil")
+                  Badge(text: L10n.isChinese ? "未保存" : "Unsaved", variant: .warning, symbol: "pencil")
                 }
                 Text(credentialStatus)
+                  .font(AppFont.caption)
+                  .foregroundStyle(palette.mutedForeground)
+              }
+
+              if settingsStore.settings.provider.provider == .openAI
+                || settingsStore.settings.provider.provider == .chatGPT {
+                Link(L10n.tr("settings.provider.create_openai_key"), destination: URL(string: "https://platform.openai.com/api-keys")!)
+                  .font(AppFont.captionMedium)
+              } else {
+                Text(L10n.tr("settings.provider.create_other_key"))
                   .font(AppFont.caption)
                   .foregroundStyle(palette.mutedForeground)
               }
@@ -629,11 +744,11 @@ private struct ProviderSettingsPane: View {
       }
 
       if !isOAuthMode {
-        SettingsCard("Endpoint safety") {
+        SettingsCard(L10n.tr("settings.provider.endpoint_safety")) {
           SettingsBlock {
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
               HStack(spacing: AppSpacing.sm) {
-                Button("Validate Configuration") { validateEndpoint() }
+                Button(L10n.isChinese ? "测试连接" : "Test Endpoint") { validateEndpoint() }
                   .appButton(.outline, size: .sm)
                 if let endpointStatus {
                   InlineNote(
@@ -643,7 +758,7 @@ private struct ProviderSettingsPane: View {
                 }
               }
               InlineNote(
-                text: "HTTPS is required. Plain HTTP is accepted only for Ollama on this Mac.",
+                text: L10n.tr("settings.provider.https_note"),
                 kind: .info
               )
             }
@@ -658,21 +773,30 @@ private struct ProviderSettingsPane: View {
     .onChange(of: settingsStore.apiKey) { _, value in
       apiKeyDraft = value
     }
+    .onChange(of: settingsStore.oauthCredentials) { oldValue, newValue in
+      guard isOAuthMode else { return }
+      let oldAccount = oldValue?.accountId ?? oldValue?.email ?? oldValue?.accessToken
+      let newAccount = newValue?.accountId ?? newValue?.email ?? newValue?.accessToken
+      guard oldAccount != newAccount else { return }
+      modelCatalog.invalidate(for: settingsStore.settings.provider)
+      if newValue != nil { refreshCatalogIfStale() }
+    }
     // A typed key is the one setting that does not persist on its own, so
     // leaving the pane must not be the same as discarding it.
     .onDisappear { persistAPIKeyDraft() }
     .confirmationDialog(
-      "Remove the \(settingsStore.settings.provider.provider.rawValue) API key?",
+      L10n.tr("settings.provider.remove_key_title", settingsStore.settings.provider.provider.rawValue),
       isPresented: $isConfirmingKeyRemoval,
       titleVisibility: .visible
     ) {
-      Button("Remove Key", role: .destructive) {
+      Button(L10n.isChinese ? "清除密钥" : "Remove Key", role: .destructive) {
         apiKeyDraft = ""
         settingsStore.saveAPIKey("")
+        modelCatalog.invalidate(for: settingsStore.settings.provider)
       }
-      Button("Cancel", role: .cancel) {}
+      Button(L10n.tr("common.cancel"), role: .cancel) {}
     } message: {
-      Text("The saved key is deleted, and this provider stops working until you add another.")
+      Text(L10n.tr("settings.provider.remove_key_message"))
     }
   }
 
@@ -686,6 +810,7 @@ private struct ProviderSettingsPane: View {
   private func persistAPIKeyDraft() -> Bool {
     guard hasUnsavedAPIKey else { return false }
     settingsStore.saveAPIKey(apiKeyDraft)
+    modelCatalog.invalidate(for: settingsStore.settings.provider)
     return true
   }
 
@@ -734,33 +859,33 @@ private struct ProviderSettingsPane: View {
 
   private var emptyCatalogMessage: String {
     if settingsStore.settings.provider.provider == .azure {
-      return "Azure serves deployments, not a catalog. Type the deployment name configured in the Azure portal."
+      return L10n.isChinese ? "Azure 提供的是部署实例而非模型目录。请输入在 Azure 门户中配置的部署名称。" : "Azure serves deployments, not a catalog. Type the deployment name configured in the Azure portal."
     }
     if !hasCredential {
-      return "Save a credential first, then refresh to load this provider's models."
+      return L10n.isChinese ? "请先保存密钥，再刷新以载入此服务商的模型。" : "Save a credential first, then refresh to load this provider's models."
     }
-    return "Refresh to load this provider's models, or type a model id."
+    return L10n.isChinese ? "刷新以载入此服务商的模型，或直接输入模型 ID。" : "Refresh to load this provider's models, or type a model id."
   }
 
   private var catalogStatus: String {
-    if isFetchingCatalog { return "Loading the model catalog…" }
+    if isFetchingCatalog { return L10n.tr("settings.provider.loading_catalog") }
     if settingsStore.settings.provider.provider == .azure {
-      return "Azure uses deployment names; type the one configured in the Azure portal."
+      return L10n.isChinese ? "Azure 使用部署名称；请输入在 Azure 门户中配置的名称。" : "Azure uses deployment names; type the one configured in the Azure portal."
     }
     guard let snapshot = modelCatalog.snapshot(for: settingsStore.settings.provider) else {
       return hasCredential
-        ? "No catalog loaded yet."
-        : "Save a credential to load this provider's model catalog."
+        ? (L10n.isChinese ? "尚未载入模型目录。" : "No catalog loaded yet.")
+        : (L10n.isChinese ? "请保存密钥以载入此服务商的模型目录。" : "Save a credential to load this provider's model catalog.")
     }
     let updated = snapshot.fetchedAt.formatted(.relative(presentation: .named))
-    return "\(snapshot.models.count) models · updated \(updated)"
+    return L10n.isChinese ? "\(snapshot.models.count) 个模型 · 更新于 \(updated)" : "\(snapshot.models.count) models · updated \(updated)"
   }
 
   private var refreshHelp: String {
     if !canFetchCatalog { return emptyCatalogMessage }
     return isOAuthMode
-      ? "Reload the models your ChatGPT subscription serves"
-      : "Reload the model catalog from this provider"
+      ? (L10n.isChinese ? "重新载入 ChatGPT 订阅可用的模型" : "Reload the models your ChatGPT subscription serves")
+      : (L10n.isChinese ? "从此服务商重新载入模型目录" : "Reload the model catalog from this provider")
   }
 
   private func refreshCatalog() {
@@ -789,7 +914,7 @@ private struct ProviderSettingsPane: View {
     if settingsStore.hasLegacyKeychainCredentials {
       VStack(alignment: .leading, spacing: AppSpacing.xs) {
         HStack(spacing: AppSpacing.sm) {
-          Button("Import from Keychain") {
+          Button(L10n.tr("settings.provider.keychain_import")) {
             settingsStore.importLegacyKeychainCredentials()
           }
           .appButton(.outline, size: .sm)
@@ -800,8 +925,9 @@ private struct ProviderSettingsPane: View {
         }
         InlineNote(
           text:
-            "An older PhraseLens build saved this provider's credential in your login Keychain. "
-            + "Importing it asks for your Keychain password once; entering the key above instead works just as well.",
+          L10n.isChinese
+            ? "旧版 PhraseLens 将此服务商的密钥保存在登录钥匙串中。导入时需要输入一次钥匙串密码；您也可以直接在上方输入密钥。"
+            : "An older PhraseLens build saved this provider's credential in your login Keychain. Importing it asks for your Keychain password once; entering the key above instead works just as well.",
           kind: .info
         )
       }
@@ -809,13 +935,13 @@ private struct ProviderSettingsPane: View {
   }
 
   private var credentialBadge: String {
-    settingsStore.apiKey.isEmpty ? "No key" : "Saved"
+    settingsStore.apiKey.isEmpty ? L10n.tr("settings.provider.no_key") : L10n.tr("settings.provider.saved")
   }
 
   private var credentialStatus: String {
     settingsStore.apiKey.isEmpty
-      ? "No key saved for \(settingsStore.settings.provider.provider.rawValue)"
-      : "Saved for \(settingsStore.settings.provider.provider.rawValue)"
+      ? (L10n.isChinese ? "未为 \(settingsStore.settings.provider.provider.rawValue) 保存密钥" : "No key saved for \(settingsStore.settings.provider.provider.rawValue)")
+      : (L10n.isChinese ? "已为 \(settingsStore.settings.provider.provider.rawValue) 保存密钥" : "Saved for \(settingsStore.settings.provider.provider.rawValue)")
   }
 
   private func isCodexModel(_ model: String) -> Bool {
@@ -862,7 +988,7 @@ private struct ProviderSettingsPane: View {
         settingsStore.settings.provider.endpoint,
         provider: settingsStore.settings.provider.provider
       )
-      endpointStatus = ("Endpoint format is valid.", true)
+      endpointStatus = (L10n.isChinese ? "连接成功" : "Endpoint reachable", true)
     } catch {
       endpointStatus = (error.localizedDescription, false)
     }
@@ -879,57 +1005,76 @@ private struct ShortcutSettingsPane: View {
   var body: some View {
     PaneStack {
       SettingsCard(
-        "Global shortcuts",
-        caption: "Click a shortcut and press the keys you want. Shortcuts apply immediately. "
-          + "The defaults pair ⌥F for the pop-up with ⌥⇧F for the full window."
+        L10n.isChinese ? "全局快捷键" : "Global shortcuts",
+        caption: L10n.isChinese
+          ? "点按快捷键并按下您想要的组合键。设置立即生效。默认 ⌥F 打开浮窗，⌥⇧F 打开完整窗口。"
+          : "Click a shortcut and press the keys you want. Shortcuts apply immediately. "
+            + "The defaults pair ⌥F for the pop-up with ⌥⇧F for the full window."
       ) {
         shortcutRow(
-          "Selection pop-up",
-          detail: "Translate selected text without opening the full workspace.",
+          L10n.isChinese ? "划选翻译" : "Translate selection",
+          detail: L10n.isChinese
+            ? "无需打开完整工作区即可翻译选中的文字。"
+            : "Translate selected text without opening the full workspace.",
           value: $settingsStore.settings.shortcuts.translateSelection
         )
         Hairline()
         shortcutRow(
-          "Full translator window",
-          detail: "Open the complete translator, history, and tools.",
+          L10n.isChinese ? "呼出主窗口" : "Show main window",
+          detail: L10n.isChinese
+            ? "打开包含翻译、历史记录与工具的完整工作区。"
+            : "Open the complete translator, history, and tools.",
           value: $settingsStore.settings.shortcuts.showWindow
         )
         Hairline()
         shortcutRow(
-          "Screenshot OCR",
-          detail: "Select a screen region and recognize its text.",
+          L10n.isChinese ? "截屏文字识别" : "Screenshot OCR",
+          detail: L10n.isChinese
+            ? "框选屏幕区域并识别提取其中的文字。"
+            : "Select a screen region and recognize its text.",
           value: $settingsStore.settings.shortcuts.screenshotOCR
         )
         Hairline()
         shortcutRow(
-          "Translate focused input",
-          detail: "Replace text in the focused editable control.",
+          L10n.isChinese ? "原地文本润色替换" : "Writing replacement",
+          detail: L10n.isChinese
+            ? "在当前获得焦点的输入框中翻译并替换文本。"
+            : "Replace text in the focused editable control.",
           value: $settingsStore.settings.shortcuts.writing
         )
       }
 
       SettingsCard(
-        "Permission",
-        caption: "Selection lookup and writing replacement need macOS Accessibility permission."
+        L10n.isChinese ? "系统权限" : "Permissions",
+        caption: L10n.isChinese
+          ? "划选读取与原地文本润色替换需要 macOS 辅助功能权限。"
+          : "Selection lookup and writing replacement need macOS Accessibility permission."
       ) {
-        SettingsRow("Accessibility access") {
+        SettingsRow(
+          L10n.isChinese ? "辅助功能权限" : "Accessibility permission",
+          detail: L10n.isChinese
+            ? "划选读取屏幕文字及在其他应用中自动输入替换文本时必需。"
+            : "Required for capturing selected text and typing into other apps."
+        ) {
           HStack(spacing: AppSpacing.sm) {
             Badge(
-              text: model.isAccessibilityTrusted ? "Granted" : "Not granted",
+              text: model.isAccessibilityTrusted
+                ? (L10n.isChinese ? "已授权" : "Granted")
+                : (L10n.isChinese ? "未授权" : "Not granted"),
               variant: model.isAccessibilityTrusted ? .success : .warning,
               symbol: model.isAccessibilityTrusted ? "checkmark" : "exclamationmark"
             )
-            Button("Open Settings…") {
+            Button(L10n.isChinese ? "打开系统设置" : "Open System Settings") {
               model.openAccessibilitySettings()
             }
             .appButton(.outline, size: .sm)
-            .help("Open the Accessibility pane of System Settings")
+            .help(L10n.isChinese ? "打开系统设置中的辅助功能" : "Open the Accessibility pane of System Settings")
           }
         }
       }
 
       if !model.shortcutErrors.isEmpty {
-        SettingsCard("Problems") {
+        SettingsCard(L10n.isChinese ? "故障排查" : "Problems") {
           SettingsBlock {
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
               ForEach(model.shortcutErrors, id: \.self) { error in
@@ -968,10 +1113,10 @@ private struct SpeechWritingSettingsPane: View {
 
   var body: some View {
     PaneStack {
-      SettingsCard("Text to speech") {
-        SettingsRow("Voice engine") {
+      SettingsCard(L10n.isChinese ? "语音朗读 (TTS)" : "Text-to-speech") {
+        SettingsRow(L10n.isChinese ? "发音引擎" : "Voice engine") {
           AppSelect(
-            title: "Voice engine",
+            title: L10n.isChinese ? "发音引擎" : "Voice engine",
             selection: Binding(
               get: { settingsStore.settings.resolvedTTSProvider },
               set: { settingsStore.settings.ttsProvider = $0 }
@@ -982,32 +1127,34 @@ private struct SpeechWritingSettingsPane: View {
         }
         Hairline()
         SettingsRow(
-          "Speak after translating",
-          detail: "Reads the source text aloud once a translation completes."
+          L10n.isChinese ? "选词后自动朗读" : "Automatically speak selected text",
+          detail: L10n.isChinese
+            ? "翻译完成后自动朗读源文本。"
+            : "Reads the source text aloud once a translation completes."
         ) {
           Toggle("", isOn: $settingsStore.settings.autoSpeakSelection)
             .toggleStyle(AppSwitchStyle())
             .labelsHidden()
-            .accessibilityLabel("Automatically speak source text after translation")
+            .accessibilityLabel(L10n.isChinese ? "选词后自动朗读" : "Automatically speak selected text")
         }
         Hairline()
-        SettingsRow("Rate") {
+        SettingsRow(L10n.isChinese ? "语速" : "Speech rate") {
           Slider(value: $settingsStore.settings.speechRate, in: 0.2...0.65)
             .frame(width: 220)
             .tint(palette.foreground)
-            .accessibilityLabel("Speech rate")
+            .accessibilityLabel(L10n.isChinese ? "语速" : "Speech rate")
         }
         Hairline()
-        SettingsRow("Volume") {
+        SettingsRow(L10n.isChinese ? "音量" : "Volume") {
           Slider(value: $settingsStore.settings.speechVolume, in: 0...1)
             .frame(width: 220)
             .tint(palette.foreground)
-            .accessibilityLabel("Speech volume")
+            .accessibilityLabel(L10n.isChinese ? "音量" : "Volume")
         }
         Hairline()
         SettingsBlock {
           VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            Button("Preview Voice") {
+            Button(L10n.isChinese ? "试听语音" : "Preview Voice") {
               model.speech.speak(
                 "PhraseLens is ready.",
                 language: settingsStore.settings.targetLanguage,
@@ -1020,8 +1167,10 @@ private struct SpeechWritingSettingsPane: View {
 
             if settingsStore.settings.resolvedTTSProvider == .edge {
               InlineNote(
-                text: "Edge Neural voices require an internet connection. "
-                  + "Spoken text is sent to Microsoft's speech service.",
+                text: L10n.isChinese
+                  ? "Edge 神经语音需要网络连接。语音文本将发送至 Microsoft 语音服务。"
+                  : "Edge Neural voices require an internet connection. "
+                    + "Spoken text is sent to Microsoft's speech service.",
                 kind: .warning
               )
             }
@@ -1030,13 +1179,15 @@ private struct SpeechWritingSettingsPane: View {
       }
 
       SettingsCard(
-        "Writing replacement",
-        caption: "Press the writing shortcut while an editable control is focused. The app "
-          + "translates its text and replaces it through the Accessibility API."
+        L10n.isChinese ? "原地文本润色替换" : "Writing replacement",
+        caption: L10n.isChinese
+          ? "在可编辑输入框获得焦点时按下写作快捷键。应用将翻译该文本并通过辅助功能 API 进行替换。"
+          : "Press the writing shortcut while an editable control is focused. The app "
+            + "translates its text and replaces it through the Accessibility API."
       ) {
-        SettingsRow("Writing target language") {
+        SettingsRow(L10n.isChinese ? "替换目标语言" : "Writing target language") {
           AppSelect(
-            title: "Writing target language",
+            title: L10n.isChinese ? "替换目标语言" : "Writing target language",
             selection: $settingsStore.settings.writingTargetLanguage,
             options: LanguageCode.allCases.filter { $0 != .auto },
             label: { $0.displayName }
@@ -1054,17 +1205,17 @@ private struct NetworkSettingsPane: View {
 
   var body: some View {
     PaneStack {
-      SettingsCard("Proxy") {
-        SettingsRow("Use proxy") {
+      SettingsCard(L10n.isChinese ? "网络代理" : "Proxy configuration") {
+        SettingsRow(L10n.isChinese ? "启用代理" : "Enable proxy") {
           Toggle("", isOn: $settingsStore.settings.proxy.enabled)
             .toggleStyle(AppSwitchStyle())
             .labelsHidden()
-            .accessibilityLabel("Use proxy")
+            .accessibilityLabel(L10n.isChinese ? "启用代理" : "Enable proxy")
         }
         Hairline()
-        SettingsRow("Protocol") {
+        SettingsRow(L10n.isChinese ? "协议类型" : "Proxy protocol") {
           AppSelect(
-            title: "Protocol",
+            title: L10n.isChinese ? "协议类型" : "Proxy protocol",
             selection: $settingsStore.settings.proxy.scheme,
             options: ["http", "https"],
             label: { $0.uppercased() }
@@ -1072,7 +1223,7 @@ private struct NetworkSettingsPane: View {
         }
         .disabled(!settingsStore.settings.proxy.enabled)
         Hairline()
-        SettingsRow("Server", stacksControl: true) {
+        SettingsRow(L10n.isChinese ? "服务器地址" : "Host", stacksControl: true) {
           AppTextField(
             placeholder: "proxy.example.com",
             text: $settingsStore.settings.proxy.host,
@@ -1082,19 +1233,23 @@ private struct NetworkSettingsPane: View {
         }
         .disabled(!settingsStore.settings.proxy.enabled)
         Hairline()
-        SettingsRow("Port") {
+        SettingsRow(L10n.isChinese ? "端口" : "Port") {
           TextField(
-            "Port",
+            L10n.isChinese ? "端口" : "Port",
             value: $settingsStore.settings.proxy.port,
             format: .number.grouping(.never)
           )
           .textFieldStyle(.roundedBorder)
           .frame(width: 100)
-          .accessibilityLabel("Proxy port")
+          .accessibilityLabel(L10n.isChinese ? "端口" : "Port")
         }
         .disabled(!settingsStore.settings.proxy.enabled)
         Hairline()
-        SettingsRow("Username", detail: "Optional.", stacksControl: true) {
+        SettingsRow(
+          L10n.isChinese ? "用户名" : "Username",
+          detail: L10n.isChinese ? "可选。" : "Optional.",
+          stacksControl: true
+        ) {
           AppTextField(
             placeholder: "username",
             text: $settingsStore.settings.proxy.username,
@@ -1104,8 +1259,8 @@ private struct NetworkSettingsPane: View {
         .disabled(!settingsStore.settings.proxy.enabled)
         Hairline()
         SettingsRow(
-          "No proxy",
-          detail: "Hosts that bypass the proxy, separated by commas.",
+          L10n.isChinese ? "绕过代理域名 (白名单)" : "Bypass proxy for",
+          detail: L10n.isChinese ? "绕过代理的主机列表，以英文逗号分隔。" : "Hosts that bypass the proxy, separated by commas.",
           stacksControl: true
         ) {
           AppTextField(
@@ -1119,8 +1274,10 @@ private struct NetworkSettingsPane: View {
         Hairline()
         SettingsBlock {
           InlineNote(
-            text: "Proxy credentials are intentionally not persisted in preferences. "
-              + "Configure authenticated proxies through macOS Network settings.",
+            text: L10n.isChinese
+              ? "出于安全考虑，代理认证凭据不会保存在应用设置中。请通过 macOS“系统设置”>“网络”配置需要认证的代理。"
+              : "Proxy credentials are intentionally not persisted in preferences. "
+                + "Configure authenticated proxies through macOS Network settings.",
             kind: .info
           )
         }
@@ -1146,11 +1303,12 @@ private struct AboutSettingsPane: View {
                 Text("PhraseLens")
                   .font(AppFont.display)
                 Badge(
-                  text: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.0",
+                  text: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.7.0",
                   variant: .outline
                 )
+                .accessibilityLabel(L10n.isChinese ? "版本" : "Version")
               }
-              Text("A native SwiftUI language workspace for macOS.")
+              Text(L10n.isChinese ? "适用于 macOS 的原生 SwiftUI 语言学习与翻译工作区。" : "A native SwiftUI language workspace for macOS.")
                 .font(AppFont.body)
                 .foregroundStyle(palette.mutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1159,8 +1317,14 @@ private struct AboutSettingsPane: View {
         }
       }
 
-      SettingsCard("Project") {
-        SettingsRow("Source") {
+      SettingsCard(L10n.isChinese ? "项目信息" : "Project") {
+        SettingsRow(L10n.isChinese ? "版本" : "Version") {
+          Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.7.0")
+            .font(AppFont.bodyMedium)
+            .foregroundStyle(palette.foreground)
+        }
+        Hairline()
+        SettingsRow(L10n.isChinese ? "源码仓库" : "Source") {
           Link(
             "mxggle/phrase-lens",
             destination: URL(string: "https://github.com/mxggle/phrase-lens")!
@@ -1169,7 +1333,10 @@ private struct AboutSettingsPane: View {
           .foregroundStyle(palette.foreground)
         }
         Hairline()
-        SettingsRow("Inspiration", detail: "Inspired by the nextai-translator project.") {
+        SettingsRow(
+          L10n.isChinese ? "致谢与数据来源" : "Attribution",
+          detail: L10n.isChinese ? "灵感来自 nextai-translator 项目。" : "Inspired by the nextai-translator project."
+        ) {
           Link(
             "nextai-translator",
             destination: URL(string: "https://github.com/nextai-translator/nextai-translator")!
@@ -1178,7 +1345,7 @@ private struct AboutSettingsPane: View {
           .foregroundStyle(palette.foreground)
         }
         Hairline()
-        SettingsRow("License") {
+        SettingsRow(L10n.isChinese ? "开源协议" : "License") {
           Badge(text: "AGPL-3.0-or-later", variant: .neutral)
         }
       }

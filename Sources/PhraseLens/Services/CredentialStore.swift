@@ -267,7 +267,7 @@ enum CredentialStoreError: LocalizedError {
 
   var errorDescription: String? {
     switch self {
-    case .sealFailed: "The credential file could not be encrypted."
+    case .sealFailed: L10n.isChinese ? "无法加密凭据文件。" : "The credential file could not be encrypted."
     }
   }
 }

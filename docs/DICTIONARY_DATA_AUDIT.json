@@ -1,0 +1,277 @@
+{
+  "ja": {
+    "found": 10,
+    "total": 13,
+    "queries": [
+      {
+        "query": "食べる",
+        "found": true,
+        "headwords": [
+          "食べる"
+        ],
+        "sources": [
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "食べました",
+        "found": true,
+        "headwords": [
+          "食べる"
+        ],
+        "sources": [
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "お疲れ様",
+        "found": true,
+        "headwords": [
+          "お疲れ様",
+          "お疲れ様でした",
+          "お疲れ様です"
+        ],
+        "sources": [
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "こんにちは",
+        "found": true,
+        "headwords": [
+          "今日は"
+        ],
+        "sources": [
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "はし",
+        "found": true,
+        "headwords": [
+          "とし",
+          "嘴",
+          "妬視",
+          "徒死",
+          "愛す",
+          "愛する",
+          "慧",
+          "杜詩",
+          "歳",
+          "波斯",
+          "端",
+          "箸",
+          "觜",
+          "都市"
+        ],
+        "sources": [
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "橋",
+        "found": false,
+        "headwords": [],
+        "sources": []
+      },
+      {
+        "query": "猫",
+        "found": true,
+        "headwords": [
+          "猫",
+          "猫車"
+        ],
+        "sources": [
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "必要",
+        "found": true,
+        "headwords": [
+          "必要"
+        ],
+        "sources": [
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "大丈夫",
+        "found": true,
+        "headwords": [
+          "大丈夫"
+        ],
+        "sources": [
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "嬉しい",
+        "found": true,
+        "headwords": [
+          "嬉しい"
+        ],
+        "sources": [
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "取り戻す",
+        "found": false,
+        "headwords": [],
+        "sources": []
+      },
+      {
+        "query": "生",
+        "found": false,
+        "headwords": [],
+        "sources": []
+      },
+      {
+        "query": "ｶﾀｶﾅ",
+        "found": true,
+        "headwords": [
+          "片仮名",
+          "片假名"
+        ],
+        "sources": [
+          "wiktionary-zh"
+        ]
+      }
+    ]
+  },
+  "en": {
+    "found": 11,
+    "total": 12,
+    "queries": [
+      {
+        "query": "hello",
+        "found": true,
+        "headwords": [
+          "hello"
+        ],
+        "sources": [
+          "ecdict-zh",
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "bank",
+        "found": true,
+        "headwords": [
+          "bank"
+        ],
+        "sources": [
+          "ecdict-zh"
+        ]
+      },
+      {
+        "query": "run",
+        "found": true,
+        "headwords": [
+          "rin",
+          "run"
+        ],
+        "sources": [
+          "ecdict-zh",
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "running",
+        "found": true,
+        "headwords": [
+          "run",
+          "running"
+        ],
+        "sources": [
+          "ecdict-zh",
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "went",
+        "found": true,
+        "headwords": [
+          "go"
+        ],
+        "sources": [
+          "ecdict-zh"
+        ]
+      },
+      {
+        "query": "go",
+        "found": true,
+        "headwords": [
+          "Goh",
+          "go"
+        ],
+        "sources": [
+          "ecdict-zh",
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "take it easy",
+        "found": false,
+        "headwords": [],
+        "sources": []
+      },
+      {
+        "query": "dictionary",
+        "found": true,
+        "headwords": [
+          "dictionary"
+        ],
+        "sources": [
+          "ecdict-zh",
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "reliable",
+        "found": true,
+        "headwords": [
+          "reliable"
+        ],
+        "sources": [
+          "ecdict-zh",
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "extensible",
+        "found": true,
+        "headwords": [
+          "extensible"
+        ],
+        "sources": [
+          "ecdict-zh"
+        ]
+      },
+      {
+        "query": "cat",
+        "found": true,
+        "headwords": [
+          "CAT",
+          "cat"
+        ],
+        "sources": [
+          "ecdict-zh",
+          "wiktionary-zh"
+        ]
+      },
+      {
+        "query": "learn",
+        "found": true,
+        "headwords": [
+          "learn"
+        ],
+        "sources": [
+          "ecdict-zh",
+          "wiktionary-zh"
+        ]
+      }
+    ]
+  }
+}
