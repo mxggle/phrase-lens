@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Settings panes, in the order the sidebar lists them.
-private enum SettingsPane: String, CaseIterable, Identifiable {
+enum SettingsPane: String, CaseIterable, Identifiable {
   case general
   case provider
   case shortcuts
@@ -46,6 +46,18 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
   }
 }
 
+@MainActor
+enum SettingsNavigation {
+  static var requestedPane: SettingsPane?
+  static let didRequestPane = Notification.Name("PhraseLensSettingsPaneRequested")
+
+  static func show(_ pane: SettingsPane, openSettings: () -> Void) {
+    requestedPane = pane
+    openSettings()
+    NotificationCenter.default.post(name: didRequestPane, object: nil)
+  }
+}
+
 struct SettingsView: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
@@ -69,6 +81,16 @@ struct SettingsView: View {
     // only useful when the user asked for it, so keep its window out of
     // window restoration entirely.
     .background(SettingsWindowConfig().frame(width: 0, height: 0))
+    .onAppear { applyRequestedPane() }
+    .onReceive(NotificationCenter.default.publisher(for: SettingsNavigation.didRequestPane)) { _ in
+      applyRequestedPane()
+    }
+  }
+
+  private func applyRequestedPane() {
+    guard let requested = SettingsNavigation.requestedPane else { return }
+    pane = requested
+    SettingsNavigation.requestedPane = nil
   }
 }
 
@@ -210,6 +232,17 @@ private struct GeneralSettingsPane: View {
             favoriteLanguageGrid
               .padding(.top, AppSpacing.xxs)
           }
+        }
+      }
+
+      SettingsCard("Dictionary") {
+        SettingsRow("Word dictionary", detail: "Words open offline definitions with a Translation tab. Sentences use translation only.") {
+          Toggle("Word dictionary", isOn: $settingsStore.settings.dictionaryEnabled).labelsHidden()
+        }
+        Hairline()
+        SettingsRow("Definitions", detail: "Chinese entries preserve the source's original script. Other languages require a matching dictionary pack.") {
+          AppSelect(title: "Dictionary definition language", selection: $settingsStore.settings.dictionaryDefinitionLanguage,
+            options: model.dictionaryDefinitionOptions, label: DictionaryLanguages.name)
         }
       }
 
@@ -618,6 +651,16 @@ private struct ProviderSettingsPane: View {
                   .foregroundStyle(palette.mutedForeground)
               }
 
+              if settingsStore.settings.provider.provider == .openAI
+                || settingsStore.settings.provider.provider == .chatGPT {
+                Link("Create an OpenAI Platform API key", destination: URL(string: "https://platform.openai.com/api-keys")!)
+                  .font(AppFont.captionMedium)
+              } else {
+                Text("Create an API key in your provider's dashboard, then paste it here and select a model above.")
+                  .font(AppFont.caption)
+                  .foregroundStyle(palette.mutedForeground)
+              }
+
               legacyKeychainImportRow
 
               if let error = settingsStore.credentialError {
@@ -658,6 +701,14 @@ private struct ProviderSettingsPane: View {
     .onChange(of: settingsStore.apiKey) { _, value in
       apiKeyDraft = value
     }
+    .onChange(of: settingsStore.oauthCredentials) { oldValue, newValue in
+      guard isOAuthMode else { return }
+      let oldAccount = oldValue?.accountId ?? oldValue?.email ?? oldValue?.accessToken
+      let newAccount = newValue?.accountId ?? newValue?.email ?? newValue?.accessToken
+      guard oldAccount != newAccount else { return }
+      modelCatalog.invalidate(for: settingsStore.settings.provider)
+      if newValue != nil { refreshCatalogIfStale() }
+    }
     // A typed key is the one setting that does not persist on its own, so
     // leaving the pane must not be the same as discarding it.
     .onDisappear { persistAPIKeyDraft() }
@@ -669,6 +720,7 @@ private struct ProviderSettingsPane: View {
       Button("Remove Key", role: .destructive) {
         apiKeyDraft = ""
         settingsStore.saveAPIKey("")
+        modelCatalog.invalidate(for: settingsStore.settings.provider)
       }
       Button("Cancel", role: .cancel) {}
     } message: {
@@ -686,6 +738,7 @@ private struct ProviderSettingsPane: View {
   private func persistAPIKeyDraft() -> Bool {
     guard hasUnsavedAPIKey else { return false }
     settingsStore.saveAPIKey(apiKeyDraft)
+    modelCatalog.invalidate(for: settingsStore.settings.provider)
     return true
   }
 

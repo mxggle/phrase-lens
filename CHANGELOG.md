@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A word or short phrase comes back with a reading you can pronounce.** Japanese is
+  annotated in hiragana and Chinese in Hanyu Pinyin with tone marks — `垂直な（すいちょくな）`,
+  `词语（cíyǔ）` — on the term you looked up and, now, on the translation itself: an answer
+  you cannot say out loud is half a translation. The reading is resolved from the whole word
+  and the text around it rather than character by character, which is what separates 生ビール
+  from 生活 and 银行 from 行走. Only terms are annotated, never the prose explaining them,
+  and never text being rewritten in place in another app's field.
+- **The translation can be read aloud.** The result pane and the pop-up footer each have their
+  own speak button, in the target language's voice, alongside the one that reads the source
+  text. A Markdown answer is flattened first, so a dictionary entry is spoken as its prose
+  rather than as its asterisks and code fences.
+
+- **Explain Usage turns a selected word or expression into a practical usage guide.** It says
+  where the expression fits, whether it belongs to speech, writing, casual or formal language,
+  shows its common patterns, calls out the mistake a learner is most likely to make, and gives
+  three natural bilingual examples without forcing the term into a register where it does not
+  belong.
+
+### Fixed
+
+- **"No focused application is available." no longer interrupts a selection capture.**
+  Selection capture asks the accessibility system which application holds keyboard
+  focus, and that question has no answer while a menu is tracking or while PhraseLens
+  is on screen as an accessory with only its pop-up panel — precisely the moments the
+  menu bar item and the ⌥F menu shortcut run. The dead end was reported as a provider
+  failure, so an alert appeared where nothing had actually gone wrong. Those entry
+  points now aim at the application the user was working in before PhraseLens came
+  forward, which is the selection they meant all along; if there is genuinely no
+  application to read, it counts as nothing selected and stays quiet like an empty
+  selection already does.
+- **A long answer no longer runs off the bottom while it is being written.** The result
+  pane follows the end of its own text, but it decided whether to keep following by
+  measuring how far the end sat below the viewport — and appended text moves the end down
+  by exactly the same amount a reader scrolling away does. The first paragraph that outgrew
+  the pane therefore read as the reader leaving, and following stopped for the rest of the
+  answer, which is how a thread ended up frozen on a stale paragraph while the newest one
+  was still arriving. Growth and gestures are now told apart by what else moved, the pane
+  catches up after the new text has been laid out rather than aiming at where the text used
+  to end, and asking a question returns the reader to the end: an answer you just asked for
+  is the one thing you are waiting to see.
+- **Words in the pop-up can be selected again.** The whole pop-up was a drag handle, so
+  any drag across a result moved the window instead of selecting the words it passed over.
+  Dragging is now limited to the header strip, the way a title bar works, and the result,
+  the captured text and the footer are left to their content.
+
 ## [0.6.0] — 2026-08-22
 
 ### Added

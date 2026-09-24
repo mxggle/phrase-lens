@@ -1378,6 +1378,33 @@ struct WindowChrome: NSViewRepresentable {
   }
 }
 
+// MARK: - Window drag
+
+/// A transparent surface that moves its window when dragged.
+///
+/// A borderless panel has no title bar to grab, and the alternative —
+/// `isMovableByWindowBackground` — turns every point of it into a handle,
+/// including the result text, where a drag is how a word gets selected.
+/// Planting this behind the header keeps the grab where a title bar would
+/// have been and leaves the rest of the panel to its content.
+struct WindowDragArea: NSViewRepresentable {
+  func makeNSView(context _: Context) -> NSView {
+    DragHandleView()
+  }
+
+  func updateNSView(_: NSView, context _: Context) {}
+
+  private final class DragHandleView: NSView {
+    override func mouseDown(with event: NSEvent) {
+      window?.performDrag(with: event)
+    }
+
+    /// Nothing is drawn here, so the handle must not swallow the cursor
+    /// rects or the appearance of the header it sits behind.
+    override var isOpaque: Bool { false }
+  }
+}
+
 // MARK: - Panel chrome
 
 extension View {
@@ -1455,9 +1482,10 @@ extension View {
 ///
 /// Streamed output otherwise runs off the bottom within a few seconds, leaving
 /// the reader watching a stale paragraph. Following stops the moment the
-/// reader scrolls away from the bottom, and does not resume until they return
-/// there — a result the reader is scrolled back through must never be yanked
-/// out from under them.
+/// reader scrolls away from the bottom, and resumes when they return there or
+/// ask for something new — a result the reader is scrolled back through must
+/// never be yanked out from under them, but an answer they just asked for is
+/// what they are waiting to see.
 struct FollowingScrollView<Trigger: Equatable, Content: View>: View {
   /// Whether content is still arriving. A finished result never moves.
   let isFollowing: Bool
@@ -1470,10 +1498,17 @@ struct FollowingScrollView<Trigger: Equatable, Content: View>: View {
   /// keeps being followed.
   private static var pinThreshold: CGFloat { 28 }
 
+  /// How much unexplained movement is measurement noise rather than a reader
+  /// pushing the scroller. Sub-point rounding between two layout passes must
+  /// not read as a gesture.
+  private static var gestureSlack: CGFloat { 2 }
+
   private let space = "followingScroll"
+  private let contentSpace = "followingScrollContent"
   private let tail = "followingScrollTail"
 
   @State private var isPinnedToBottom = true
+  @State private var lastSample: TailSample?
 
   var body: some View {
     ScrollViewReader { proxy in
@@ -1481,41 +1516,110 @@ struct FollowingScrollView<Trigger: Equatable, Content: View>: View {
         ScrollView {
           VStack(spacing: 0) {
             content
-            // Doubles as the scroll target and the probe that reports how far
-            // the end of the content sits from the bottom of the viewport.
+            // Doubles as the scroll target and the probe that reports where
+            // the end of the content sits — both within the viewport and
+            // within the content, which is what separates growth from a
+            // gesture below.
             Color.clear
               .frame(height: 1)
               .id(tail)
               .background {
                 GeometryReader { marker in
                   Color.clear.preference(
-                    key: TailOffsetKey.self,
-                    value: marker.frame(in: .named(space)).maxY
+                    key: TailGeometryKey.self,
+                    value: TailGeometry(
+                      viewportBottom: marker.frame(in: .named(space)).maxY,
+                      contentBottom: marker.frame(in: .named(contentSpace)).maxY
+                    )
                   )
                 }
               }
               .accessibilityHidden(true)
           }
+          .coordinateSpace(name: contentSpace)
         }
         .coordinateSpace(name: space)
         .scrollBounceBehavior(.basedOnSize)
-        .onPreferenceChange(TailOffsetKey.self) { tailBottom in
-          let distance = tailBottom - viewport.size.height
-          isPinnedToBottom = distance <= Self.pinThreshold
+        .onPreferenceChange(TailGeometryKey.self) { geometry in
+          let viewportHeight = viewport.size.height
+          let sample = TailSample(
+            distance: geometry.viewportBottom - viewportHeight,
+            contentBottom: geometry.contentBottom,
+            viewportHeight: viewportHeight
+          )
+          let previous = lastSample
+          lastSample = sample
+
+          // Back at the end: following resumes, however the reader got there.
+          if sample.distance <= Self.pinThreshold {
+            isPinnedToBottom = true
+            return
+          }
+
+          // Otherwise the end is off-screen, and the only question that
+          // matters is why. Appended text pushes the tail down by exactly as
+          // much as the content grew, and a shorter viewport by exactly as
+          // much as it lost; anything left over is the reader dragging the
+          // scroller, and that is the one thing following must yield to.
+          //
+          // Measuring the gap alone cannot tell those apart, which is what
+          // used to stop following: the first chunk that outran the viewport
+          // read as a reader scrolling away, and the stream was never
+          // followed again.
+          guard let previous else { return }
+          let growth = sample.contentBottom - previous.contentBottom
+          let shrink = previous.viewportHeight - sample.viewportHeight
+          let unexplained = (sample.distance - previous.distance) - growth - shrink
+          if unexplained > Self.gestureSlack {
+            isPinnedToBottom = false
+          }
         }
         .onChange(of: trigger) { _, _ in
           guard isFollowing, isPinnedToBottom else { return }
-          proxy.scrollTo(tail, anchor: .bottom)
+          follow(proxy)
+        }
+        .onChange(of: isFollowing) { _, hasStarted in
+          // A reader who asks a question has asked for what comes next, so a
+          // new answer returns them to the end even if they had scrolled back
+          // through the last one.
+          guard hasStarted else { return }
+          isPinnedToBottom = true
+          follow(proxy)
         }
       }
     }
   }
+
+  @MainActor
+  private func follow(_ proxy: ScrollViewProxy) {
+    proxy.scrollTo(tail, anchor: .bottom)
+    // The text that triggered this has not been laid out yet, so the scroll
+    // above lands where the tail was rather than where it is about to be. A
+    // second pass, after this update has been laid out, catches the rest —
+    // without it the view falls a chunk further behind on every token.
+    Task { @MainActor in
+      proxy.scrollTo(tail, anchor: .bottom)
+    }
+  }
 }
 
-private struct TailOffsetKey: PreferenceKey {
-  static let defaultValue: CGFloat = 0
+/// Where the end of the content sits, measured against the viewport and
+/// against the content itself.
+private struct TailGeometry: Equatable {
+  var viewportBottom: CGFloat = 0
+  var contentBottom: CGFloat = 0
+}
 
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+private struct TailSample {
+  var distance: CGFloat
+  var contentBottom: CGFloat
+  var viewportHeight: CGFloat
+}
+
+private struct TailGeometryKey: PreferenceKey {
+  static let defaultValue = TailGeometry()
+
+  static func reduce(value: inout TailGeometry, nextValue: () -> TailGeometry) {
     value = nextValue()
   }
 }

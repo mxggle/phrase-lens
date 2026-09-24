@@ -98,6 +98,7 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
   case polishing
   case summarize
   case analyze
+  case explainUsage
   case explainContext
   case explainCode
   case compareSynonyms
@@ -110,6 +111,7 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case .polishing: "Polish"
     case .summarize: "Summarize"
     case .analyze: "Analyze"
+    case .explainUsage: "Explain Usage"
     case .explainContext: "Explain in Context"
     case .explainCode: "Explain Code"
     case .compareSynonyms: "Compare Synonyms"
@@ -122,6 +124,7 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case .polishing: "wand.and.stars"
     case .summarize: "text.redaction"
     case .analyze: "chart.bar.doc.horizontal"
+    case .explainUsage: "text.book.closed"
     case .explainContext: "book.pages"
     case .explainCode: "chevron.left.forwardslash.chevron.right"
     case .compareSynonyms: "arrow.triangle.2.circlepath"
@@ -179,6 +182,15 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
       You are a language tutor taking a passage apart for someone learning ${sourceLang}. Be \
       concrete: name the pattern, quote the words you are talking about, and give the meaning \
       instead of describing that there is one. \(Self.answerLanguageRule) \
+      \(Self.panelFormatRule) \(Self.untrustedTextRule)
+      """
+    case .explainUsage:
+      """
+      You are an expert in current ${sourceLang} usage, helping a ${targetLang}-speaking learner \
+      understand when and how to use a word or expression. Separate common, natural usage from \
+      usage that is merely possible, dated, regional, or specialized, and never invent a sense, \
+      collocation, or example. If the selection is longer than one expression, identify the key \
+      expression you are explaining in the opening line. \(Self.answerLanguageRule) \
       \(Self.panelFormatRule) \(Self.untrustedTextRule)
       """
     case .explainContext:
@@ -261,6 +273,40 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
 
       Write the headings and every explanation in ${targetLang}, whatever language the text \
       above is in.
+      """
+    case .explainUsage:
+      """
+      Explain how the selected ${sourceLang} word or expression is actually used.
+
+      Follow this shape in order. The section names below describe their purpose — write every \
+      heading, label, and explanation in ${targetLang}.
+
+      Opening, with no heading: **the word or expression** · its most useful ${targetLang} \
+      meaning · part of speech when clear · register. State whether it is mainly spoken, mainly \
+      written, or natural in both, and whether it is casual, neutral, or formal.
+
+      - When to use: a `##` section with 2 to 4 concrete situations. For each one, name the \
+      speaker's purpose or setting and say why this expression fits there.
+      - Register and feel: a `##` section covering formality, tone or emotional colouring, how \
+      common it is in current usage, and any regional, generational, or professional limit that \
+      genuinely matters. Say what a native speaker would normally choose in a register where \
+      this expression does not fit.
+      - Common patterns: a `##` section with 3 to 5 high-frequency collocations or grammar \
+      frames. Put each ${sourceLang} pattern in backticks and give its ${targetLang} meaning or \
+      function.
+      - Examples: a `##` section with exactly three natural ${sourceLang} examples, ordered from \
+      everyday to more formal only where those registers are genuinely natural. Start each \
+      bullet with a short situation or register label, then the example, then " — ", then its \
+      ${targetLang} translation. Never force the expression into an unnatural register just to \
+      fill a category.
+      - Watch out: a `##` section with the most likely misuse or confusion and the correction. \
+      Omit this section only when there is no genuine trap.
+
+      Selected material:
+      <selected>${text}</selected>
+
+      Write the headings, labels, and every explanation in ${targetLang}, whatever language the \
+      selected material is in.
       """
     case .explainContext:
       """
@@ -362,7 +408,9 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
       mode: mode,
       rolePrompt: mode.defaultRolePrompt,
       commandPrompt: mode.defaultCommandPrompt,
-      outputMarkdown: [.summarize, .analyze, .explainContext, .explainCode, .compareSynonyms]
+      outputMarkdown: [
+        .summarize, .analyze, .explainUsage, .explainContext, .explainCode, .compareSynonyms,
+      ]
         .contains(mode)
     )
   }
@@ -371,6 +419,17 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
 
   var isBuiltIn: Bool {
     Self.factoryBuiltIn(for: id) != nil
+  }
+
+  /// Whether this action's answer depends on the text around the selection.
+  ///
+  /// Explain in Context is built on it, and any action an author wrote a
+  /// `${context}` into is asking for the same thing. Only these are worth
+  /// telling the reader whether the capture found any.
+  var usesSelectionContext: Bool {
+    mode == .explainContext
+      || rolePrompt.contains("${context}")
+      || commandPrompt.contains("${context}")
   }
 
   static func factoryBuiltIn(for id: UUID) -> TranslationAction? {
@@ -383,6 +442,7 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
     case .polishing: "00000000-0000-4000-8000-000000000002"
     case .summarize: "00000000-0000-4000-8000-000000000003"
     case .analyze: "00000000-0000-4000-8000-000000000004"
+    case .explainUsage: "00000000-0000-4000-8000-000000000008"
     case .explainContext: "00000000-0000-4000-8000-000000000005"
     case .explainCode: "00000000-0000-4000-8000-000000000006"
     case .compareSynonyms: "00000000-0000-4000-8000-000000000007"
@@ -416,22 +476,16 @@ struct OAuthCredentials: Codable, Equatable, Sendable {
 enum CodexBackend {
   static let responsesEndpoint = "https://chatgpt.com/backend-api/codex/responses"
   static let modelsEndpoint = "https://chatgpt.com/backend-api/codex/models"
-  /// The client version Codex CLI reports, which the catalog endpoint reads as
-  /// a floor: every model carries a `minimal_client_version`, and the backend
-  /// omits the ones a client this old could not drive. Claiming too little
-  /// silently hides current models — pinned at 0.115.0 the catalog stopped at
-  /// gpt-5.4, hiding gpt-5.5 (needs 0.124.0) and the gpt-5.6 family (0.144.0),
-  /// all of which this app's plain Responses request drives fine. Raise this as
-  /// new models ship; nothing else sends it, so the translation request is
-  /// unaffected.
-  static let clientVersion = "0.144.0"
+  /// The backend filters its catalog by this client capability version. Keep
+  /// it aligned with a verified Codex catalog when this app's Responses client
+  /// can drive newly listed models. The catalog cache key includes this value
+  /// so an app update immediately fetches the newly visible models.
+  static let clientVersion = "0.155.0"
   static let defaultModel = "gpt-5.4-mini"
 
-  /// Shown only when the catalog cannot be fetched. A ChatGPT subscription
-  /// token reaches far less than the Platform API does — the backend answers
-  /// anything else with "model is not supported when using Codex with a ChatGPT
-  /// account" — so this stays at the two models every Codex account has served
-  /// across client versions, and the fetched catalog replaces it outright.
+  /// Last-resort suggestions when no account catalog has been fetched. These
+  /// older IDs are not proof of current account access; a successful fetch
+  /// replaces them, and a failed fetch never marks them as newly updated.
   static let fallbackModels = [
     "gpt-5.4-mini",
     "gpt-5.4",
@@ -471,8 +525,9 @@ enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case .ollama: "http://127.0.0.1:11434/api/chat"
     case .groq: "https://api.groq.com/openai/v1/chat/completions"
     case .deepSeek: "https://api.deepseek.com/chat/completions"
-    case .moonshot, .kimi: "https://api.moonshot.cn/v1/chat/completions"
-    case .miniMax: "https://api.minimax.chat/v1/text/chatcompletion_v2"
+    case .moonshot: "https://api.moonshot.cn/v1/chat/completions"
+    case .kimi: "https://api.moonshot.ai/v1/chat/completions"
+    case .miniMax: "https://api.minimax.cn/v1/chat/completions"
     case .cohere: "https://api.cohere.com/v2/chat"
     case .cerebras: "https://api.cerebras.ai/v1/chat/completions"
     case .chatGLM: "https://open.bigmodel.cn/api/paas/v4/chat/completions"
@@ -549,6 +604,11 @@ struct ProviderConfiguration: Codable, Equatable, Sendable {
     endpoint =
       try container.decodeIfPresent(String.self, forKey: .endpoint)
       ?? provider.defaultEndpoint
+    if provider == .miniMax,
+      endpoint == "https://api.minimax.chat/v1/text/chatcompletion_v2"
+    {
+      endpoint = provider.defaultEndpoint
+    }
     model =
       try container.decodeIfPresent(String.self, forKey: .model)
       ?? provider.defaultModel
@@ -635,6 +695,8 @@ struct AppSettings: Codable, Equatable, Sendable {
   var provider = ProviderConfiguration()
   var sourceLanguage: LanguageCode = .auto
   var targetLanguage: LanguageCode = .simplifiedChinese
+  var dictionaryEnabled = true
+  var dictionaryDefinitionLanguage = "zh"
   var favoriteLanguages: [LanguageCode] = [.simplifiedChinese, .japanese, .english]
   var defaultActionID = TranslationAction.builtIns[0].id
   /// Stable IDs in the order actions should be presented. Custom action IDs may
@@ -675,6 +737,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     case provider
     case sourceLanguage
     case targetLanguage
+    case dictionaryEnabled
+    case dictionaryDefinitionLanguage
     case favoriteLanguages
     case defaultActionID
     case actionOrder
@@ -708,6 +772,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     targetLanguage =
       try container.decodeIfPresent(LanguageCode.self, forKey: .targetLanguage)
       ?? .simplifiedChinese
+    dictionaryEnabled = try container.decodeIfPresent(Bool.self, forKey: .dictionaryEnabled) ?? true
+    dictionaryDefinitionLanguage = try container.decodeIfPresent(String.self, forKey: .dictionaryDefinitionLanguage) ?? "zh"
     favoriteLanguages =
       try container.decodeIfPresent([LanguageCode].self, forKey: .favoriteLanguages)
       ?? [.simplifiedChinese, .japanese, .english]
@@ -851,8 +917,10 @@ struct HistoryEntry: Codable, Identifiable, Hashable, Sendable {
   var sourceLanguage: LanguageCode
   var targetLanguage: LanguageCode
   var actionName: String
-  var provider: ProviderKind
+  var provider: ProviderKind?
   var model: String
+  var dictionarySnapshot: DictionarySnapshot?
+  var resultLanguageName: String { dictionarySnapshot.map { DictionaryLanguages.name($0.definitionLanguage) } ?? targetLanguage.displayName }
   var selectionContext: String?
   var favorite = false
   /// The follow-up thread the reader built on top of this result. Optional so
@@ -871,6 +939,19 @@ struct VocabularyEntry: Codable, Identifiable, Hashable, Sendable {
   /// Optional so that words saved before tagging existed still decode, and so
   /// that a tagging run that never succeeded leaves the entry as it was.
   var tags: VocabularyTags?
+  var dictionarySnapshot: DictionarySnapshot?
+  var resultLanguageName: String { dictionarySnapshot.map { DictionaryLanguages.name($0.definitionLanguage) } ?? targetLanguage.displayName }
+
+  func matchesIdentity(of other: VocabularyEntry) -> Bool {
+    if let saved = dictionarySnapshot, let incoming = other.dictionarySnapshot {
+      return saved.matches.first?.id == incoming.matches.first?.id
+        && saved.definitionLanguage == incoming.definitionLanguage
+        && saved.matches.first?.entry.senses.map(\.id) == incoming.matches.first?.entry.senses.map(\.id)
+    }
+    guard dictionarySnapshot == nil, other.dictionarySnapshot == nil else { return false }
+    return sourceLanguage == other.sourceLanguage && targetLanguage == other.targetLanguage
+      && word.localizedCaseInsensitiveCompare(other.word) == .orderedSame
+  }
 }
 
 /// One role-tagged message in an exchange with the provider.
@@ -1029,6 +1110,10 @@ struct SelectionSnapshot: Equatable, Sendable {
   var text: String
   var surroundingText: String?
   var screenRect: CGRect?
+  /// What the capture managed to read, for the context badge and the log.
+  /// Absent on the snapshots the individual accessibility reads produce; only
+  /// the resolved one the caller receives carries it.
+  var diagnostics: SelectionDiagnostics?
 }
 
 enum TranslationError: LocalizedError, Equatable {

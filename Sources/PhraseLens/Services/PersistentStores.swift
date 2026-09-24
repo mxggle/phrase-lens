@@ -6,12 +6,12 @@ final class JSONFileStore<Value: Codable & Sendable>: @unchecked Sendable {
   private var cached: Value?
   private var isDirectoryReady = false
 
-  init(filename: String) {
+  init(filename: String, directory: URL? = nil) {
     let appSupport = FileManager.default.urls(
       for: .applicationSupportDirectory,
       in: .userDomainMask
     )[0]
-    directoryURL = appSupport.appendingPathComponent(
+    directoryURL = directory ?? appSupport.appendingPathComponent(
       "PhraseLens",
       isDirectory: true
     )
@@ -62,9 +62,15 @@ extension JSONDecoder {
 }
 
 actor LibraryStore {
-  private let historyFile = JSONFileStore<[HistoryEntry]>(filename: "history.json")
-  private let vocabularyFile = JSONFileStore<[VocabularyEntry]>(filename: "vocabulary.json")
-  private let actionsFile = JSONFileStore<[TranslationAction]>(filename: "actions.json")
+  private let historyFile: JSONFileStore<[HistoryEntry]>
+  private let vocabularyFile: JSONFileStore<[VocabularyEntry]>
+  private let actionsFile: JSONFileStore<[TranslationAction]>
+
+  init(directory: URL? = nil) {
+    historyFile = JSONFileStore(filename: "history.json", directory: directory)
+    vocabularyFile = JSONFileStore(filename: "vocabulary.json", directory: directory)
+    actionsFile = JSONFileStore(filename: "actions.json", directory: directory)
+  }
 
   func history() throws -> [HistoryEntry] {
     try historyFile.load(default: [])
@@ -99,12 +105,13 @@ actor LibraryStore {
     var entry = entry
     var items = try vocabulary()
     if let index = items.firstIndex(where: {
-      $0.word.localizedCaseInsensitiveCompare(entry.word) == .orderedSame
+      $0.matchesIdentity(of: entry)
     }) {
       // Collecting a word twice replaces the explanation, and the fresh one is
       // what the next tagging run reads. Until that run lands the old filing is
       // still the best answer there is, so the card keeps its badges instead of
       // blanking and refilling.
+      entry.id = items[index].id
       entry.tags = entry.tags ?? items[index].tags
       items[index] = entry
     } else {

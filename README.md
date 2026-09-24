@@ -52,11 +52,13 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | Feature | Description |
 | :--- | :--- |
 | 🔍 **Global Selection Lookup** | Select text anywhere in Safari, Xcode, Slack, or any app and trigger a compact pop-up right next to your cursor. |
-| 🖥️ **Full Language Workspace** | Dedicated multi-tab workspace for translation, polishing, summarization, context explanation, and code analysis. |
+| 📖 **Offline Dictionary** | Japanese and English lookup with sourced Chinese definitions, readings, inflected forms, and source/license links. AI explanations are separate. Japanese coverage is limited; see [data coverage](docs/DICTIONARY_DATA.md). |
+| 🖥️ **Full Language Workspace** | Dedicated multi-tab workspace for translation, polishing, summarization, usage and context explanation, synonym comparison, and code analysis. |
 | 💬 **Follow-Up Questions** | Keep asking about a result — examples, nuance, collocations, grammar — with one-tap suggested questions. The thread is saved with the result and reopens with it from History. |
 | 📸 **Vision Screenshot OCR** | Snip any region on your screen to extract, recognize, and translate text instantly via Apple's Vision framework. |
 | ✍️ **In-Place Writing & Rewrite** | Translate or polish text directly inside any active, editable text field and replace it with a single keystroke. |
-| 🗣️ **Dual Speech Synthesizers** | Read source text aloud using high-fidelity **Microsoft Edge Neural TTS** or offline native **macOS System Voices**. |
+| 🗣️ **Dual Speech Synthesizers** | Read the source text *or the translation* aloud — each in its own language's voice — using high-fidelity **Microsoft Edge Neural TTS** or offline native **macOS System Voices**. |
+| 🈁 **Readings You Can Pronounce** | Words and short phrases come back with a reading: furigana for Japanese (`垂直な（すいちょくな）`), pinyin for Chinese (`词语（cíyǔ）`) — on the term you looked up and on the translation you have to say. |
 | 📚 **History & Vocabulary** | Automatically preserve search histories and manage personal vocabulary collections with quick search and restore. |
 | 🧩 **Custom Prompt Templates** | Create custom AI actions using dynamic variables: `${sourceLang}`, `${targetLang}`, `${text}`, and `${context}`. Duplicate any built-in action to start from its shipped prompt. |
 | 🎛️ **Menu Bar & Global Hotkeys** | Lightweight `MenuBarExtra` companion, customizable global Carbon shortcuts, and launch-at-login support. |
@@ -83,22 +85,17 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 
 ## 🤖 Supported AI Providers
 
-PhraseLens supports direct streaming connections to major cloud providers, local offline models, and custom endpoints:
+PhraseLens supports direct streaming connections to major cloud providers, local offline models, and custom endpoints. In Settings, **Refresh** reads the selected provider's current model catalog using your credential. You can also type a model ID that is not listed. The catalog is cached per provider and endpoint, and the app checks for updates after a day. Your selected model does not change automatically.
 
-| Provider | Type | Supported Models / Notes |
-| :--- | :---: | :--- |
-| **OpenAI** | Cloud | GPT-4o, GPT-4o-mini, o1, o3-mini, and compatible models |
-| **Anthropic Claude** | Cloud | Claude 3.5 Sonnet, Claude 3.7 Sonnet, Claude 3 Haiku |
-| **Google Gemini** | Cloud | Gemini 2.0 Flash, Gemini 1.5 Pro / Flash |
-| **Ollama** | Local / Offline | Fully private & offline (Llama 3, Qwen 2.5, DeepSeek-R1, Mistral, etc.) |
-| **DeepSeek** | Cloud | DeepSeek-V3, DeepSeek-R1 |
-| **Groq** | Cloud | Ultra-low latency inference (Llama, Gemma, Mixtral) |
-| **Moonshot (Kimi)** | Cloud | Moonshot v1 models with long context |
-| **MiniMax** | Cloud | MiniMax-Text-01 and chat models |
-| **Cohere** | Cloud | Command R, Command R+ |
-| **Azure OpenAI** | Cloud / Enterprise | Custom deployments & enterprise endpoints |
-| **TeamoRouter** | Router | Multi-model routing endpoint |
-| **Custom Endpoint** | Any | Any OpenAI-compatible REST endpoint (`/v1/chat/completions`) |
+| Provider | Model picker source |
+| :--- | :--- |
+| **OpenAI / ChatGPT API** | Platform Models API; ChatGPT sign-in uses the separate Codex account catalog |
+| **Claude, Gemini, Groq, DeepSeek, Moonshot (China), Kimi (international), MiniMax, Cohere, Cerebras, ChatGLM** | Each provider's model listing API |
+| **Ollama** | Models installed on the local Ollama server |
+| **Azure OpenAI** | Type the deployment name configured in Azure Portal |
+| **TeamoRouter / OpenAI-compatible** | The model listing API at the configured gateway, when available |
+
+New Kimi profiles use the international API endpoint. Existing provider endpoints and selected models stay as configured; check that the endpoint matches the region of your API key.
 
 ---
 
@@ -106,7 +103,7 @@ PhraseLens supports direct streaming connections to major cloud providers, local
 
 - **Operating System**: macOS 14.0 (Sonoma) or newer (macOS 15 Sequoia fully supported)
 - **Toolchain**: Swift 6.2 or Xcode 16+ (for compiling from source)
-- **API Access**: An API key from your preferred provider, or a local running [Ollama](https://ollama.com) instance
+- **API Access**: A provider API key, supported ChatGPT sign-in, or a local running [Ollama](https://ollama.com) instance
 
 ---
 
@@ -128,9 +125,11 @@ You only need to do this once. macOS remembers the choice for every later launch
 > [!NOTE]
 > Don't disable Gatekeeper system-wide to work around this. The steps above approve this one app and leave the rest of your Mac protected.
 
-### Granting permissions
+### First-run setup
 
-On first use PhraseLens asks for **Accessibility** permission, which is what lets it read the text you have selected in other apps and write replacements back. Grant it in **System Settings → Privacy & Security → Accessibility**. Screenshot OCR additionally uses **Screen Recording** permission.
+PhraseLens opens **Getting Started** on a fresh installation. Its five tabs cover Account, Connect, Model, Shortcuts, and Try it, with one task per tab and no page scrolling. Choose what you already have: a ChatGPT account, an OpenAI Platform API key, a key from another AI service, or Ollama on this Mac. The guide then shows the matching sign-in or key field and a model picker. OpenAI Platform keys come from the [API key dashboard](https://platform.openai.com/api-keys) and have separate billing from ChatGPT subscriptions. Ollama needs a running local server and a downloaded model instead of a key. Advanced Provider Settings remains available for custom configurations. Try the sample translation at the end; saved settings alone do not verify the connection.
+
+The guide then offers **Accessibility** permission for translating selections in other apps and replacing focused text. Typed translation works without it. **Screenshot OCR** needs **Screen Recording** permission when you first use that feature. Both permissions can be managed in **System Settings → Privacy & Security**. You can skip the guide and reopen **Getting Started** from the sidebar.
 
 ---
 

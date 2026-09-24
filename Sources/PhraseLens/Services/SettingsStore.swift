@@ -6,6 +6,7 @@ final class SettingsStore: ObservableObject {
   private static let settingsKey = "app-settings-v1"
   private static let providerConfigurationsKey = "provider-configurations-v1"
   private static let selectionCopyMigrationKey = "selection-copy-fallback-v1"
+  private static let setupGuideKey = "setup-guide-dismissed-v1"
 
   @Published var settings: AppSettings {
     didSet { persist() }
@@ -18,15 +19,20 @@ final class SettingsStore: ObservableObject {
   @Published private(set) var credentialError: String?
   @Published private(set) var hasLegacyKeychainCredentials = false
   @Published private(set) var isImportingLegacyCredentials = false
+  @Published private(set) var shouldShowSetupGuide: Bool
 
   private let defaults: UserDefaults
   private let credentials: CredentialStore
   private var providerConfigurations: [ProviderKind: ProviderConfiguration]
   private var authTask: Task<Void, Never>?
 
-  init(defaults: UserDefaults = .standard, credentials: CredentialStore = .shared) {
+  init(defaults: UserDefaults = .standard, credentials: CredentialStore = .shared, loadStoredCredentials: Bool = true) {
     self.defaults = defaults
     self.credentials = credentials
+    // Existing installations already have a settings document. Only a genuinely
+    // new installation opens the guide automatically; everyone can reopen it.
+    shouldShowSetupGuide = defaults.data(forKey: Self.settingsKey) == nil
+      && !defaults.bool(forKey: Self.setupGuideKey)
     if let data = defaults.data(forKey: Self.providerConfigurationsKey),
       let decoded = try? JSONDecoder().decode(
         [ProviderKind: ProviderConfiguration].self,
@@ -49,7 +55,30 @@ final class SettingsStore: ObservableObject {
       settings.useClipboardFallback = true
       defaults.set(true, forKey: Self.selectionCopyMigrationKey)
     }
-    loadCredentials()
+    if loadStoredCredentials { loadCredentials() }
+  }
+
+  var hasProviderCredential: Bool {
+    let provider = settings.provider
+    if provider.provider == .ollama { return true }
+    if provider.provider.supportsOAuth && provider.authMode == .oauthCodex {
+      return !(oauthCredentials?.accessToken.isEmpty ?? true)
+    }
+    return !apiKey.isEmpty
+  }
+
+  var hasBasicProviderConfiguration: Bool {
+    guard hasProviderCredential,
+      !settings.provider.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return false }
+    let provider = settings.provider
+    if provider.provider.supportsOAuth && provider.authMode == .oauthCodex { return true }
+    return (try? EndpointValidator.validate(provider.endpoint, provider: provider.provider)) != nil
+  }
+
+  func dismissSetupGuide() {
+    defaults.set(true, forKey: Self.setupGuideKey)
+    shouldShowSetupGuide = false
   }
 
   func selectProvider(_ provider: ProviderKind) {

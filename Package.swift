@@ -15,7 +15,8 @@ let package = Package(
   ],
   targets: [
     .executableTarget(
-      name: "PhraseLens"
+      name: "PhraseLens",
+      resources: [.copy("Resources/Dictionaries")]
     )
   ]
 )

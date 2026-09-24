@@ -63,7 +63,10 @@ final class SelectionPanelCoordinator {
     panel.setAccessibilityRole(NSAccessibility.Role.window)
     panel.setAccessibilitySubrole(NSAccessibility.Subrole.floatingWindow)
     panel.setAccessibilityLabel("Selection translation")
-    panel.isMovableByWindowBackground = true
+    // The panel is dragged by its header alone (`WindowDragArea`). Moving it
+    // by the background would mean every drag over the result moved the window
+    // instead of selecting the words it passed over.
+    panel.isMovableByWindowBackground = false
     panel.isReleasedWhenClosed = false
     panel.isFloatingPanel = true
     panel.becomesKeyOnlyIfNeeded = false
@@ -151,7 +154,7 @@ final class SelectionPanelCoordinator {
       NotificationCenter.default.removeObserver(moveObserver)
       self.moveObserver = nil
     }
-    if cancelsTranslation, model?.isTranslating == true {
+    if cancelsTranslation, model?.isTranslating == true || model?.isLookingUpDictionary == true {
       model?.stopTranslation()
     }
     model = nil
@@ -544,7 +547,8 @@ private struct SelectionPanelBody: View {
       // takes the Translate button off screen leaves nothing to recover with.
       // The accessibility case keeps the whole area, because its own recovery
       // route is already the only thing worth showing there.
-      if !model.isAccessibilityPermissionError, let error = model.errorMessage {
+      ResultTabBar()
+      if !model.isAccessibilityPermissionError, let error = model.visibleErrorMessage {
         failureNotice(error)
         Hairline()
       }
@@ -553,6 +557,16 @@ private struct SelectionPanelBody: View {
       footer
     }
     .floatingPanelBackground(palette)
+    .onChange(of: model.selectedResultTab) { _, _ in
+      copyResetTask?.cancel()
+      didCopy = false
+    }
+    .onChange(of: model.inputText) { _, _ in
+      copyResetTask?.cancel()
+      didCopy = false
+      isSourceExpanded = false
+    }
+    .onDisappear { copyResetTask?.cancel() }
     .onExitCommand {
       SelectionPanelCoordinator.shared.close()
     }
@@ -569,11 +583,16 @@ private struct SelectionPanelBody: View {
   /// to dismiss it. Everything else is a command and belongs in the footer.
   private var header: some View {
     HStack(spacing: AppSpacing.sm) {
+      // The mark and the title are labels, not controls: waving them through
+      // hands their share of the header to the drag handle behind them, so the
+      // strip grabs as one piece rather than only where it happens to be bare.
       AppLogo(size: 20)
+        .allowsHitTesting(false)
 
       Text("Selection")
         .font(AppFont.bodyMedium)
         .foregroundStyle(palette.foreground)
+        .allowsHitTesting(false)
 
       Spacer(minLength: AppSpacing.sm)
 
@@ -610,6 +629,7 @@ private struct SelectionPanelBody: View {
     }
     .padding(.horizontal, AppSpacing.md)
     .frame(height: AppMetrics.paneHeaderHeight)
+    .background(WindowDragArea())
   }
 
   // MARK: - Action
@@ -622,6 +642,7 @@ private struct SelectionPanelBody: View {
       get: { model.selectedActionID },
       set: { id in
         guard id != model.selectedActionID else { return }
+        model.resetDictionary()
         model.selectedActionID = id
         if !model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           model.translate()
@@ -648,6 +669,7 @@ private struct SelectionPanelBody: View {
         .fixedSize(horizontal: false, vertical: true)
         .textSelection(.enabled)
       Spacer(minLength: 0)
+      contextBadge
       if !model.inputText.isEmpty {
         expandSourceButton
       }
@@ -656,6 +678,28 @@ private struct SelectionPanelBody: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
     .animation(AppMotion.state(reduceMotion: reduceMotion), value: isSourceExpanded)
+  }
+
+  /// Whether the sentence around the selection came along.
+  ///
+  /// Explain in Context answers a different question when it did not, and
+  /// silently: the result reads like an ordinary explanation, and nothing on
+  /// screen says the reading is of the words alone rather than of the words
+  /// where they stand. This is that missing line.
+  @ViewBuilder
+  private var contextBadge: some View {
+    switch model.selectionContextState {
+    case .unused:
+      EmptyView()
+    case .captured:
+      Badge(text: "Context", variant: .success, symbol: "text.alignleft")
+        .help(model.selectionContextPreview ?? "The surrounding text was captured.")
+        .accessibilityLabel("Surrounding text captured")
+    case .missing:
+      Badge(text: "No context", variant: .warning, symbol: "exclamationmark.triangle.fill")
+        .help(model.selectionCaptureSummary)
+        .accessibilityLabel("No surrounding text was captured")
+    }
   }
 
   /// Capture is lossy — accessibility reads can come back partial and fall back
@@ -693,8 +737,10 @@ private struct SelectionPanelBody: View {
     Group {
       if model.isAccessibilityPermissionError {
         accessibilityPermissionMessage
-      } else if model.outputText.isEmpty, model.isTranslating {
-        message("Translating…", symbol: "ellipsis", tint: palette.mutedForeground)
+      } else if model.dictionaryVisible {
+        DictionaryResultsView()
+      } else if model.outputText.isEmpty, model.isTranslating || model.isLookingUpDictionary {
+        message(model.isTranslating ? "Translating…" : "Checking word…", symbol: "ellipsis", tint: palette.mutedForeground)
       } else if model.outputText.isEmpty {
         VStack(spacing: AppSpacing.md) {
           Text("Ready to translate")
@@ -709,7 +755,11 @@ private struct SelectionPanelBody: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
-        FollowingScrollView(isFollowing: model.isTranslating, trigger: model.outputText.utf8.count) {
+        // The panel has no follow-up thread: everything it streams is a
+        // result read from the top down, so the view stays where the reader
+        // put it rather than chasing the tail. Each new run clears the output
+        // and rebuilds this scroll view, which starts it back at the top.
+        ScrollView {
           Group {
             if model.outputUsesMarkdown {
               MarkdownText(model.outputText, baseFontSize: settingsStore.settings.fontSize)
@@ -725,6 +775,7 @@ private struct SelectionPanelBody: View {
           .padding(.vertical, AppSpacing.md - 2)
           .overlayScrollers()
         }
+        .scrollBounceBehavior(.basedOnSize)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -766,7 +817,7 @@ private struct SelectionPanelBody: View {
 
       HStack(spacing: AppSpacing.sm) {
         Button("Retry") {
-          model.translate()
+          model.translateWithAI(preserveDictionary: model.dictionaryAvailable)
         }
         .appButton(.secondary, size: .sm)
         .disabled(normalizedInputText.isEmpty)
@@ -803,46 +854,73 @@ private struct SelectionPanelBody: View {
 
   private var footer: some View {
     HStack(spacing: AppSpacing.xs) {
-      AppSelect(
-        title: "Target language",
-        selection: Binding(
-          get: { settingsStore.settings.targetLanguage },
-          set: { language in
-            guard language != settingsStore.settings.targetLanguage else { return }
-            settingsStore.settings.targetLanguage = language
-            if !model.inputText.isEmpty {
-              model.translate()
+      if !model.dictionaryVisible {
+        AppSelect(
+          title: "Target language",
+          selection: Binding(
+            get: { settingsStore.settings.targetLanguage },
+            set: { language in
+              guard language != settingsStore.settings.targetLanguage else { return }
+              settingsStore.settings.targetLanguage = language
+              if !model.inputText.isEmpty {
+                model.translateWithAI(preserveDictionary: model.dictionaryAvailable)
+              }
             }
-          }
-        ),
-        options: model.visibleTargetLanguages,
-        label: { $0.displayName },
-        size: .sm
-      )
+          ),
+          options: model.visibleTargetLanguages,
+          label: { $0.displayName },
+          size: .sm
+        )
+
+      } else {
+        Label("Offline", systemImage: "book.closed").font(AppFont.caption)
+          .foregroundStyle(palette.mutedForeground)
+      }
 
       Spacer(minLength: AppSpacing.xs)
 
-      IconButton(
-        title: isCurrentTextCollected
-          ? "Remove from Vocabulary"
-          : "Save selected word or phrase to Vocabulary",
-        symbol: isCurrentTextCollected ? "bookmark.fill" : "bookmark",
-        isDisabled: !isCurrentTextCollected && !canCollectCurrentText,
-        isOn: isCurrentTextCollected
-      ) {
-        model.toggleCollectCurrentWord()
+      if !model.dictionaryVisible {
+        IconButton(
+          title: isCurrentTextCollected
+            ? "Remove from Vocabulary"
+            : "Save selected word or phrase to Vocabulary",
+          symbol: isCurrentTextCollected ? "bookmark.fill" : "bookmark",
+          isDisabled: !isCurrentTextCollected && !canCollectCurrentText,
+          isOn: isCurrentTextCollected
+        ) {
+          model.toggleCollectCurrentWord()
+      }
       }
 
       IconButton(
-        title: model.speech.isSpeaking ? "Stop speaking" : "Speak selected text",
-        symbol: model.speech.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2",
+        title: model.isSpeaking(.source) ? "Stop speaking" : "Speak selected text",
+        symbol: model.isSpeaking(.source) ? "speaker.slash.fill" : "speaker.wave.2",
         isDisabled: model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       ) {
         model.speakInput()
       }
+      .accessibilityLabel("Speak selected text")
 
       IconButton(title: "Open the full translator window", symbol: "macwindow") {
         WindowCoordinator.showMain()
+      }
+
+      // Next to Copy, on the translation's own side of the footer: both
+      // commands act on the answer rather than on the selection.
+      if !model.dictionaryVisible {
+        IconButton(
+          title: model.isSpeaking(.result) ? "Stop speaking" : "Speak the translation",
+          // A speaker with a bubble: the answer being spoken, told apart at a
+          // glance from the plain speaker that reads the source text.
+          symbol: model.isSpeaking(.result) ? "speaker.slash.fill" : "speaker.wave.2.bubble.left",
+          // Half an answer is not worth hearing, but audio already playing when
+          // the next translation starts still has to be stoppable.
+          isDisabled: model.outputText.isEmpty
+            || (model.isTranslating && !model.isSpeaking(.result))
+        ) {
+          model.speakOutput()
+      }
+      .accessibilityLabel("Speak translation")
       }
 
       Button {
@@ -864,9 +942,9 @@ private struct SelectionPanelBody: View {
       }
       .appButton(.primary, size: .sm)
       .symbolEffect(.bounce, value: didCopy)
-      .disabled(model.outputText.isEmpty)
-      .help("Copy the translation")
-      .accessibilityLabel(didCopy ? "Copied" : "Copy the translation")
+      .disabled(!model.canCopyResult)
+      .help(model.dictionaryVisible ? "Copy dictionary entries with sources" : "Copy the translation")
+      .accessibilityLabel(didCopy ? "Copied" : (model.dictionaryVisible ? "Copy dictionary entries with sources" : "Copy the translation"))
     }
     .padding(.horizontal, AppSpacing.md)
     .frame(height: AppMetrics.paneFooterHeight + 6)

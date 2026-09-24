@@ -8,6 +8,15 @@ struct PhraseLensApp: App {
   @StateObject private var model: AppModel
 
   init() {
+    if CommandLine.arguments.contains("--dictionary-self-test") {
+      Task.detached {
+        let failures = await DictionarySelfTestRunner.run()
+        failures.forEach { print("DICTIONARY TEST FAILED: \($0)") }
+        if failures.isEmpty { print("DICTIONARY TEST PASSED") }
+        Darwin.exit(failures.isEmpty ? EXIT_SUCCESS : EXIT_FAILURE)
+      }
+      dispatchMain()
+    }
     if CommandLine.arguments.contains("--self-test") {
       let failures = SelfTestRunner.run()
       if failures.isEmpty {
@@ -17,7 +26,34 @@ struct PhraseLensApp: App {
       failures.forEach { print("SELF-TEST FAILED: \($0)") }
       Darwin.exit(EXIT_FAILURE)
     }
-    let model = AppModel()
+    let model: AppModel
+    #if DEBUG
+    if CommandLine.arguments.contains("--dictionary-preview") {
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PhraseLens-preview-\(UUID())")
+      let defaults = UserDefaults(suiteName: "PhraseLens-preview-\(UUID())")!
+      let settings = SettingsStore(defaults: defaults,
+        credentials: CredentialStore(directory: directory, defaults: defaults), loadStoredCredentials: false)
+      if CommandLine.arguments.contains("--preview-light") { settings.settings.theme = .light }
+      settings.dismissSetupGuide()
+      settings.settings.selectionPanelPinned = true
+      model = AppModel(settingsStore: settings, library: LibraryStore(directory: directory), integrateWithSystem: false)
+      let arguments = CommandLine.arguments
+      func previewValue(_ flag: String) -> String? {
+        guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
+        return arguments[index + 1]
+      }
+      model.inputText = previewValue("--preview-text") ?? "食べました"
+      if let result = previewValue("--preview-result") {
+        // Deterministic visual QA without credentials, network or user history.
+        model.outputText = result
+        model.selectResultTab(.translation)
+      } else {
+        model.translate()
+      }
+    } else { model = AppModel() }
+    #else
+    model = AppModel()
+    #endif
     _model = StateObject(wrappedValue: model)
     AppDelegate.sharedModel = model
   }
@@ -31,6 +67,13 @@ struct PhraseLensApp: App {
         .environmentObject(model.settingsStore)
         .environmentObject(model.modelCatalog)
         .frame(minWidth: AppMetrics.windowMinWidth, minHeight: AppMetrics.windowMinHeight)
+        .onAppear {
+          #if DEBUG
+          if CommandLine.arguments.contains("--dictionary-preview-panel") {
+            SelectionPanelCoordinator.shared.show(model: model)
+          }
+          #endif
+        }
     }
     .defaultSize(width: 1080, height: 720)
     // The app draws its own top bar, so the system title bar is hidden and the
@@ -113,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_: Notification) {
     NSWindow.allowsAutomaticWindowTabbing = false
     applyActivationPolicy()
+    ActiveApplicationTracker.shared.start()
     resignObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didResignActiveNotification,
       object: nil,
@@ -138,6 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       NotificationCenter.default.removeObserver(resignObserver)
     }
     GlobalHotKeyManager.shared.unregisterAll()
+    ActiveApplicationTracker.shared.stop()
   }
 
   func applicationDidBecomeActive(_: Notification) {

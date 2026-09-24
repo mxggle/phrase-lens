@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "ecdict-zh",
+  "name": "ECDICT 英汉词典",
+  "revision": "bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b",
+  "sourceLanguages": [
+    "en"
+  ],
+  "definitionLanguages": [
+    "zh"
+  ],
+  "attribution": "ECDICT · skywind3000 and contributors",
+  "license": "MIT",
+  "licenseURL": "https://github.com/skywind3000/ECDICT/blob/bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b/LICENSE",
+  "canPersist": true,
+  "canUseWithAI": true,
+  "sourceSHA256": "1a6947e04785db63613a92e14903cdae7954f7e84860b10e68e5c7cbb3f9c3cf",
+  "sourceURL": "https://github.com/skywind3000/ECDICT/blob/bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b/ecdict.csv",
+  "entries": 59137,
+  "selection": "exam-tagged, Oxford, Collins-rated, or BNC/FRQ rank <= 50000"
+}

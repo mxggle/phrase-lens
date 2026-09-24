@@ -399,7 +399,7 @@ private struct HistoryRow: View {
       HStack(spacing: AppSpacing.sm) {
         Badge(text: entry.actionName, variant: .neutral)
         Badge(
-          text: "\(entry.sourceLanguage.displayName) → \(entry.targetLanguage.displayName)",
+          text: "\(entry.sourceLanguage.displayName) → \(entry.resultLanguageName)",
           variant: .outline
         )
         if entry.favorite {
@@ -438,9 +438,9 @@ private struct HistoryRow: View {
       }
     }
     .accessibilityLabel(
-      "\(entry.sourceText). Translated: \(entry.translatedText). "
+      "\(entry.sourceText). \(entry.dictionarySnapshot == nil ? "Translated" : "Dictionary"): \(entry.translatedText). "
         + "\(entry.actionName), \(entry.sourceLanguage.displayName) to "
-        + entry.targetLanguage.displayName
+        + entry.resultLanguageName
     )
   }
 
@@ -873,7 +873,7 @@ private struct VocabularyRow: View {
       // rather than as a third thing to look at.
       HStack(spacing: AppSpacing.sm) {
         Badge(
-          text: "\(entry.sourceLanguage.displayName) → \(entry.targetLanguage.displayName)",
+          text: "\(entry.sourceLanguage.displayName) → \(entry.resultLanguageName)",
           variant: .outline
         )
         Spacer(minLength: AppSpacing.sm)

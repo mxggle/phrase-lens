@@ -6,6 +6,7 @@ struct TranslatorView: View {
   @Environment(\.palette) private var palette
   @Environment(\.layoutWidth) private var layoutWidth
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.openSettings) private var openSettings
 
   @FocusState private var inputFocused: Bool
   @State private var swapAngle = 0.0
@@ -31,6 +32,23 @@ struct TranslatorView: View {
 
   var body: some View {
     VStack(spacing: AppSpacing.md) {
+      if !settingsStore.hasBasicProviderConfiguration {
+        HStack(spacing: AppSpacing.sm) {
+          Image(systemName: "exclamationmark.circle")
+            .foregroundStyle(palette.warning)
+          Text("Connect a provider to use AI translation. Offline dictionary lookup is available now.")
+            .font(AppFont.caption)
+            .foregroundStyle(palette.secondaryForeground)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          Button("Set up provider") {
+            SettingsNavigation.show(.provider) { openSettings() }
+          }
+          .appButton(.outline, size: .sm)
+        }
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.vertical, AppSpacing.sm)
+        .cardSurface(palette)
+      }
       ResizableSplit(
         fraction: $splitFraction,
         leadingMin: AppMetrics.paneMinWidth,
@@ -56,6 +74,15 @@ struct TranslatorView: View {
     .padding(.bottom, AppSpacing.md)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(palette.background)
+    .onChange(of: model.selectedResultTab) { _, _ in
+      copyResetTask?.cancel()
+      didCopy = false
+    }
+    .onChange(of: model.inputText) { _, _ in
+      copyResetTask?.cancel()
+      didCopy = false
+    }
+    .onDisappear { copyResetTask?.cancel() }
     .animation(motion, value: model.isTranslating)
     .animation(motion, value: model.outputText.isEmpty)
     .animation(motion, value: model.followUps.count)
@@ -108,8 +135,8 @@ struct TranslatorView: View {
 
       PaneFooter {
         IconButton(
-          title: model.speech.isSpeaking ? "Stop speaking" : "Speak source text",
-          symbol: model.speech.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2",
+          title: model.isSpeaking(.source) ? "Stop speaking" : "Speak source text",
+          symbol: model.isSpeaking(.source) ? "speaker.slash.fill" : "speaker.wave.2",
           isDisabled: model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         ) {
           model.speakInput()
@@ -175,19 +202,28 @@ struct TranslatorView: View {
 
   private var resultPane: some View {
     PaneContainer {
+      ResultTabBar()
       PaneHeader(label: "Result") {
-        AppSelect(
-          title: "Target language",
-          selection: $settingsStore.settings.targetLanguage,
-          options: model.visibleTargetLanguages,
-          label: { $0.shortDisplayName }
-        )
+        if model.dictionaryVisible {
+          Label("Offline", systemImage: "book.closed").font(AppFont.caption)
+        } else {
+          AppSelect(
+            title: "Target language",
+            selection: $settingsStore.settings.targetLanguage,
+            options: model.visibleTargetLanguages,
+            label: { $0.shortDisplayName }
+          )
+        }
         if model.isTranslating {
           Spinner()
             .transition(.opacity)
         }
       } trailing: {
-        resultCommands
+        if model.dictionaryVisible {
+          IconButton(title: didCopy ? "Copied" : "Copy dictionary entries with sources", symbol: didCopy ? "checkmark" : "doc.on.doc", isDisabled: !model.canCopyResult) {
+            copyOutput()
+          }
+        } else { resultCommands }
       }
 
       resultBody
@@ -200,7 +236,7 @@ struct TranslatorView: View {
       // chips, field, buttons — under every answer. They are commands *on* the
       // result, so they read just as well from the pane's own strip, and the
       // question keeps the foot of the pane to itself.
-      if !model.outputText.isEmpty {
+      if !model.dictionaryVisible && !model.outputText.isEmpty {
         FollowUpComposer()
           .transition(.opacity)
       }
@@ -221,6 +257,22 @@ struct TranslatorView: View {
       }
       .accessibilityLabel(model.isCurrentWordCollected ? "Collected" : "Collect")
 
+      // The result is what a learner has to say out loud, so it speaks in the
+      // target language's voice rather than sharing the source pane's button.
+      IconButton(
+        title: model.isSpeaking(.result) ? "Stop speaking" : "Speak the translation",
+        // A speaker with a bubble: the answer being spoken, told apart at a
+        // glance from the plain speaker that reads the source text.
+        symbol: model.isSpeaking(.result) ? "speaker.slash.fill" : "speaker.wave.2.bubble.left",
+        // Half an answer is not worth hearing, but audio already playing when
+        // the next translation starts still has to be stoppable.
+        isDisabled: model.outputText.isEmpty
+          || (model.isTranslating && !model.isSpeaking(.result))
+      ) {
+        model.speakOutput()
+      }
+      .accessibilityLabel("Speak translation")
+
       IconButton(
         title: didCopy ? "Copied" : "Copy the translation (⇧⌘C)",
         symbol: didCopy ? "checkmark" : "doc.on.doc",
@@ -234,18 +286,25 @@ struct TranslatorView: View {
 
   @ViewBuilder
   private var resultBody: some View {
-    if model.outputText.isEmpty {
+    if model.dictionaryVisible {
+      DictionaryResultsView()
+    } else if model.outputText.isEmpty {
       EmptyState(
         symbol: model.isTranslating ? "ellipsis" : "character.bubble",
-        title: model.isTranslating ? "Translating…" : "No translation yet",
+        title: model.isTranslating ? "Translating…" : model.isLookingUpDictionary ? "Checking word…" : "No translation yet",
         message: model.inputText.isEmpty
           ? "Enter text on the left, or press ⌥F while text is selected in another app."
           : "Press ⌘↩ to translate."
       )
       .transition(.opacity)
     } else {
+      // Only the follow-up thread follows its stream. A translation or an
+      // analysis is read from the top down, so dragging the view along with
+      // the tokens pulls the opening lines away from someone who is still
+      // reading them; an answer to a question they just asked is the one
+      // thing they are waiting to see appear at the bottom.
       FollowingScrollView(
-        isFollowing: model.isTranslating || model.isAnsweringFollowUp,
+        isFollowing: model.isAnsweringFollowUp,
         trigger: model.resultLength
       ) {
         VStack(alignment: .leading, spacing: 0) {

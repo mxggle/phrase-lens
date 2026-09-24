@@ -1,11 +1,9 @@
 import Foundation
 
 struct ModelCatalogClient: Sendable {
-  /// Gemini pages its catalog and defaults to a small page, so a single
-  /// request silently hides most of the models. Everything else returns one
-  /// list.
-  private static let geminiPageSize = 200
-  private static let geminiPageLimit = 10
+  /// Gemini, Claude and Cohere all page their model catalogs.
+  private static let pageSize = 1_000
+  private static let pageLimit = 100
 
   func fetchModels(
     configuration: ProviderConfiguration,
@@ -21,15 +19,16 @@ struct ModelCatalogClient: Sendable {
       throw ModelCatalogError.missingAPIKey
     }
 
-    let baseURL = try modelListURL(for: configuration)
+    let baseURL = try Self.modelListURL(for: configuration)
     let session = makeSession(proxy: proxy)
     var collected: [String] = []
     var pageToken: String?
+    var seenPageTokens = Set<String>()
     var page = 0
 
     repeat {
       try Task.checkCancellation()
-      let url = try pagedURL(baseURL, provider: configuration.provider, pageToken: pageToken)
+      let url = try Self.pagedURL(baseURL, provider: configuration.provider, pageToken: pageToken)
       var request = URLRequest(url: url)
       request.httpMethod = "GET"
       request.timeoutInterval = 30
@@ -49,10 +48,15 @@ struct ModelCatalogClient: Sendable {
         throw ModelCatalogError.requestFailed(status: http.statusCode)
       }
       collected += try Self.parseModels(data, provider: configuration.provider)
-      pageToken =
-        configuration.provider == .gemini ? Self.parseNextPageToken(data) : nil
+      pageToken = try Self.nextPageToken(data, provider: configuration.provider)
+      if let pageToken, !seenPageTokens.insert(pageToken).inserted {
+        throw ModelCatalogError.invalidResponse
+      }
       page += 1
-    } while pageToken != nil && page < Self.geminiPageLimit
+      if pageToken != nil && page >= Self.pageLimit {
+        throw ModelCatalogError.tooManyPages
+      }
+    } while pageToken != nil
 
     let models = Self.deduplicated(collected)
     guard !models.isEmpty else { throw ModelCatalogError.noModels }
@@ -80,18 +84,16 @@ struct ModelCatalogClient: Sendable {
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
 
-    do {
-      let (data, response) = try await makeSession(proxy: proxy).data(for: request)
-      guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-        return CodexBackend.fallbackModels
-      }
-      let parsed = try Self.parseCodexModels(data)
-      return parsed.isEmpty ? CodexBackend.fallbackModels : parsed
-    } catch is CancellationError {
-      throw CancellationError()
-    } catch {
-      return CodexBackend.fallbackModels
+    let (data, response) = try await makeSession(proxy: proxy).data(for: request)
+    guard let http = response as? HTTPURLResponse else {
+      throw ModelCatalogError.invalidResponse
     }
+    guard (200..<300).contains(http.statusCode) else {
+      throw ModelCatalogError.requestFailed(status: http.statusCode)
+    }
+    let parsed = try Self.parseCodexModels(data)
+    guard !parsed.isEmpty else { throw ModelCatalogError.noModels }
+    return parsed
   }
 
   /// A model catalog row, kept with its publication date so the newest models
@@ -117,6 +119,7 @@ struct ModelCatalogClient: Sendable {
         guard methods?.contains("generateContent") != false else { return nil }
         guard let name = (row["name"] as? String)?.replacingOccurrences(of: "models/", with: "")
         else { return nil }
+        guard isChatCapable(name) else { return nil }
         return CatalogEntry(id: name, created: nil)
       }
     }
@@ -130,8 +133,18 @@ struct ModelCatalogClient: Sendable {
     }
     rows = (object["data"] ?? object["models"]) as? [[String: Any]] ?? []
     return rows.compactMap { row in
+      if row["active"] as? Bool == false || row["is_deprecated"] as? Bool == true {
+        return nil
+      }
+      if provider == .cohere,
+        let endpoints = row["endpoints"] as? [String],
+        !endpoints.contains("chat")
+      { return nil }
       guard let id = (row["id"] ?? row["name"] ?? row["model"]) as? String else { return nil }
       guard isChatCapable(id) else { return nil }
+      if (provider == .openAI || provider == .chatGPT),
+        (id.lowercased().hasSuffix("-pro") || id.lowercased().contains("deep-research"))
+      { return nil }
       return CatalogEntry(id: id, created: date(from: row["created"] ?? row["created_at"]))
     }
   }
@@ -142,6 +155,28 @@ struct ModelCatalogClient: Sendable {
       !token.isEmpty
     else { return nil }
     return token
+  }
+
+  static func nextPageToken(_ data: Data, provider: ProviderKind) throws -> String? {
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      throw ModelCatalogError.invalidResponse
+    }
+    switch provider {
+    case .gemini:
+      let token = object["nextPageToken"] as? String
+      return token?.isEmpty == true ? nil : token
+    case .cohere:
+      let token = object["next_page_token"] as? String
+      return token?.isEmpty == true ? nil : token
+    case .anthropic:
+      guard object["has_more"] as? Bool == true else { return nil }
+      guard let lastID = object["last_id"] as? String, !lastID.isEmpty else {
+        throw ModelCatalogError.invalidResponse
+      }
+      return lastID
+    default:
+      return nil
+    }
   }
 
   /// Model ids that no chat request can use. Providers list them alongside the
@@ -192,14 +227,29 @@ struct ModelCatalogClient: Sendable {
     return nil
   }
 
-  private func pagedURL(_ url: URL, provider: ProviderKind, pageToken: String?) throws -> URL {
-    guard provider == .gemini else { return url }
+  static func pagedURL(_ url: URL, provider: ProviderKind, pageToken: String?) throws -> URL {
+    guard provider == .gemini || provider == .anthropic || provider == .cohere else {
+      return url
+    }
     guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
       throw ModelCatalogError.invalidEndpoint
     }
-    var items = [URLQueryItem(name: "pageSize", value: String(Self.geminiPageSize))]
-    if let pageToken {
-      items.append(URLQueryItem(name: "pageToken", value: pageToken))
+    var items: [URLQueryItem]
+    switch provider {
+    case .gemini:
+      items = [URLQueryItem(name: "pageSize", value: String(Self.pageSize))]
+      if let pageToken { items.append(URLQueryItem(name: "pageToken", value: pageToken)) }
+    case .anthropic:
+      items = [URLQueryItem(name: "limit", value: String(Self.pageSize))]
+      if let pageToken { items.append(URLQueryItem(name: "after_id", value: pageToken)) }
+    case .cohere:
+      items = [
+        URLQueryItem(name: "page_size", value: String(Self.pageSize)),
+        URLQueryItem(name: "endpoint", value: "chat"),
+      ]
+      if let pageToken { items.append(URLQueryItem(name: "page_token", value: pageToken)) }
+    default:
+      return url
     }
     components.queryItems = items
     guard let paged = components.url else { throw ModelCatalogError.invalidEndpoint }
@@ -251,7 +301,7 @@ struct ModelCatalogClient: Sendable {
       .map(\.slug)
   }
 
-  private func modelListURL(for configuration: ProviderConfiguration) throws -> URL {
+  static func modelListURL(for configuration: ProviderConfiguration) throws -> URL {
     let endpoint = try EndpointValidator.validate(
       configuration.endpoint,
       provider: configuration.provider
@@ -277,6 +327,8 @@ struct ModelCatalogClient: Sendable {
       catalogSegments = replacingTerminalSegments(segments, terminal: ["v1", "messages"], with: ["v1", "models"])
     case .cohere:
       catalogSegments = replacingTerminalSegments(segments, terminal: ["v2", "chat"], with: ["v1", "models"])
+    case .miniMax:
+      catalogSegments = replacingTerminalSegments(segments, terminal: ["chat", "completions"], with: ["models"])
     default:
       catalogSegments = replacingTerminalSegments(segments, terminal: ["chat", "completions"], with: ["models"])
     }
@@ -285,7 +337,7 @@ struct ModelCatalogClient: Sendable {
     return url
   }
 
-  private func replacingTerminalSegments(
+  private static func replacingTerminalSegments(
     _ source: [String],
     terminal: [String],
     with replacement: [String]
@@ -345,6 +397,7 @@ enum ModelCatalogError: LocalizedError {
   case invalidResponse
   case requestFailed(status: Int)
   case noModels
+  case tooManyPages
 
   var errorDescription: String? {
     switch self {
@@ -355,6 +408,7 @@ enum ModelCatalogError: LocalizedError {
     case .invalidResponse: "The provider returned an invalid model catalog response."
     case .requestFailed(let status): "Fetching models failed with HTTP \(status)."
     case .noModels: "The provider returned no selectable models."
+    case .tooManyPages: "The provider returned too many model catalog pages."
     }
   }
 }

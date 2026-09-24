@@ -27,6 +27,8 @@ mkdir -p "${OUTPUT_DIR}"
 rm -rf "${APP_PATH}"
 mkdir -p "${APP_PATH}/Contents/MacOS" "${APP_PATH}/Contents/Resources"
 cp "${EXECUTABLE_PATH}" "${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
+# The dictionary loader uses the signed application's resources directory.
+cp -R "${BUILD_DIR}/release/PhraseLens_PhraseLens.bundle" "${APP_PATH}/Contents/Resources/PhraseLens_PhraseLens.bundle"
 # Keep SwiftPM's release binary unstripped for local crash symbolication, but
 # remove local symbols from the distributable copy before it is signed.
 /usr/bin/strip -x "${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"

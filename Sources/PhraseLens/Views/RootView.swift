@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
+  case setup
   case translator
   case history
   case vocabulary
@@ -10,6 +11,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
+    case .setup: "Getting Started"
     case .translator: "Translator"
     case .history: "History"
     case .vocabulary: "Vocabulary"
@@ -19,6 +21,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
   var symbol: String {
     switch self {
+    case .setup: "checklist"
     case .translator: "character.bubble"
     case .history: "clock.arrow.circlepath"
     case .vocabulary: "books.vertical"
@@ -30,6 +33,7 @@ enum AppSection: String, CaseIterable, Identifiable {
   /// for, so the window never shows a bare noun with no context.
   var caption: String {
     switch self {
+    case .setup: "Connect a provider, enable shortcuts, and try a translation"
     case .translator: "Translate, rewrite, and explain text"
     case .history: "Every translation saved on this Mac"
     case .vocabulary: "Words you collected while reading"
@@ -49,6 +53,7 @@ enum AppSection: String, CaseIterable, Identifiable {
   /// Sidebar grouping.
   var group: Group {
     switch self {
+    case .setup: .configure
     case .translator: .workspace
     case .history, .vocabulary: .library
     case .actions: .configure
@@ -111,12 +116,14 @@ struct RootView: View {
       WindowCoordinator.registerMainWindowOpener {
         openWindow(id: WindowCoordinator.mainWindowSceneID)
       }
+      if settingsStore.shouldShowSetupGuide { selection = .setup }
     }
+    .onChange(of: model.translatorFocusToken) { _, _ in selection = .translator }
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
     .alert(
       "PhraseLens",
       isPresented: Binding(
-        get: { model.errorMessage != nil },
+        get: { model.visibleErrorMessage != nil },
         set: { if !$0 { model.errorMessage = nil } }
       )
     ) {
@@ -130,7 +137,7 @@ struct RootView: View {
         Button("OK", role: .cancel) { model.errorMessage = nil }
       }
     } message: {
-      Text(model.errorMessage ?? "")
+      Text(model.visibleErrorMessage ?? "")
     }
   }
 
@@ -181,6 +188,9 @@ private struct Shell: View {
       Hairline()
       WidthReader { _, _ in
         switch selection {
+        case .setup: SetupGuideView {
+          selection = .translator
+        }
         case .translator: TranslatorView()
         case .history: HistoryView()
         case .vocabulary: VocabularyView()
@@ -205,6 +215,7 @@ private struct SidebarView: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
   @Environment(\.palette) private var palette
+  @Environment(\.openSettings) private var openSettings
 
   private var isCollapsed: Bool { mode == .rail }
 
@@ -311,6 +322,7 @@ private struct SidebarView: View {
 
   private func badgeText(for section: AppSection) -> String? {
     switch section {
+    case .setup: nil
     case .history: model.history.isEmpty ? nil : "\(model.history.count)"
     case .vocabulary: model.vocabulary.isEmpty ? nil : "\(model.vocabulary.count)"
     case .actions: model.customActions.isEmpty ? nil : "\(model.customActions.count)"
@@ -321,14 +333,16 @@ private struct SidebarView: View {
   // MARK: Provider
 
   private var isProviderConfigured: Bool {
-    settingsStore.settings.provider.provider == .ollama || !settingsStore.apiKey.isEmpty
+    settingsStore.hasBasicProviderConfiguration
   }
 
   @ViewBuilder
   private var providerCard: some View {
     let provider = settingsStore.settings.provider
 
-    SettingsLink {
+    Button {
+      SettingsNavigation.show(.provider) { openSettings() }
+    } label: {
       Group {
         if isCollapsed {
           StatusDot(color: isProviderConfigured ? palette.success : palette.warning)
@@ -369,7 +383,7 @@ private struct SidebarView: View {
     .help(
       isProviderConfigured
         ? "\(provider.provider.rawValue) · \(provider.model) — open Settings to change it"
-        : "No API key saved for \(provider.provider.rawValue) — open Settings"
+        : "Finish configuring \(provider.provider.rawValue) in Settings"
     )
     .accessibilityLabel(
       "Provider \(provider.provider.rawValue), model \(provider.model). Opens Settings."
@@ -455,7 +469,7 @@ private struct NavBarControls: View {
     switch section {
     case .translator:
       ActionTabBar(actions: model.visibleActions, selection: actionSelection)
-    case .history, .vocabulary, .actions:
+    case .setup, .history, .vocabulary, .actions:
       EmptyView()
     }
   }
@@ -464,6 +478,7 @@ private struct NavBarControls: View {
     Binding(
       get: { model.selectedActionID },
       set: { id in
+        model.resetDictionary()
         model.selectedActionID = id
         if settingsStore.settings.autoTranslate, !model.inputText.isEmpty {
           model.translate()
@@ -485,7 +500,7 @@ private struct NavBarActions: View {
     switch section {
     case .translator:
       translateButton
-    case .history, .vocabulary, .actions:
+    case .setup, .history, .vocabulary, .actions:
       EmptyView()
     }
   }
@@ -507,14 +522,14 @@ private struct NavBarActions: View {
           .font(.system(size: 11, weight: .semibold))
           .contentTransition(.symbolEffect(.replace))
         if !layoutWidth.isCompact {
-          Text(model.isTranslating ? "Stop" : "Translate")
+          Text(model.isTranslating ? "Stop" : model.primaryActionTitle)
         }
       }
     }
     .appButton(.primary, size: .md)
     .keyboardShortcut(.return, modifiers: [.command])
     .disabled(!model.isTranslating && isInputEmpty)
-    .help(model.isTranslating ? "Stop translating (⌘.)" : "Translate (⌘↩)")
-    .accessibilityLabel(model.isTranslating ? "Stop translating" : "Translate")
+    .help(model.isTranslating ? "Stop translating (⌘.)" : "\(model.primaryActionTitle) (⌘↩)")
+    .accessibilityLabel(model.isTranslating ? "Stop translating" : model.primaryActionTitle)
   }
 }
