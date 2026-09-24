@@ -1,0 +1,5 @@
+{
+  "enabled": true,
+  "command": "./scripts/release.sh",
+  "trigger": "after changes reach main"
+}

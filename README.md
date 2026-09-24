@@ -178,6 +178,24 @@ dist/
 └── PhraseLens.dmg      # Drag-and-drop installer disk image
 ```
 
+### Release automation
+
+After changes are merged to `main`, run `./scripts/release.sh --dry-run` to inspect
+the next version, then `./scripts/release.sh` to publish. The command chooses a
+SemVer bump from commit messages (`feat` = minor, `!` or `BREAKING CHANGE:` =
+major, other changes = patch), updates the app bundle version, `CHANGELOG.md`,
+and both landing pages, runs the self-tests, builds and signs universal DMG/ZIP
+artifacts, creates checksums, and atomically pushes the release commit and tag.
+It then creates the GitHub release. The existing Pages workflow deploys the
+landing pages when `main` changes.
+
+This local release command uses the Mac's code-signing identity and `gh`
+authentication. Optional Apple notarization uses `NOTARY_PROFILE` or the
+`NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, and `NOTARY_PASSWORD` variables supported
+by `package-app.sh`. Without those credentials the release remains signed but
+not notarized, as described above. If the GitHub asset upload fails after the
+tag is pushed, run `./scripts/release.sh --resume` from the same checkout.
+
 ---
 
 ## 🔒 Privacy and Security
