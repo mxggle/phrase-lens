@@ -412,18 +412,18 @@ struct TranslationClient: Sendable {
     guard let data = body.data(using: .utf8),
       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else {
-      return "Provider error \(status)."
+      return L10n.isChinese ? "服务商错误 (\(status))。" : "Provider error \(status)."
     }
     if let error = object["error"] as? [String: Any],
       let message = error["message"] as? String
     {
-      return "Provider error \(status): \(message)"
+      return L10n.isChinese ? "服务商错误 (\(status))：\(message)" : "Provider error \(status): \(message)"
     }
     // The ChatGPT backend reports failures in a `detail` field instead.
     if let detail = object["detail"] as? String {
-      return "Provider error \(status): \(detail)"
+      return L10n.isChinese ? "服务商错误 (\(status))：\(detail)" : "Provider error \(status): \(detail)"
     }
-    return "Provider error \(status)."
+    return L10n.isChinese ? "服务商错误 (\(status))。" : "Provider error \(status)."
   }
 }
 

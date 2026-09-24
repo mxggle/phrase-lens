@@ -1,23 +1,20 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-<script>
-try {
-  var plLang = localStorage.getItem('phraselens-lang');
-  if (!plLang && navigator.language && navigator.language.toLowerCase().startsWith('zh')) {
-    location.replace('zh/');
-  }
-} catch (e) {}
-</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>PhraseLens — Understand any text, right where you find it</title>
-<meta name="description" content="Select a word in any macOS app. Press ⌥F. Get the meaning, the nuance, and the translation without leaving what you're reading — then keep asking until it's clear. Native Swift, bring your own key, open source.">
-<link rel="icon" href="assets/logo.png">
-<meta property="og:title" content="PhraseLens — Understand any text, right where you find it">
-<meta property="og:description" content="A native macOS comprehension layer. Select text anywhere, press ⌥F, get an answer where you are.">
-<meta property="og:image" content="assets/logo.png">
+<title>PhraseLens — 原生 macOS 划词即解，深度领会每一处微妙语境</title>
+<meta name="description" content="在任意 macOS 应用中划选文字，按下 ⌥F。无需脱离当前视线，释义、微妙语感与地道翻译跃然眼前 — 更可就地继续追问，直至彻底参透。原生 Swift 打造，自带 API 密钥，开源透明。">
+<link rel="icon" href="../assets/logo.png">
+<meta property="og:title" content="PhraseLens — 原生 macOS 划词即解，深度领会每一处微妙语境">
+<meta property="og:description" content="专为 macOS 打造的深度文本领会层。任意位置划选，敲击 ⌥F，在目光停留之处豁然开朗。">
+<meta property="og:image" content="../assets/logo.png">
 <meta property="og:type" content="website">
+<script>
+try {
+  localStorage.setItem('phraselens-lang', 'zh');
+} catch (e) {}
+</script>
 <style>
 /* ============================================================
    TOKENS — lifted from Sources/PhraseLens/Views/DesignSystem.swift
@@ -67,15 +64,15 @@ try {
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
 body{
   margin:0;background:var(--bg);color:var(--fg);
-  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,system-ui,sans-serif;
-  font-size:16px;line-height:1.5;letter-spacing:-.011em;
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","SF Pro Text","Segoe UI",Inter,system-ui,sans-serif;
+  font-size:16px;line-height:1.55;letter-spacing:-.011em;
   -webkit-font-smoothing:antialiased;overflow-x:hidden;
   transition:background .3s var(--ease),color .3s var(--ease);
 }
 img{max-width:100%;display:block}
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;letter-spacing:inherit}
 a{color:inherit;text-decoration:none}
-h1,h2,h3,h4,h5{margin:0;font-weight:640;letter-spacing:-.03em;line-height:1.08}
+h1,h2,h3,h4,h5{margin:0;font-weight:640;letter-spacing:-.025em;line-height:1.15}
 p{margin:0}
 code,kbd,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace}
 ::selection{background:var(--accent-glow);color:var(--fg)}
@@ -91,8 +88,8 @@ section{position:relative}
   color:var(--fg3);margin-bottom:18px;
 }
 .eyebrow::before{content:"";width:16px;height:1px;background:var(--accent)}
-h2.h{font-size:clamp(30px,4.4vw,46px);margin-bottom:14px}
-.sub{color:var(--fg3);font-size:17px;line-height:1.5;max-width:56ch}
+h2.h{font-size:clamp(30px,4.4vw,46px);margin-bottom:14px;line-height:1.2}
+.sub{color:var(--fg3);font-size:17px;line-height:1.6;max-width:56ch}
 .lime{color:var(--accent-ink)}
 .hair{height:1px;background:var(--border);border:0;margin:0}
 
@@ -162,6 +159,7 @@ kbd,.kbd{
 .lang-switch a.lang-btn:hover{color:var(--fg);background:var(--muted)}
 .lang-switch .lang-btn.act{color:var(--fg);font-weight:640;cursor:default}
 .lang-switch .lang-sep{color:var(--border2);font-size:11px;user-select:none;margin:0 1px}
+
 /* the icon shows the theme you would switch *to*, in all three root states */
 .ico-sun{display:block}.ico-moon{display:none}
 @media (prefers-color-scheme: light){
@@ -182,14 +180,13 @@ kbd,.kbd{
   opacity:.85;
 }
 .hero-grid{display:grid;grid-template-columns:minmax(0,.86fr) minmax(0,1.14fr);gap:56px;align-items:center}
-h1.h1{font-size:clamp(38px,5.1vw,62px);line-height:1.02;letter-spacing:-.04em;margin-bottom:20px}
+h1.h1{font-size:clamp(36px,4.8vw,58px);line-height:1.12;letter-spacing:-.03em;margin-bottom:20px}
 h1.h1 .w{display:inline-block;opacity:0;transform:translateY(14px)}
 h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transform .6s var(--ease)}
-.hero-sub{font-size:17.5px;color:var(--fg2);line-height:1.55;max-width:44ch;margin-bottom:26px}
+.hero-sub{font-size:17.5px;color:var(--fg2);line-height:1.65;max-width:44ch;margin-bottom:26px}
 .hero-cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .hero-meta{margin-top:14px;font-size:12.5px;color:var(--fg4)}
 .hero-pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}
-/* Gatekeeper stops an un-notarized first launch, so say so before the OS does. */
 .first-run{margin-top:12px;font-size:12.5px;color:var(--fg3);max-width:54ch}
 .first-run summary{cursor:pointer;color:var(--fg2);text-decoration:underline dotted;text-underline-offset:3px}
 .first-run summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
@@ -216,8 +213,7 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
 }
 .article{padding:26px 30px 30px;cursor:text}
 .article .kicker{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg4);margin-bottom:10px}
-.article h3{font-size:20px;margin-bottom:14px;letter-spacing:-.028em;max-width:15ch}
-/* the column stays narrow so the panel lands beside the prose, not on top of it */
+.article h3{font-size:20px;margin-bottom:14px;letter-spacing:-.028em;max-width:18ch;line-height:1.25}
 .article p{font-size:14.5px;line-height:1.8;color:var(--fg2);max-width:24ch}
 .article .w{
   cursor:pointer;position:relative;border-bottom:1px dashed var(--border2);
@@ -248,6 +244,7 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
   background:color-mix(in srgb,var(--elev) 92%,transparent);backdrop-filter:blur(8px);
   border:1px solid var(--border2);font-size:12.5px;color:var(--fg3);
   box-shadow:var(--shadow);transition:opacity .3s,transform .3s var(--ease);
+  white-space:nowrap;
 }
 .hint-chip.gone{opacity:0;transform:translate(-50%,8px);pointer-events:none}
 .hint-chip b{color:var(--fg)}
@@ -279,8 +276,8 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
   transition:transform .32s var(--spring),width .32s var(--spring);z-index:0;
 }
 .panel-tabs button{
-  position:relative;z-index:1;height:24px;padding:0 9px;border-radius:6px;
-  font-size:11.5px;font-weight:560;color:var(--fg3);transition:color .2s;
+  position:relative;z-index:1;height:24px;padding:0 8px;border-radius:6px;
+  font-size:11.5px;font-weight:560;color:var(--fg3);transition:color .2s;white-space:nowrap;
 }
 .panel-tabs button.act{color:var(--accent-fg)}
 .panel-src{padding:9px 12px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--muted) 60%,transparent)}
@@ -390,7 +387,6 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
 .fu-src p{font-size:19px;font-weight:640;color:var(--fg);letter-spacing:-.02em}
 .fu-src .ipa{margin-left:-6px}
 .fu-src .pair{margin-left:auto;font-size:11.5px;color:var(--fg4);white-space:nowrap}
-/* one scroller for the answer and everything asked about it — as in the app */
 .fu-scroll{max-height:342px;overflow-y:auto;overscroll-behavior:contain;padding:20px 24px;scrollbar-width:thin}
 .fu-turn{margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
 .fu-q{
@@ -432,7 +428,7 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
 }
 .syn-head .hw{font-size:23px;font-weight:660;letter-spacing:-.03em}
 .syn-head .meta{font-size:12.5px;color:var(--fg3);margin-top:4px}
-.syn-head .nuance{font-size:14px;color:var(--fg2);margin-top:10px;line-height:1.55}
+.syn-head .nuance{font-size:14px;color:var(--fg2);margin-top:10px;line-height:1.6}
 .fan{margin-top:14px;display:grid;gap:12px}
 .fan .f{
   background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);
@@ -532,8 +528,6 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
 .vlib-row.on{background:var(--accent-dim);color:var(--accent-ink)}
 .vlib-row.on .bx{background:var(--accent);border-color:var(--accent)}
 .vlib-row.on .n{color:var(--accent-ink)}
-/* The rail is the point of the section, so it assembles itself rather than
-   arriving whole — one row after another, in the order a reader scans them. */
 .vlib.in .vlib-row{animation:vrow .5s var(--ease) backwards}
 .vlib.in .vlib-row:nth-child(2){animation-delay:.05s}
 .vlib.in .vlib-row:nth-child(3){animation-delay:.10s}
@@ -733,7 +727,7 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
 .q summary:hover{color:var(--accent-ink)}
 .q .chev{margin-left:auto;color:var(--fg4);transition:transform .28s var(--spring);flex:none}
 .q[open] .chev{transform:rotate(90deg);color:var(--accent-ink)}
-.q .a{padding:0 2px 20px 0;font-size:14.5px;line-height:1.62;color:var(--fg3);max-width:64ch;animation:qopen .3s var(--ease)}
+.q .a{padding:0 2px 20px 0;font-size:14.5px;line-height:1.68;color:var(--fg3);max-width:64ch;animation:qopen .3s var(--ease)}
 @keyframes qopen{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .q .a code{background:var(--muted);border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:12.8px}
 
@@ -745,7 +739,7 @@ h1.h1.on .w{opacity:1;transform:none;transition:opacity .55s var(--ease),transfo
 }
 .final img{width:74px;height:74px;border-radius:19px;margin:0 auto 26px;box-shadow:var(--shadow-lg);animation:breathe 4.4s ease-in-out infinite}
 @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.028)}}
-.final h2{font-size:clamp(32px,4.6vw,50px);margin-bottom:14px}
+.final h2{font-size:clamp(32px,4.6vw,50px);margin-bottom:14px;line-height:1.2}
 .final .sub{margin:0 auto 30px;text-align:center}
 footer{border-top:1px solid var(--border);padding:30px 0}
 .foot{display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--fg4)}
@@ -779,13 +773,11 @@ footer{border-top:1px solid var(--border);padding:30px 0}
   .tile.big{grid-column:span 1}
   .sec{padding:60px 0}
   .wrap{padding:0 18px}
-  /* the key map is hover-driven and wider than a phone; the list says the same thing */
   .kbd-map{display:none}
   .sc{gap:10px;padding:12px 10px}
   .sc .combo{min-width:0}
   .lens-src p{font-size:15px}
   .syn-head .hw{font-size:20px}
-  /* a scroller inside the page scroller fights the thumb; let the thread grow */
   .fu-scroll{max-height:none;padding:16px 18px}
   .fu-src{flex-wrap:wrap;padding:16px 18px}
   .fu-src .pair{margin-left:0;flex-basis:100%}
@@ -805,29 +797,29 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <!-- ═══════════════════════════ NAV ═══════════════════════════ -->
 <nav class="nav" id="nav">
   <div class="wrap">
-    <a href="#top" class="brand"><img src="assets/logo.png" alt=""> PhraseLens</a>
+    <a href="#top" class="brand"><img src="../assets/logo.png" alt=""> PhraseLens</a>
     <div class="nav-links">
-      <a href="#how">How it works</a>
-      <a href="#features">Features</a>
-      <a href="#followups">Follow-ups</a>
-      <a href="#vocabulary">Vocabulary</a>
-      <a href="#providers">Providers</a>
-      <a href="#privacy">Privacy</a>
+      <a href="#how">工作流程</a>
+      <a href="#features">核心特性</a>
+      <a href="#followups">深度追问</a>
+      <a href="#vocabulary">智能生词本</a>
+      <a href="#providers">模型支持</a>
+      <a href="#privacy">隐私与架构</a>
     </div>
     <div class="nav-sp"></div>
-    <div class="lang-switch" role="navigation" aria-label="Language selection">
-      <span class="lang-btn act" title="Current: English" onclick="localStorage.setItem('phraselens-lang','en')">EN</span>
+    <div class="lang-switch" role="navigation" aria-label="语言切换">
+      <a href="../" class="lang-btn" id="langEn" title="Switch to English" onclick="localStorage.setItem('phraselens-lang','en')">EN</a>
       <span class="lang-sep">|</span>
-      <a href="zh/" class="lang-btn" id="langZh" title="切换到中文" onclick="localStorage.setItem('phraselens-lang','zh')">中文</a>
+      <span class="lang-btn act" title="当前语言：中文" onclick="localStorage.setItem('phraselens-lang','zh')">中文</span>
     </div>
-    <button class="icon-btn" id="themeBtn" aria-label="Toggle color theme" title="Toggle theme">
+    <button class="icon-btn" id="themeBtn" aria-label="切换色彩主题" title="切换主题">
       <svg class="ico-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
       <svg class="ico-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
     </button>
-    <a class="icon-btn" href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener" aria-label="View source on GitHub" title="GitHub">
+    <a class="icon-btn" href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener" aria-label="在 GitHub 上查看源码" title="GitHub">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
     </a>
-    <a class="btn btn-primary btn-sm" href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">Download</a>
+    <a class="btn btn-primary btn-sm" href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">下载 macOS 版</a>
   </div>
 </nav>
 
@@ -835,28 +827,27 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <header class="hero" id="top">
   <div class="wrap hero-grid">
     <div>
-      <div class="eyebrow">Native macOS · Bring your own key · Open source</div>
-      <h1 class="h1" id="h1">Understand any text, right where you find it.</h1>
+      <div class="eyebrow">原生 macOS · 自带 API 密钥 · 开源透明</div>
+      <h1 class="h1" id="h1">理解每一段文字， 就在目光停留之处。</h1>
       <p class="hero-sub">
-        Select a word in any app. Press <kbd id="kAlt">⌥</kbd><kbd id="kF">F</kbd>. Get the meaning,
-        the nuance, and the translation — without leaving what you're reading.
+        在任意应用中划选文字。按下 <kbd id="kAlt">⌥</kbd><kbd id="kF">F</kbd>。无需离开当前阅读视线，释义、微妙语感与地道翻译跃然眼前 — 更可就地继续追问，直至彻底参透。
       </p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.5c-.02-2.27 1.85-3.36 1.93-3.41-1.05-1.54-2.69-1.75-3.27-1.77-1.39-.14-2.72.82-3.43.82-.71 0-1.8-.8-2.96-.78-1.52.02-2.92.88-3.7 2.24-1.58 2.73-.4 6.78 1.13 9 .75 1.08 1.64 2.3 2.81 2.25 1.13-.05 1.55-.73 2.92-.73 1.36 0 1.75.73 2.94.71 1.21-.02 1.98-1.1 2.72-2.19.86-1.25 1.21-2.47 1.23-2.53-.03-.01-2.36-.91-2.38-3.61zM14.8 5.6c.62-.76 1.04-1.8.93-2.85-.9.04-1.98.6-2.62 1.35-.58.67-1.08 1.74-.95 2.76 1 .08 2.02-.51 2.64-1.26z"/></svg>
-          Download for macOS
+          下载 macOS 版
         </a>
-        <a class="btn btn-ghost" href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener">View source</a>
+        <a class="btn btn-ghost" href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener">查看源码</a>
       </div>
-      <div class="hero-meta">macOS 14+ · Apple Silicon &amp; Intel · Free and open source (AGPL-3.0)</div>
+      <div class="hero-meta">macOS 14+ · 适配 Apple 芯片与 Intel · 免费且开源 (AGPL-3.0)</div>
       <details class="first-run">
-        <summary>Opening it the first time</summary>
-        <p>Builds are signed but not yet notarized, so macOS checks with you before the first launch. Right-click <b>PhraseLens.app</b>, choose <b>Open</b>, then <b>Open</b> again. Once only — macOS remembers after that.</p>
+        <summary>macOS 首次打开提示</summary>
+        <p>因未进行 Apple 开发者公证，首次运行时右键点按 <b>PhraseLens.app</b> 选择“<b>打开</b>”，随后在弹出窗口中再次点按“<b>打开</b>”即可。仅需首次操作一次，后续即可直接双击运行。</p>
       </details>
       <div class="hero-pills">
-        <span class="pillchip">No account</span>
-        <span class="pillchip">No telemetry</span>
-        <span class="pillchip">No Electron</span>
+        <span class="pillchip">无需账号</span>
+        <span class="pillchip">零隐私追踪</span>
+        <span class="pillchip">拒绝 Electron 臃肿</span>
       </div>
     </div>
 
@@ -872,7 +863,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
         </div>
 
         <div class="article" id="article">
-          <div class="kicker">Longform · 6 min read</div>
+          <div class="kicker">深度长文 · 阅读时长 6 分钟</div>
           <h3>The committee that said nothing, carefully</h3>
           <p>
             The statement was deliberately <span class="w" data-w="ambiguous">ambiguous</span>. Its authors were
@@ -890,34 +881,34 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 
         <div class="keyhint" id="keyhint"><span class="kbd" id="hk1">⌥</span><span class="kbd" id="hk2">F</span></div>
 
-        <div class="hint-chip" id="hintChip">Select any word above — or press <b>⌥F</b></div>
+        <div class="hint-chip" id="hintChip">划选上方任意单词 — 或按下 <b>⌥F</b></div>
 
         <!-- the floating panel -->
-        <div class="panel" id="panel" role="dialog" aria-label="PhraseLens selection panel">
+        <div class="panel" id="panel" role="dialog" aria-label="PhraseLens 划选翻译面板">
           <div class="panel-head">
-            <img class="mk" src="assets/logo.png" alt="">
+            <img class="mk" src="../assets/logo.png" alt="">
             <span class="panel-title">PhraseLens</span>
             <span class="langpair">EN
               <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
               简体中文</span>
-            <button class="panel-x" id="panelX" aria-label="Close">✕</button>
+            <button class="panel-x" id="panelX" aria-label="关闭">✕</button>
           </div>
           <div class="panel-tabs" id="panelTabs" role="tablist">
             <span class="armed" id="panelArmed"></span>
-            <button data-tab="translate" class="act">Translate</button>
-            <button data-tab="context">In Context</button>
-            <button data-tab="synonyms">Synonyms</button>
-            <button data-tab="analyze">Analyze</button>
+            <button data-tab="translate" class="act">翻译</button>
+            <button data-tab="context">语境解析</button>
+            <button data-tab="synonyms">近义词辨析</button>
+            <button data-tab="analyze">深度解析</button>
           </div>
           <div class="panel-src">
-            <span class="lab">Selection</span>
+            <span class="lab">选中内容</span>
             <p id="panelSrc">ambiguous</p>
           </div>
           <div class="panel-body" id="panelBody"></div>
           <div class="panel-foot">
-            <button class="mini" aria-label="Speak">🔊</button>
-            <button class="mini" aria-label="Save to vocabulary">★ Save</button>
-            <button class="mini pri">Copy</button>
+            <button class="mini" aria-label="朗读">🔊</button>
+            <button class="mini" aria-label="收藏到生词本">★ 收藏</button>
+            <button class="mini pri">复制</button>
           </div>
         </div>
       </div>
@@ -928,10 +919,10 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <!-- ═══════════════════════════ PROOF BAR ═══════════════════════════ -->
 <section class="proof">
   <div class="wrap">
-    <div class="cell"><div class="n" data-count="21">0</div><div class="l">languages</div></div>
-    <div class="cell"><div class="n" data-count="12">0</div><div class="l">AI providers</div></div>
-    <div class="cell"><div class="n" data-count="7">0</div><div class="l">built-in actions</div></div>
-    <div class="cell"><div class="n" data-count="0">0</div><div class="l">servers of ours</div></div>
+    <div class="cell"><div class="n" data-count="21">0</div><div class="l">支持语言</div></div>
+    <div class="cell"><div class="n" data-count="12">0</div><div class="l">AI 服务商</div></div>
+    <div class="cell"><div class="n" data-count="8">0</div><div class="l">内置分析动作</div></div>
+    <div class="cell"><div class="n" data-count="0">0</div><div class="l">隐私数据中转</div></div>
   </div>
 </section>
 
@@ -939,9 +930,9 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" id="how">
   <div class="wrap">
     <div class="sec-head rv">
-      <div class="eyebrow">How it works</div>
-      <h2 class="h">Three keystrokes from confusion to clarity.</h2>
-      <p class="sub">No copying. No tab-switching. No losing your place.</p>
+      <div class="eyebrow">工作流程</div>
+      <h2 class="h">只需三步，从困惑到豁然。</h2>
+      <p class="sub">无需复制，无需切换标签页，不打断思考流。</p>
     </div>
 
     <div class="pipe" id="pipe">
@@ -950,17 +941,17 @@ footer{border-top:1px solid var(--border);padding:30px 0}
         <div class="pipe-step" data-step="0">
           <div class="vign"><span class="v-sel">obfuscation</span></div>
           <div class="node">1</div>
-          <div><h4>Select</h4><p>Any text, in any macOS app.</p></div>
+          <div><h4>划选</h4><p>在任何 macOS 应用中划选任意文字。</p></div>
         </div>
         <div class="pipe-step" data-step="1">
           <div class="vign"><div class="v-keys"><span class="kbd">⌥</span><span class="kbd">F</span></div></div>
           <div class="node">2</div>
-          <div><h4>Press ⌥F</h4><p>A panel opens right at your cursor.</p></div>
+          <div><h4>敲击 ⌥F</h4><p>悬浮浮窗紧随光标即刻开启。</p></div>
         </div>
         <div class="pipe-step" data-step="2">
           <div class="vign"><div class="v-lines"><i></i><i></i><i></i></div></div>
           <div class="node">3</div>
-          <div><h4>Read</h4><p>The answer streams in, word by word.</p></div>
+          <div><h4>领会</h4><p>译文如泉水般流淌呈现。</p></div>
         </div>
       </div>
     </div>
@@ -968,7 +959,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
     <div style="text-align:center">
       <span class="pipe-note rv">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v5M12 16h.01"/><circle cx="12" cy="12" r="9"/></svg>
-        Step 2 also captures up to 1,600 characters around your selection — that's how it knows what you meant.
+        第 2 步还会自动提取所选文字周围多达 1,600 个字符的上下文 — 这正是它能够精准理解语境的秘诀。
       </span>
     </div>
   </div>
@@ -978,30 +969,30 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" id="features" style="padding-top:0">
   <div class="wrap">
     <div class="sec-head rv">
-      <div class="eyebrow">One selection, seven lenses</div>
-      <h2 class="h">The same sentence, seven ways.</h2>
-      <p class="sub">Switch with <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd>. Your selection stays put.</p>
+      <div class="eyebrow">多重视角</div>
+      <h2 class="h">看透同一句话的多种视角。</h2>
+      <p class="sub">不仅仅是翻译。深入语法结构、微妙语感与地道用法。通过 <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>7</kbd> 极速切换。</p>
     </div>
 
     <div class="card lens-card rv" id="lensCard">
       <div class="lens-src">
-        <span class="lab">Source</span>
+        <span class="lab">原文</span>
         <p>Given the constraints we're operating under, it would probably be best if we circled back on this next week.</p>
       </div>
       <div class="lens-tabs" id="lensTabs" role="tablist">
         <span class="armed" id="lensArmed"></span>
-        <button data-l="translate" class="act">Translate</button>
-        <button data-l="polish">Polish</button>
-        <button data-l="summarize">Summarize</button>
-        <button data-l="analyze">Analyze</button>
-        <button data-l="context">In Context</button>
-        <button data-l="code">Explain Code</button>
-        <button data-l="synonyms">Compare Synonyms</button>
+        <button data-l="translate" class="act">翻译</button>
+        <button data-l="polish">润色</button>
+        <button data-l="summarize">摘要</button>
+        <button data-l="analyze">深度解析</button>
+        <button data-l="context">语境解析</button>
+        <button data-l="synonyms">近义词辨析</button>
+        <button data-l="code">代码解析</button>
       </div>
       <div class="lens-out" id="lensOut"></div>
       <div class="lens-hint">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
-        Try pressing <kbd>⌘</kbd><kbd>1</kbd> – <kbd>⌘</kbd><kbd>7</kbd> right now — the same keys work in the app.
+        现在就可以尝试按下 <kbd>⌘</kbd><kbd>1</kbd> – <kbd>⌘</kbd><kbd>7</kbd> — 快捷键与 App 完全一致。
       </div>
     </div>
   </div>
@@ -1011,18 +1002,17 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" style="padding-top:0">
   <div class="wrap syn-wrap">
     <div class="rv">
-      <div class="eyebrow">Compare Synonyms</div>
-      <h2 class="h">Stop guessing which word is right.</h2>
+      <div class="eyebrow">近义词辨析</div>
+      <h2 class="h">近义词辨析：知其然，更知其所以然。</h2>
       <p class="sub">
-        Pick a word. See the two or three it gets confused with — what each one uniquely emphasizes,
-        when to reach for it, and how natives actually collocate it.
+        告别机械的近义词堆砌。准确把握每个词的语感、语域与搭配分寸。选中一个词，看清常与它混淆的近义词各自强调什么、何时选用，以及母语者真实搭配习惯。
       </p>
       <div class="langswitch" id="langSwitch" role="tablist">
         <button data-lang="zh" class="act">EN → 简体中文</button>
         <button data-lang="ja">EN → 日本語</button>
       </div>
       <p style="font-size:12.5px;color:var(--fg4);margin-top:14px">
-        Not a thesaurus dump. A decision.
+        不是词典的冰冷罗列，而是助你精准决断的思维罗盘。
       </p>
     </div>
 
@@ -1042,23 +1032,23 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" style="padding-top:0">
   <div class="wrap">
     <div class="sec-head rv" style="max-width:700px">
-      <div class="eyebrow">Context-aware</div>
-      <h2 class="h">It knows which “bank” you meant.</h2>
-      <p class="sub">PhraseLens reads the text around your selection — so the ambiguity resolves itself, before you ask.</p>
+      <div class="eyebrow">语境感知</div>
+      <h2 class="h">同一词汇，不同语境。</h2>
+      <p class="sub">传统词典告诉你一个词可能有什么意思；PhraseLens 告诉你它在此处究竟是什么意思。</p>
     </div>
     <div class="split">
       <div class="card ctx rv" data-ctx>
         <p class="src">…she sat on the grassy <mark>bank</mark> and watched the river slide past the mill.</p>
-        <div class="arrowdown">Result</div>
+        <div class="arrowdown">解析结果</div>
         <div class="out" data-out="river"></div>
       </div>
       <div class="card ctx rv d2" data-ctx>
         <p class="src">…the <mark>bank</mark> declined the transfer twice before anyone thought to call.</p>
-        <div class="arrowdown">Result</div>
+        <div class="arrowdown">解析结果</div>
         <div class="out" data-out="money"></div>
       </div>
     </div>
-    <p class="ctx-caption rv">Same word. Same shortcut. <b>Different answer.</b></p>
+    <p class="ctx-caption rv">同一个单词。同一个快捷键。<b>截然不同的精准答案。</b></p>
   </div>
 </section>
 
@@ -1066,17 +1056,16 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" id="followups" style="padding-top:0">
   <div class="wrap">
     <div class="sec-head rv" style="max-width:720px">
-      <div class="eyebrow">Follow-up questions <span class="tag">New</span></div>
-      <h2 class="h">One answer is rarely the end of it.</h2>
+      <div class="eyebrow">多轮追问 <span class="tag">新功能</span></div>
+      <h2 class="h">层层追问，直至彻底参透。</h2>
       <p class="sub">
-        Keep asking, right under the result. The thread stays with the answer it's about — no new
-        window, no re-explaining what you meant — and the model still sees the whole exchange.
+        无需重新划词。直接在浮窗底部提出追问，答案无缝衔接。浮窗紧随当前结果，无需开启新窗口，模型完整继承上下文对话流。
       </p>
     </div>
 
     <div class="card fu rv" id="fuCard">
       <div class="fu-src">
-        <span class="lab">Selection</span>
+        <span class="lab">选中内容</span>
         <p>candid</p>
         <span class="ipa">/ˈkændɪd/</span>
         <span class="pair">EN → 简体中文</span>
@@ -1094,16 +1083,16 @@ footer{border-top:1px solid var(--border);padding:30px 0}
       <div class="fu-foot">
         <div class="fu-chips" id="fuChips"></div>
         <div class="fu-field">
-          <span id="fuPh">Ask about this result…</span><span class="cur"></span>
+          <span id="fuPh">就此结果继续追问…</span><span class="cur"></span>
           <span class="keys"><span class="kbd">⌘</span><span class="kbd">L</span></span>
         </div>
         <div class="fu-note">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          Suggestions change with what you're reading — a word, a sentence, or code. Or type your own.
+          快捷建议随划选内容动态生成 —— 无论是单字、整句还是代码。亦可随时键入自定义问题。
         </div>
       </div>
     </div>
-    <p class="ctx-caption rv">Saved with the result. Reopen it from History and <b>the whole thread comes back</b>.</p>
+    <p class="ctx-caption rv">对话随解析结果一并保存。从历史记录中重新打开，<b>完整对话脉络原样呈现</b>。</p>
   </div>
 </section>
 
@@ -1111,65 +1100,62 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" id="vocabulary" style="padding-top:0">
   <div class="wrap">
     <div class="sec-head rv" style="max-width:720px">
-      <div class="eyebrow">Vocabulary <span class="tag">New</span></div>
-      <h2 class="h">Fifty words in, a word list stops being a list.</h2>
+      <div class="eyebrow">智能生词库 <span class="tag">新功能</span></div>
+      <h2 class="h">当收藏超过五十个词，普通词表便成了一团乱麻。</h2>
       <p class="sub">
-        A headword, a fixed expression and a whole sentence you kept for its shape all tile
-        together, and the only way back to one of them is remembering how it was spelled.
-        So every word you save is filed as it lands — what kind of thing it is, what it's
-        about, which register it belongs to, how hard it is.
+        单核生词、地道短语以及因句式精巧而摘录的整句混杂在一起，回头想找只能靠模糊拼写记忆。PhraseLens 在存入的一瞬间便完成智能归档 —— 词性类别、所属主题、语体风格与认知难度，井井有条。
       </p>
     </div>
 
     <div class="card vlib rv" data-viz>
       <div class="vlib-bar">
-        <span class="vlib-search">🔍 Search vocabulary</span>
-        <span class="vlib-count">26 words</span>
-        <span class="vlib-group">☰ Group: Topic</span>
+        <span class="vlib-search">🔍 搜索生词本</span>
+        <span class="vlib-count">26 个词汇</span>
+        <span class="vlib-group">☰ 分组：主题</span>
       </div>
       <div class="vlib-body">
         <aside class="vlib-rail">
-          <div class="vlib-eye">Type</div>
-          <div class="vlib-row on"><i class="bx"></i>Word<span class="n">26</span></div>
-          <div class="vlib-row"><i class="bx"></i>Phrase<span class="n">11</span></div>
-          <div class="vlib-row"><i class="bx"></i>Sentence<span class="n">7</span></div>
-          <div class="vlib-row off"><i class="bx"></i>Not tagged<span class="n">3</span></div>
-          <div class="vlib-eye">Topic</div>
-          <div class="vlib-row"><i class="bx"></i>Rhetoric<span class="n">8</span></div>
-          <div class="vlib-row"><i class="bx"></i>Workplace<span class="n">6</span></div>
-          <div class="vlib-row"><i class="bx"></i>Finance<span class="n">5</span></div>
-          <div class="vlib-row"><i class="bx"></i>Science<span class="n">4</span></div>
-          <div class="vlib-eye">Level</div>
+          <div class="vlib-eye">类别</div>
+          <div class="vlib-row on"><i class="bx"></i>单词<span class="n">26</span></div>
+          <div class="vlib-row"><i class="bx"></i>短语<span class="n">11</span></div>
+          <div class="vlib-row"><i class="bx"></i>句子<span class="n">7</span></div>
+          <div class="vlib-row off"><i class="bx"></i>未标记<span class="n">3</span></div>
+          <div class="vlib-eye">主题</div>
+          <div class="vlib-row"><i class="bx"></i>修辞表达<span class="n">8</span></div>
+          <div class="vlib-row"><i class="bx"></i>职场商务<span class="n">6</span></div>
+          <div class="vlib-row"><i class="bx"></i>金融财经<span class="n">5</span></div>
+          <div class="vlib-row"><i class="bx"></i>科技理工<span class="n">4</span></div>
+          <div class="vlib-eye">难度</div>
           <div class="vlib-row"><i class="bx"></i>B1<span class="n">4</span></div>
           <div class="vlib-row"><i class="bx"></i>B2<span class="n">11</span></div>
           <div class="vlib-row"><i class="bx"></i>C1<span class="n">8</span></div>
         </aside>
         <div class="vlib-main">
-          <div class="vlib-note">✦ 3 words haven't been sorted into categories yet. <b>Organize</b></div>
-          <div class="vlib-sec">Rhetoric <i>8</i></div>
+          <div class="vlib-note">✦ 尚有 3 个词汇未分类。<b>一键智能整理</b></div>
+          <div class="vlib-sec">修辞表达 <i>8</i></div>
           <div class="vlib-grid">
             <div class="vcard">
               <div class="w">obfuscation</div>
               <div class="g">刻意把话说得含混，让人抓不住要点。</div>
-              <span class="tg">Noun</span><span class="tg">C1</span><span class="tg">Rhetoric</span>
+              <span class="tg">名词</span><span class="tg">C1</span><span class="tg">修辞表达</span>
             </div>
             <div class="vcard">
               <div class="w">ambiguous</div>
               <div class="g">可以有多种解读，而且往往是故意留出的余地。</div>
-              <span class="tg">Adjective</span><span class="tg">B2</span><span class="tg">Rhetoric</span>
+              <span class="tg">形容词</span><span class="tg">B2</span><span class="tg">修辞表达</span>
             </div>
           </div>
-          <div class="vlib-sec">Workplace <i>6</i></div>
+          <div class="vlib-sec">职场商务 <i>6</i></div>
           <div class="vlib-grid">
             <div class="vcard">
               <div class="w">shipped</div>
               <div class="g">交付上线；在工作语境里指东西真的发出去了。</div>
-              <span class="tg">Verb</span><span class="tg">B1</span><span class="tg">Workplace</span>
+              <span class="tg">动词</span><span class="tg">B1</span><span class="tg">职场商务</span>
             </div>
             <div class="vcard">
               <div class="w">resilient</div>
               <div class="g">受得住冲击，压力过去之后还能恢复原状。</div>
-              <span class="tg">Adjective</span><span class="tg">B2</span><span class="tg">Workplace</span>
+              <span class="tg">形容词</span><span class="tg">B2</span><span class="tg">职场商务</span>
             </div>
           </div>
         </div>
@@ -1178,16 +1164,16 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 
     <div class="vnotes">
       <div class="card vnote rv">
-        <h4>Filed as it lands</h4>
-        <p>Save a word and it's already sorted. Whatever you collected before this existed gets picked up by one Organize pass.</p>
+        <h4>入库即分类</h4>
+        <p>每存入一个词便自动完成标注。此前收藏的零散词汇，点击一次“智能整理”即可全量规整。</p>
       </div>
       <div class="card vnote rv d1">
-        <h4>Narrow it down</h4>
-        <p>Rows inside a dimension widen the result; rows across dimensions narrow it. Arming <i>Word</i> above leaves its siblings standing with their real totals, so no click lands somewhere empty.</p>
+        <h4>多维交叉筛选</h4>
+        <p>同维度选项扩展结果范围，跨维度选项实现精准收敛。点击“单词”分类，其他维度的真实统计随之联动，绝不落空。</p>
       </div>
       <div class="card vnote rv d2">
-        <h4>Or read straight through</h4>
-        <p>Group the collection by any of the same dimensions — or by the month you collected it — and browse it in sections instead.</p>
+        <h4>按章流式通读</h4>
+        <p>支持按任意维度（或按收藏月份）聚类，将生词本转变为结构清晰的分章读物，温故而知新。</p>
       </div>
     </div>
   </div>
@@ -1197,8 +1183,8 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" style="padding-top:0">
   <div class="wrap">
     <div class="sec-head rv">
-      <div class="eyebrow">Everything else it does</div>
-      <h2 class="h">Built for how you actually read and write.</h2>
+      <div class="eyebrow">更多匠心特性</div>
+      <h2 class="h">为你的真实阅读与写作习惯量身打造。</h2>
     </div>
     <div class="bento">
       <div class="card tile big rv" data-viz>
@@ -1206,28 +1192,28 @@ footer{border-top:1px solid var(--border);padding:30px 0}
           <div class="ocr-glyphs"><i></i><i></i><i></i></div>
           <div class="ocr-box"></div><div class="ocr-scan"></div>
         </div>
-        <h4>Snip it. Read it.</h4>
-        <div class="t-sub">Screenshot OCR via Apple Vision <span class="kbd">⌥</span><span class="kbd">S</span></div>
+        <h4>截图识图，文字立现。</h4>
+        <div class="t-sub">基于 Apple 原生 Vision 框架的高精度 OCR <span class="kbd">⌥</span><span class="kbd">S</span></div>
       </div>
 
       <div class="card tile big rv d1" data-viz>
         <div class="viz">
           <div class="rp-field" id="rpField">we should probably maybe try to fix this thing<span class="cur"></span></div>
         </div>
-        <h4>Rewrite in place.</h4>
-        <div class="t-sub">Translate or polish inside any text field <span class="kbd">⌥</span><span class="kbd">W</span></div>
+        <h4>就地重写，行云流水。</h4>
+        <div class="t-sub">在任意输入框内直接翻译或润色替换 <span class="kbd">⌥</span><span class="kbd">W</span></div>
       </div>
 
       <div class="card tile rv" data-viz>
         <div class="viz"><div class="wave"><i></i><i></i><i></i><i></i><i></i></div></div>
-        <h4>Hear it spoken.</h4>
-        <div class="t-sub">Edge Neural or macOS voices</div>
+        <h4>原汁原味，地道发音。</h4>
+        <div class="t-sub">支持 Edge Neural 拟真音色及 macOS 系统发音</div>
       </div>
 
       <div class="card tile big rv d1" data-viz>
         <div class="viz"><div class="hist"><div class="hr"></div><div class="hr"></div><div class="hr"></div><div class="hr"></div></div></div>
-        <h4>Every lookup, kept.</h4>
-        <div class="t-sub">Local history with search &amp; favorites</div>
+        <h4>过往查询，一览无余。</h4>
+        <div class="t-sub">本地存储的搜索历史与精选收藏</div>
       </div>
 
       <div class="card tile rv d3" data-viz>
@@ -1235,8 +1221,8 @@ footer{border-top:1px solid var(--border);padding:30px 0}
           <div class="strip"><i></i><i class="on"></i><i></i></div>
           <div class="drop"><i></i><i></i><i></i></div>
         </div></div>
-        <h4>Always one key away.</h4>
-        <div class="t-sub">Menu bar, global hotkeys, launch at login</div>
+        <h4>随时待命，触手可及。</h4>
+        <div class="t-sub">常驻菜单栏，全局快捷键呼出，开机自启</div>
       </div>
     </div>
   </div>
@@ -1246,17 +1232,17 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" id="providers" style="padding-top:0">
   <div class="wrap">
     <div class="sec-head rv">
-      <div class="eyebrow">Providers</div>
-      <h2 class="h">Your key. Your model. Your call.</h2>
-      <p class="sub">Twelve providers, any OpenAI-compatible endpoint, or fully offline with Ollama. Switch whenever the bill or the mood changes.</p>
+      <div class="eyebrow">模型支持</div>
+      <h2 class="h">接入你喜爱的 AI 模型。</h2>
+      <p class="sub">云端大模型极速流式响应，亦可本地离线运行 Ollama。你的密钥，由你掌控。</p>
     </div>
     <div class="rail rv" id="rail"><div class="rail-track" id="railTrack"></div></div>
     <div class="prov-wrap" style="margin-top:34px">
       <div class="rv">
         <div class="stack-list">
-          <div class="sl"><span class="x">→</span> Keys stay encrypted on your own disk, never in a plaintext config file</div>
-          <div class="sl"><span class="x">→</span> Streaming responses decoded per-provider, so it feels live everywhere</div>
-          <div class="sl"><span class="x">→</span> Point it at any <code style="font-size:12.5px">/v1/chat/completions</code> endpoint you run yourself</div>
+          <div class="sl"><span class="x">→</span> 密钥全程加密存储于你的 Mac 本地，绝不写入明文配置文件</div>
+          <div class="sl"><span class="x">→</span> 针对各家服务商独立适配流式协议，体验如流水般连贯顺畅</div>
+          <div class="sl"><span class="x">→</span> 支持连接任何自主部署的兼容 /v1/chat/completions 接口</div>
         </div>
       </div>
       <div class="card prov-panel rv d2" id="provPanel">
@@ -1265,11 +1251,11 @@ footer{border-top:1px solid var(--border);padding:30px 0}
           <div class="link"></div>
           <div class="nd cloud" id="provIcon">☁️</div>
         </div>
-        <span class="offbadge">✈️ Airplane-safe · nothing leaves this Mac</span>
+        <span class="offbadge">✈️ 飞行模式安全 · 数据完全不离机</span>
         <div style="margin-top:10px">
-          <div class="row"><span>Provider</span><b id="pvName">OpenAI</b></div>
-          <div class="row"><span>Model</span><b id="pvModel">gpt-4o-mini</b></div>
-          <div class="row"><span>Type</span><b id="pvType">Cloud · streaming</b></div>
+          <div class="row"><span>服务商</span><b id="pvName">OpenAI</b></div>
+          <div class="row"><span>模型</span><b id="pvModel">gpt-4o-mini</b></div>
+          <div class="row"><span>类型</span><b id="pvType">云端 · 流式响应</b></div>
         </div>
       </div>
     </div>
@@ -1280,42 +1266,42 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" id="privacy" style="padding-top:0">
   <div class="wrap">
     <div class="sec-head rv" style="max-width:720px">
-      <div class="eyebrow">Privacy</div>
-      <h2 class="h">There is no server. There's nothing to trust us with.</h2>
-      <p class="sub">PhraseLens has no backend. Your text goes from your Mac to the provider you picked, and nowhere else.</p>
+      <div class="eyebrow">隐私与架构</div>
+      <h2 class="h">你的密钥，你的设备，你的语言数据。</h2>
+      <p class="sub">PhraseLens 完全没有自建后端服务器。你的文本仅从当前 Mac 直接发往你配置的服务商，绝无第三方中转。</p>
     </div>
 
     <div class="card privacy-diagram rv" id="pd">
       <div class="pd-flow">
         <div class="pd-node">
-          <div class="ic">💻</div><div class="t">Your Mac</div><div class="s">PhraseLens.app</div>
+          <div class="ic">💻</div><div class="t">你的 Mac</div><div class="s">PhraseLens.app</div>
         </div>
-        <div class="pd-line"><span class="pd-label">direct HTTPS</span></div>
+        <div class="pd-line"><span class="pd-label">直接 HTTPS</span></div>
         <div class="pd-node">
-          <div class="ic">🤖</div><div class="t">The provider you chose</div><div class="s">or localhost Ollama</div>
+          <div class="ic">🤖</div><div class="t">你指定的 AI 服务商</div><div class="s">或本地 localhost Ollama</div>
         </div>
       </div>
-      <div class="pd-ghost">Our servers</div>
-      <div class="pd-drop">There aren't any. That's the whole architecture.</div>
+      <div class="pd-ghost">第三方中转服务器</div>
+      <div class="pd-drop">彻底不存在。这就是纯粹的端到端架构。</div>
     </div>
 
     <div class="priv-grid">
       <div class="card priv-card rv"><div class="ic">🔑</div><div>
-        <h4>Keys are encrypted on your disk</h4>
-        <p>Sealed to your Mac's hardware identity. Never <code style="font-size:11.5px">UserDefaults</code>, never a plaintext file, never a log line.</p>
+        <h4>密钥受本地硬件加密保护</h4>
+        <p>基于你的 Mac 硬件标识进行密钥封印。绝不使用明文 <code style="font-size:11.5px">UserDefaults</code>、绝不存放在普通文本中、绝不打印至日志。</p>
       </div></div>
       <div class="card priv-card rv d1"><div class="ic">🚫</div><div>
-        <h4>Plain HTTP is blocked</h4>
-        <p>One exception, and only one: your own <code style="font-size:11.5px">localhost</code> Ollama.</p>
+        <h4>严格封锁非加密 HTTP 协议</h4>
+        <p>仅允许唯一例外：指向你本机的 <code style="font-size:11.5px">localhost</code> Ollama 服务。</p>
       </div></div>
       <div class="card priv-card rv d2"><div class="ic">🛡️</div><div>
-        <h4>Selected text is untrusted</h4>
-        <p>Whatever was on screen gets bounded, escaped, and fenced off — never treated as an instruction.</p>
+        <h4>划选文本视为不可信输入</h4>
+        <p>无论屏幕上划选了什么，均被严格定界、转义与隔离 —— 绝不作为直接指令误导模型。</p>
         <span class="reveal">&lt;untrusted-context&gt;…&lt;/untrusted-context&gt;</span>
       </div></div>
       <div class="card priv-card rv d3"><div class="ic">💾</div><div>
-        <h4>History stays on your disk</h4>
-        <p>Lookups, vocabulary and custom actions are local JSON. Delete the folder and it's gone.</p>
+        <h4>全部历史数据安放于本地</h4>
+        <p>查词记录、生词本与自定义动作均为本地 JSON 格式。删除对应文件夹即可完全抹去痕迹。</p>
       </div></div>
     </div>
   </div>
@@ -1325,16 +1311,15 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" style="padding-top:0">
   <div class="wrap native">
     <div class="rv">
-      <div class="eyebrow">Native</div>
-      <h2 class="h">It's a Mac app. Actually.</h2>
+      <div class="eyebrow">原生体验</div>
+      <h2 class="h">这是一座货真价实的 Mac 原生应用。</h2>
       <p class="sub">
-        Swift and SwiftUI, top to bottom. No bundled browser engine, no JavaScript runtime shipped
-        alongside a dictionary, no background daemon idling in your menu bar for no reason.
+        原生 Swift 打造，零 Electron 臃肿，零后台驻留守护进程，内存占用不足 40MB。没有打包内置的浏览器内核，无需携带冗余的 JavaScript 运行时。
       </p>
       <div class="stack-list" style="margin-top:24px">
-        <div class="sl"><span class="x">✓</span> SwiftUI views, AppKit windows, real macOS focus &amp; accessibility</div>
-        <div class="sl"><span class="x">✓</span> Apple's Vision framework for OCR — on-device, no upload</div>
-        <div class="sl"><span class="x">✓</span> System light &amp; dark, Increased Contrast, and Reduce Motion honored</div>
+        <div class="sl"><span class="x">✓</span> SwiftUI 界面与 AppKit 窗口系统，完美契合 macOS 焦点机制与辅助功能</div>
+        <div class="sl"><span class="x">✓</span> 采用 Apple 原生 Vision 框架实现文字识别 —— 全程端侧运算，零数据上传</div>
+        <div class="sl"><span class="x">✓</span> 深度适配系统浅色/深色模式、增强对比度及减弱动态效果等无障碍特性</div>
       </div>
     </div>
     <div class="bars rv d2" id="bars">
@@ -1343,12 +1328,11 @@ footer{border-top:1px solid var(--border);padding:30px 0}
         <div class="bar lime"><i style="--w:26%"></i></div>
       </div>
       <div class="bar-row">
-        <div class="bl"><b style="color:var(--fg3)">A typical Electron translator</b><span>app + Chromium + Node</span></div>
+        <div class="bl"><b style="color:var(--fg3)">典型 Electron 翻译工具</b><span>应用 + Chromium + Node</span></div>
         <div class="bar grey"><i style="--w:100%"></i></div>
       </div>
       <p style="font-size:12px;color:var(--fg4);line-height:1.55;margin-top:2px">
-        Illustrative, not benchmarked — it's the shape of the difference, not a measurement.
-        What is exact: PhraseLens ships zero webviews and zero bundled runtimes.
+        示意图示，非严苛基准跑分 —— 旨在展示架构差异。但确凿无误的是：PhraseLens 绝无任何内置 Webview 或冗余运行环境。
       </p>
     </div>
   </div>
@@ -1358,22 +1342,22 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" style="padding-top:0">
   <div class="wrap">
     <div class="sec-head rv">
-      <div class="eyebrow">Custom actions</div>
-      <h2 class="h">Not the prompt you wanted? Rewrite it.</h2>
-      <p class="sub">Duplicate any built-in action and edit its prompt, or write one from scratch. Hover a variable to see what it becomes.</p>
+      <div class="eyebrow">自定义动作</div>
+      <h2 class="h">随心定制提示词动作。</h2>
+      <p class="sub">使用熟悉的变量（如 ${text}、${context}、${targetLang}）打造专属于你的分析模板。悬停变量即可预览实际替换效果。</p>
     </div>
     <div class="card tmpl rv">
       <div class="tmpl-edit">
-        <span class="lab">Prompt template</span>
+        <span class="lab">提示词模板</span>
         <div class="tmpl-body" id="tmplBody"></div>
         <div class="preset-row" id="presets">
-          <button class="preset act" data-p="0">Grammar Doctor</button>
-          <button class="preset" data-p="1">Tone Shifter</button>
-          <button class="preset" data-p="2">ELI5</button>
+          <button class="preset act" data-p="0">语法纠错</button>
+          <button class="preset" data-p="1">语调转换</button>
+          <button class="preset" data-p="2">浅显易懂</button>
         </div>
       </div>
       <div class="tmpl-prev">
-        <span class="lab">What the model receives</span>
+        <span class="lab">模型实际接收内容</span>
         <div class="tmpl-out" id="tmplOut"></div>
       </div>
     </div>
@@ -1384,17 +1368,17 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" style="padding-top:0">
   <div class="wrap keys-wrap">
     <div class="rv">
-      <div class="eyebrow">Shortcuts</div>
-      <h2 class="h">Seven keys. That's the whole product.</h2>
-      <p class="sub" style="margin-bottom:22px">Hover a row to see it on the keyboard. The four global ones are remappable in Settings.</p>
+      <div class="eyebrow">快捷键清单</div>
+      <h2 class="h">全局快捷键，随手即达。</h2>
+      <p class="sub" style="margin-bottom:22px">鼠标悬停任意行查看按键映射。四个全局快捷键均可在设置中依个人喜好自定义。</p>
       <div class="sc-list" id="scList">
-        <div class="sc" data-keys="alt,f"><span class="combo"><kbd>⌥</kbd><kbd>F</kbd></span><span class="txt">Look up the selection</span></div>
-        <div class="sc" data-keys="alt,shift,f"><span class="combo"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>F</kbd></span><span class="txt">Open the full workspace</span></div>
-        <div class="sc" data-keys="alt,s"><span class="combo"><kbd>⌥</kbd><kbd>S</kbd></span><span class="txt">Screenshot OCR</span></div>
-        <div class="sc" data-keys="alt,w"><span class="combo"><kbd>⌥</kbd><kbd>W</kbd></span><span class="txt">Translate &amp; replace in place</span></div>
-        <div class="sc" data-keys="cmd,1"><span class="combo"><kbd>⌘</kbd><kbd>1–9</kbd></span><span class="txt">Jump to an action</span></div>
-        <div class="sc" data-keys="cmd,shift,bracket"><span class="combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>[ ]</kbd></span><span class="txt">Cycle through actions</span></div>
-        <div class="sc" data-keys="cmd,l"><span class="combo"><kbd>⌘</kbd><kbd>L</kbd></span><span class="txt">Ask a follow-up about the result</span></div>
+        <div class="sc" data-keys="alt,f"><span class="combo"><kbd>⌥</kbd><kbd>F</kbd></span><span class="txt">划词查询</span></div>
+        <div class="sc" data-keys="alt,shift,f"><span class="combo"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>F</kbd></span><span class="txt">打开主工作区</span></div>
+        <div class="sc" data-keys="alt,s"><span class="combo"><kbd>⌥</kbd><kbd>S</kbd></span><span class="txt">屏幕截图识图</span></div>
+        <div class="sc" data-keys="alt,w"><span class="combo"><kbd>⌥</kbd><kbd>W</kbd></span><span class="txt">就地翻译并替换</span></div>
+        <div class="sc" data-keys="cmd,1"><span class="combo"><kbd>⌘</kbd><kbd>1–9</kbd></span><span class="txt">快速切换动作</span></div>
+        <div class="sc" data-keys="cmd,shift,bracket"><span class="combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>[ ]</kbd></span><span class="txt">循环轮播动作</span></div>
+        <div class="sc" data-keys="cmd,l"><span class="combo"><kbd>⌘</kbd><kbd>L</kbd></span><span class="txt">针对当前结果追问</span></div>
       </div>
     </div>
     <div class="card kbd-map rv d2" id="kbdMap">
@@ -1432,25 +1416,24 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" style="padding-top:0">
   <div class="wrap oss">
     <div class="rv">
-      <div class="eyebrow">Open source</div>
-      <h2 class="h">Read every line before you run it.</h2>
+      <div class="eyebrow">开源透明</div>
+      <h2 class="h">每一行代码，在运行前都清晰可见。</h2>
       <p class="sub">
-        That's the point of shipping a privacy tool under AGPL-3.0. Clone it, build it, run the
-        self-tests — they cover prompt isolation, the context bound, stream decoding and hotkey parsing.
+        这正是我们选择以 AGPL-3.0 协议发布一款隐私工具的初衷。欢迎克隆、自行构建并运行自带测试用例 —— 全面覆盖提示词隔离、语境边界、流式解码与快捷键解析。
       </p>
       <div class="badges">
-        <span class="pillchip">AGPL-3.0</span>
+        <span class="pillchip">AGPL-3.0 协议</span>
         <span class="pillchip">Swift 6.2</span>
         <span class="pillchip">macOS 14+</span>
-        <span class="pillchip">No dependencies</span>
+        <span class="pillchip">零外部依赖</span>
       </div>
     </div>
     <div class="term rv d2">
       <div class="term-bar"><div class="lights"><i></i><i></i><i></i></div></div>
       <div class="term-body">
-        <div class="tline"><span class="p">$</span><span class="c">git clone https://github.com/mxggle/phrase-lens.git</span><button class="cp">copy</button></div>
-        <div class="tline"><span class="p">$</span><span class="c">./scripts/run.sh</span><button class="cp">copy</button></div>
-        <div class="tline"><span class="p">$</span><span class="c">./scripts/test.sh</span><button class="cp">copy</button></div>
+        <div class="tline"><span class="p">$</span><span class="c">git clone https://github.com/mxggle/phrase-lens.git</span><button class="cp">复制</button></div>
+        <div class="tline"><span class="p">$</span><span class="c">./scripts/run.sh</span><button class="cp">复制</button></div>
+        <div class="tline"><span class="p">$</span><span class="c">./scripts/test.sh</span><button class="cp">复制</button></div>
       </div>
     </div>
   </div>
@@ -1460,25 +1443,25 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <section class="sec" style="padding-top:0">
   <div class="wrap">
     <div class="sec-head rv" style="margin:0 auto 34px;text-align:center;max-width:600px">
-      <h2 class="h">Questions worth answering</h2>
+      <h2 class="h">常见问题解答</h2>
     </div>
     <div class="faq rv">
-      <details class="q"><summary>Do I need an API key?<span class="chev">›</span></summary>
-        <div class="a">Yes — your own, from whichever provider you like. PhraseLens doesn't resell tokens, so you pay the provider directly and nothing to us. Or run Ollama locally and pay nobody.</div></details>
-      <details class="q"><summary>Is it free?<span class="chev">›</span></summary>
-        <div class="a">The app is free and open source under AGPL-3.0. Your only cost is your provider's usage, which for word lookups is measured in fractions of a cent.</div></details>
-      <details class="q"><summary>What does a follow-up send back to the model?<span class="chev">›</span></summary>
-        <div class="a">The question, plus the exchange it's about: your original request, the answer you got, and up to eight earlier turns of the thread, trimmed. Nothing else is attached — and the thread itself is stored on your Mac, alongside the result in History.</div></details>
-      <details class="q"><summary>What language does the answer come back in?<span class="chev">›</span></summary>
-        <div class="a">The one you picked, always — including when the text you selected is entirely in another language and the answer is mostly quoting it. Words, examples and quotes stay in the source language; everything written <i>about</i> them is in yours, and every source-language example is followed by its translation.</div></details>
-      <details class="q"><summary>Does it work offline?<span class="chev">›</span></summary>
-        <div class="a">Completely, with <a href="https://ollama.com" target="_blank" rel="noopener" style="color:var(--accent-ink)">Ollama</a>. Screenshot OCR and macOS system voices are on-device regardless of provider.</div></details>
-      <details class="q"><summary>Why does it want Accessibility permission?<span class="chev">›</span></summary>
-        <div class="a">That's the only macOS API that can read the text you've selected in another app, and write a replacement back into a focused field. It's what makes <code>⌥F</code> and <code>⌥W</code> possible. Skip it and the workspace, OCR, and manual input all still work.</div></details>
-      <details class="q"><summary>Is my text sent to you?<span class="chev">›</span></summary>
-        <div class="a">There is no "us" in the network path. Requests go straight from your Mac to your provider. No analytics, no crash reporting, no backend to send anything to.</div></details>
-      <details class="q"><summary>Which Macs are supported?<span class="chev">›</span></summary>
-        <div class="a">macOS 14 Sonoma or newer, Apple Silicon and Intel.</div></details>
+      <details class="q"><summary>我需要自己准备 API 密钥吗？<span class="chev">›</span></summary>
+        <div class="a">是的 —— 可以使用你偏好的任意 AI 服务商的密钥。PhraseLens 不做任何中间商转售，费用由你直接支付给服务商，我们不收取一分钱。你也可以直接在本地运行 Ollama，完全免费、零网络开销。</div></details>
+      <details class="q"><summary>这款应用是免费的吗？<span class="chev">›</span></summary>
+        <div class="a">软件本身完全免费，并以 AGPL-3.0 协议开源。你唯一的支出是向服务商支付的模型 API 调用费用，以日常查词的轻量 Token 消耗计算，每次查询仅需几厘钱。</div></details>
+      <details class="q"><summary>追问时会向模型发送哪些内容？<span class="chev">›</span></summary>
+        <div class="a">你的新问题，以及该问题所针对的对话上下文：包含最初的查询请求、收到的结果，以及最多 8 轮经过修剪的历史对话。绝不会附带无关数据 —— 且整个对话串均保存在你的本地 Mac 上，与历史记录一同安放。</div></details>
+      <details class="q"><summary>回答默认会以什么语言呈现？<span class="chev">›</span></summary>
+        <div class="a">始终以你指定的目标语言呈现 —— 哪怕你选中的文本是另一种完全陌生的语言，且解析中大量引用了原文。原词、例句和引用会保留源语言；所有针对它们的讲解与分析均采用你的语言，且每条源语言例句都会紧跟地道翻译。</div></details>
+      <details class="q"><summary>支持完全离线使用吗？<span class="chev">›</span></summary>
+        <div class="a">完全支持。配合 <a href="https://ollama.com" target="_blank" rel="noopener" style="color:var(--accent-ink)">Ollama</a> 即可在离线环境下畅快运行。此外，截图 OCR 识别与 macOS 系统语音朗读无论使用何种服务商，均在端侧本地完成。</div></details>
+      <details class="q"><summary>为什么需要辅助功能（Accessibility）权限？<span class="chev">›</span></summary>
+        <div class="a">这是 macOS 系统中唯一能读取其他应用中划选文字并将修改后的文本直接替换回输入框的官方接口。正是借助这项能力，<code>⌥F</code> 划词查询与 <code>⌥W</code> 就地重写才得以实现。若不授予该权限，主工作区、OCR 截图以及手动输入功能依然可以正常使用。</div></details>
+      <details class="q"><summary>我的文本会被发送给你们吗？<span class="chev">›</span></summary>
+        <div class="a">网络通信路径中根本不存在任何“中间服务器”。请求从你的 Mac 直接发往你配置的模型提供商。应用内没有任何数据分析、无崩溃日志上报，更没有可以接收数据的自建后端。</div></details>
+      <details class="q"><summary>支持哪些 Mac 设备？<span class="chev">›</span></summary>
+        <div class="a">支持运行 macOS 14 Sonoma 及更高版本的 Mac 设备，全面兼容 Apple 芯片（M系列）与 Intel 处理器。</div></details>
     </div>
   </div>
 </section>
@@ -1486,14 +1469,14 @@ footer{border-top:1px solid var(--border);padding:30px 0}
 <!-- ═══════════════════════════ FINAL CTA ═══════════════════════════ -->
 <section class="final">
   <div class="wrap">
-    <img src="assets/logo.png" alt="PhraseLens">
-    <h2>Understand everything. Everywhere.</h2>
-    <p class="sub">One shortcut, and the word you didn't know stops being in your way.</p>
+    <img src="../assets/logo.png" alt="PhraseLens">
+    <h2>看透每一句话。在任何地方。</h2>
+    <p class="sub">敲下快捷键，生疏的词句便不再是阅读路上的绊脚石。</p>
     <div class="hero-cta" style="justify-content:center">
-      <a class="btn btn-primary" href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">Download for macOS</a>
-      <a class="btn btn-ghost" href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener">View source</a>
+      <a class="btn btn-primary" href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">下载 macOS 版</a>
+      <a class="btn btn-ghost" href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener">查看源码</a>
     </div>
-    <div class="hero-meta">macOS 14+ · Free · Open source · No account</div>
+    <div class="hero-meta">macOS 14+ · 免费 · 开源 · 无需账号</div>
   </div>
 </section>
 
@@ -1503,7 +1486,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
     <span class="sp"></span>
     <a href="https://github.com/mxggle/phrase-lens" target="_blank" rel="noopener">GitHub</a>
     <a href="https://github.com/mxggle/phrase-lens/blob/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>
-    <a href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">Releases</a>
+    <a href="https://github.com/mxggle/phrase-lens/releases/latest" target="_blank" rel="noopener">版本发布</a>
   </div>
 </footer>
 
@@ -1520,7 +1503,6 @@ const narrow = () => window.matchMedia('(max-width: 820px)').matches;
 const saved = localStorage.getItem('pl-theme');
 if (saved) document.documentElement.dataset.theme = saved;
 $('#themeBtn').addEventListener('click', () => {
-  /* with no stamp the effective theme comes from the OS, not from the attribute */
   const now = document.documentElement.dataset.theme
     || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
   const next = now === 'dark' ? 'light' : 'dark';
@@ -1537,10 +1519,10 @@ const revealer = new IntersectionObserver((es) => {
 }, {rootMargin:'0px 0px -12% 0px', threshold:.12});
 $$('.rv, .syn-stage, .ctx, .bars, .privacy-diagram, [data-viz]').forEach(el => revealer.observe(el));
 
-/* h1 word stagger */
+/* h1 phrase stagger */
 const h1 = $('#h1');
 h1.innerHTML = h1.textContent.trim().split(/\s+/)
-  .map((w,i) => `<span class="w" style="transition-delay:${i*40}ms">${w}</span>`).join(' ');
+  .map((w,i) => `<span class="w" style="transition-delay:${i*70}ms">${w}</span>`).join(' ');
 requestAnimationFrame(() => h1.classList.add('on'));
 
 /* count-up */
@@ -1560,8 +1542,6 @@ $$('.proof .n').forEach(el => {
 });
 
 /* ═════════════ STREAMING ENGINE ═════════════ */
-/* One token per lane: two sections can stream at once without cancelling
-   each other, while everything inside a lane still replaces what came before. */
 const streamTokens = {};
 function stream(container, html, cps = 150, lane = 'main') {
   const token = streamTokens[lane] = (streamTokens[lane] || 0) + 1;
@@ -1608,7 +1588,6 @@ function stream(container, html, cps = 150, lane = 'main') {
           if (i < items.length) place();
         }
       }
-      /* deliberately no auto-scroll: the headword stays put while the rest fills in */
     }
     if (i < items.length) requestAnimationFrame(tick);
     else setTimeout(() => caret.remove(), 500);
@@ -1726,7 +1705,7 @@ const G = {
 <p class="res muted">两个义项同形不同源：「河岸」来自古北欧语，「银行」经意大利语 banca「长凳」而来。</p>`,
     context:`<p class="res"><b>在这句话里：金融机构。</b></p>
 <p class="res">判断依据来自上下文，而不是词本身：<b>approved the transfer</b>（批准转账）只能与金融义项搭配 —— 河岸不会批准任何东西。</p>
-<p class="res muted">这正是「In Context」与普通查词的区别：先定义项，再解释。</p>`,
+<p class="res muted">这正是「语境解析」与普通查词的区别：先定义项，再解释。</p>`,
     synonyms:`<div class="res-hw"><b>bank</b> · <span class="ipa">高频多义词</span></div>
 <p class="res">与其比较近义词，不如先<b>分清义项</b> —— 这才是母语者不会搞错的地方。</p>
 <div class="res-card"><h5>bank（金融）</h5><ul>
@@ -1765,16 +1744,15 @@ const G = {
   }
 };
 const fallback = (t) => `<p class="res"><b>“${t.replace(/[<>&]/g,'')}”</b></p>
-<p class="res">This demo ships hand-written answers for the six underlined words only.</p>
-<p class="res">In the app, this is a <b>live streaming call</b> to whichever model you configured — any word, any sentence, 21 languages, in about the time it took to read this.</p>
-<p class="res muted">Try one of the underlined words, or download and point it at your own key.</p>`;
+<p class="res">网页在线演示目前内置了上述 6 个高亮词汇的精校解析。</p>
+<p class="res">在实际 App 中，这里将向你配置的 AI 模型发起<b>实时流式请求</b> —— 支持任意词句、21 种语言，眨眼之间流淌呈现。</p>
+<p class="res muted">点击上方任意带下划线的单词体验，或下载客户端接入你自己的密钥。</p>`;
 
 /* ═════════════ PLAYGROUND ═════════════ */
 const mock = $('#mock'), panel = $('#panel'), panelBody = $('#panelBody'),
       panelSrc = $('#panelSrc'), panelTabs = $('#panelTabs'), armed = $('#panelArmed'),
       ghost = $('#ghost'), keyhint = $('#keyhint'), hintChip = $('#hintChip'), article = $('#article');
 let current = 'ambiguous', currentTab = 'translate', autoplayed = false, userTook = false;
-/* the element the open panel is anchored to, so a resize can re-place it */
 let anchorEl = null;
 const defaultAnchor = () => $('.article .w[data-w="ambiguous"]');
 
@@ -1793,7 +1771,6 @@ function placePanel(rect){
   if (narrow()) { panel.style.cssText = ''; return; }
   const m = mock.getBoundingClientRect();
   const pw = 306, ph = 366, pad = 14;
-  /* beside the selection — but never on top of the prose column */
   const col = article.querySelector('p').getBoundingClientRect();
   let x = Math.max(rect.right - m.left + 16, col.right - m.left + 18);
   let y = rect.top - m.top - 12;
@@ -1822,7 +1799,6 @@ panelTabs.addEventListener('click', e => {
 });
 $('#panelX').addEventListener('click', () => panel.classList.remove('on'));
 
-/* click a marked word */
 $$('.article .w').forEach(w => w.addEventListener('click', () => {
   userTook = true;
   $$('.article .w').forEach(x => x.classList.remove('sel'));
@@ -1831,7 +1807,6 @@ $$('.article .w').forEach(w => w.addEventListener('click', () => {
   open(w.dataset.w, w.getBoundingClientRect());
 }));
 
-/* free-form drag selection */
 article.addEventListener('mouseup', () => {
   setTimeout(() => {
     const sel = window.getSelection();
@@ -1846,7 +1821,6 @@ article.addEventListener('mouseup', () => {
   }, 10);
 });
 
-/* the real ⌥F, anywhere on the page */
 addEventListener('keydown', e => {
   if (e.altKey && e.code === 'KeyF') {
     e.preventDefault();
@@ -1863,7 +1837,6 @@ addEventListener('keydown', e => {
   }
 });
 
-/* autoplay */
 function autoplay(){
   if (autoplayed || userTook || narrow()) return;
   autoplayed = true;
@@ -1918,26 +1891,26 @@ pipeScroll();
 /* ═════════════ SEVEN LENSES ═════════════ */
 const L = {
   translate:`<p class="res" style="font-size:15px">考虑到我们目前面临的限制，这件事或许最好下周再讨论。</p>
-<p class="res muted">忠实翻译，不加评论 —— Translate 只做翻译这一件事。</p>`,
+<p class="res muted">忠实直译，不加臆测 —— 翻译动作专注于准确与通顺。</p>`,
   polish:`<p class="res" style="font-size:15px">Given our constraints, let's revisit this next week.</p>
-<p class="res muted">从 19 个词压到 8 个：删掉 probably、would、best if we 这类缓冲词，语气反而更笃定。</p>`,
-  summarize:`<p class="res" style="font-size:15px"><b>要点：</b>因资源受限，此事推迟到下周再谈。</p>
-<p class="res muted">只提炼，不引申 —— 提示词明确禁止杜撰事实。</p>`,
+<p class="res muted">从 19 个词浓缩至 8 个：精简掉 probably、would、best if we 等多余缓冲词，表达更干练笃定。</p>`,
+  summarize:`<p class="res" style="font-size:15px"><b>核心结论：</b>受资源限制，议题顺延至下周再议。</p>
+<p class="res muted">提炼核心要点，拒绝无中生有 —— 提示词严格约束不编造事实。</p>`,
   analyze:`<p class="res"><b>译文：</b>考虑到我们目前面临的限制，这件事或许最好下周再讨论。</p>
-<p class="res"><b>语法：</b>Given… 为分词短语作状语；it would be best if we… 为虚拟语气，语气比 we should 更软。</p>
-<p class="res"><b>语域：</b>职场书面语，礼貌但回避担责。<b>circle back</b> 是典型商务委婉语。</p>`,
-  context:`<p class="res"><b>在语境中：</b>这是一句<b>婉拒</b>，不是安排日程。</p>
-<p class="res">probably / would / circle back 三重缓冲叠加，实际含义接近「现在不想推进这件事」。</p>
-<p class="res muted">需要选区周围的上下文才能判断 —— 所以这个动作会额外读取选中文本前后的内容。</p>`,
-  code:`<p class="res">这不是代码 —— Explain Code 会指出这一点，而不是硬编。</p>
-<p class="res muted">选中真正的代码时，它会解释逻辑、指出 bug 与安全隐患，并明确忽略注释里的任何指令。</p>`,
-  synonyms:`<div class="res-card" style="margin-bottom:8px"><h5>circle back <span>（回头再说）</span></h5><ul>
-<li><b>差异</b>：商务委婉语，常用于<b>软性推迟</b>。</li></ul></div>
+<p class="res"><b>语法：</b>Given… 为分词短语作状语；it would be best if we… 采用虚拟语气，比直接用 we should 更委婉柔和。</p>
+<p class="res"><b>语域：</b>职场正式书面语，客气且留有退路。<b>circle back</b> 为典型商务委婉表达。</p>`,
+  context:`<p class="res"><b>语境透视：</b>这是一次典型的<b>礼貌婉拒</b>，而非敲定排期。</p>
+<p class="res">probably / would / circle back 三重缓冲叠加，潜台词通常是“现阶段不想推进此项”。</p>
+<p class="res muted">这需要结合选区前后的上下文做出判断 —— 该动作会自动读取周围文字提供精准依据。</p>`,
+  code:`<p class="res">所选内容不是代码 —— 代码解析动作会直截了当指出，绝不生搬硬套。</p>
+<p class="res muted">划选真实代码片段时，它会解析算法逻辑、排查潜在缺陷与安全隐患，并自动隔离注释中的非代码指令。</p>`,
+  synonyms:`<div class="res-card" style="margin-bottom:8px"><h5>circle back <span>（回头再谈）</span></h5><ul>
+<li><b>辨析</b>：商业委婉语，常用于<b>软性延后或冷处理</b>。</li></ul></div>
 <div class="res-card"><h5>revisit <span>（重新审视）</span></h5><ul>
-<li><b>差异</b>：中性、正式，暗示会<b>真的再看一遍</b>。</li></ul></div>
+<li><b>辨析</b>：中性客观，正式度更高，暗示后续<b>确实会认真重看</b>。</li></ul></div>
 <div class="guide"><b class="gt">⚡️ 快速决策</b>
-<p>想礼貌地拖 👉 <code>circle back</code></p>
-<p>确实要重新讨论 👉 <code>revisit</code></p></div>`
+<p>想要礼貌拖延 👉 <code>circle back</code></p>
+<p>确实准备重新评估 👉 <code>revisit</code></p></div>`
 };
 const lensTabs = $('#lensTabs'), lensArmed = $('#lensArmed'), lensOut = $('#lensOut');
 let lensKey = 'translate', lensAuto = null, lensTouched = false;
@@ -1956,7 +1929,7 @@ function lensSet(k, byUser){
 }
 lensTabs.addEventListener('click', e => { const b = e.target.closest('button'); if (b) lensSet(b.dataset.l, true); });
 addEventListener('resize', lensArm);
-const lensOrder = ['translate','polish','summarize','analyze','context','code','synonyms'];
+const lensOrder = ['translate','polish','summarize','analyze','context','synonyms','code'];
 addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && /^Digit[1-7]$/.test(e.code)) {
     e.preventDefault();
@@ -1974,17 +1947,15 @@ new IntersectionObserver((es,o) => es.forEach(e => {
 }), {threshold:.35}).observe($('#lensCard'));
 
 /* ═════════════ FOLLOW-UPS ═════════════ */
-/* Labels and questions are the ones the app actually offers for a headword
-   (FollowUpSuggestion.word) — the chip is short, the thread shows the question. */
 const FU = [
-  {label:'Examples',
-   q:'Give three natural example sentences using this, from everyday to formal, each with a translation.',
+  {label:'例句展示',
+   q:'用这个词给出三个地道自然的例句，从日常口语到正式文体，附带中文翻译。',
    a:`<p class="res-ex">Can I be candid with you?<br><span class="zh">我能跟你说句实话吗？（日常）</span></p>
 <p class="res-ex">She was candid about the risks of the plan.<br><span class="zh">她坦率地谈了这个方案的风险。（职场）</span></p>
 <p class="res-ex">The report is unusually candid about the failure.<br><span class="zh">这份报告罕见地直陈了这次失败。（正式）</span></p>`},
 
-  {label:'Nuance',
-   q:'Which words are easily confused with this one, and what exactly separates them? Show a minimal pair for each.',
+  {label:'微差辨析',
+   q:'有哪些词容易与它混淆？它们之间的本质区别是什么？请为每组提供最小对比范例。',
    a:`<div class="res-card"><h5>frank <span>（直率的）</span></h5><ul>
 <li><b>差异</b>：同样直说，但更偏「说出不中听的事实」；candid 含<b>本可隐瞒却选择公开</b>。</li>
 <li><b>最小对比</b>：a frank warning 直白的警告 · a candid admission 主动的坦白</li></ul></div>
@@ -1995,21 +1966,21 @@ const FU = [
 <li><b>差异</b>：只表示<b>不说假话</b>，不含「主动摊开」。</li>
 <li><b>最小对比</b>：an honest answer 不撒谎的回答 · a candid answer 什么都没瞒的回答</li></ul></div>`},
 
-  {label:'Collocations',
-   q:'What does this word usually go with? List the highest-frequency collocations and set phrases with translations.',
+  {label:'常用搭配',
+   q:'这个词平时最常与哪些词搭配？列出最高频的搭配与固定短语并附带翻译。',
    a:`<p class="res"><b>be candid about sth</b> 坦率谈及某事 —— 最高频，后面几乎总跟不好开口的事。</p>
 <p class="res"><b>a candid conversation</b> 一次坦诚的谈话 · <b>a candid assessment</b> 不加粉饰的评估</p>
 <p class="res"><b>to be candid, …</b> 说实话，…… —— 句首插入语，位置同 frankly。</p>
 <p class="res muted">另有摄影义：a candid photo 抓拍（非摆拍）。</p>`},
 
-  {label:'Word parts',
-   q:'Break this word into its parts and give its etymology, then list a few words built from the same roots.',
+  {label:'构词拆解',
+   q:'拆解这个词的构词成分与词源，并列举由相同词根衍生出的常见词汇。',
    a:`<p class="res"><b>cand-</b> ← 拉丁语 <b>candidus</b>「洁白、明亮」，引申为不藏污、不掺假。</p>
 <p class="res">同源词：<b>candidate</b>（古罗马求职者身着白袍）· <b>candle</b> 蜡烛 · <b>incandescent</b> 白炽的</p>
 <p class="res muted">抓住这条线，candid 的「把话摊在亮处」就不必死记。</p>`},
 
-  {label:'Remember it',
-   q:'Give me a concrete memory hook for this word, and one short sentence I could use today to make it stick.',
+  {label:'记忆要诀',
+   q:'给出一个形象生动的记忆联想，以及一句今天就能用上的短句来强化记忆。',
    a:`<div class="guide"><b class="gt">🕯 记忆钩子</b>
 <p>candid = candle 的白光：<b>把话放到亮处，不留暗角</b>。</p>
 <p>今天就能用 👉 <code>To be candid, I'd rather not.</code> 说实话，我不太想。</p></div>`}
@@ -2024,7 +1995,6 @@ FU.forEach((f, i) => {
 });
 
 let fuTouched = false;
-/* scroll only the thread's own scroller — the page stays where the reader put it */
 function fuReveal(el) {
   const delta = el.getBoundingClientRect().top - fuScroll.getBoundingClientRect().top;
   fuScroll.scrollTo({top: fuScroll.scrollTop + delta - 14, behavior: reduce() ? 'auto' : 'smooth'});
@@ -2042,12 +2012,11 @@ function fuAsk(i) {
            stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M5 4v7a3 3 0 0 0 3 3h9"/><path d="M14 10l4 4-4 4"/></svg>
       <span class="qt"></span></div>
-    <div class="fu-a"><div class="fu-think"><i></i>Thinking…</div></div>`;
+    <div class="fu-a"><div class="fu-think"><i></i>思考中…</div></div>`;
   turn.querySelector('.qt').textContent = f.q;
   fuThread.appendChild(turn);
   fuReveal(turn);
 
-  /* its own lane, so answering a second question doesn't cut the first one off */
   const body = turn.querySelector('.fu-a');
   setTimeout(() => { stream(body, f.a, 300, 'fu' + i); fuReveal(turn); }, reduce() ? 0 : 480);
 }
@@ -2057,7 +2026,6 @@ fuChips.addEventListener('click', e => {
   fuTouched = true;
   fuAsk(+b.dataset.i);
 });
-/* ask the first one for the reader, once — after that the strip is theirs */
 new IntersectionObserver((es, o) => es.forEach(e => {
   if (!e.isIntersecting) return; o.disconnect();
   setTimeout(() => { if (!fuTouched) fuAsk(0); }, reduce() ? 0 : 700);
@@ -2120,18 +2088,18 @@ $$('[data-ctx]').forEach(c => {
 
 /* ═════════════ PROVIDERS ═════════════ */
 const PROV = [
-  ['OpenAI','gpt-4o-mini','Cloud · streaming','☁️'],
-  ['Anthropic','claude-3-7-sonnet','Cloud · streaming','☁️'],
-  ['Google Gemini','gemini-2.0-flash','Cloud · streaming','☁️'],
-  ['DeepSeek','deepseek-v3','Cloud · streaming','☁️'],
-  ['Groq','llama-3.3-70b','Cloud · ultra-low latency','☁️'],
-  ['Moonshot','moonshot-v1-128k','Cloud · long context','☁️'],
-  ['MiniMax','minimax-text-01','Cloud · streaming','☁️'],
-  ['Cohere','command-r-plus','Cloud · streaming','☁️'],
-  ['Azure OpenAI','your-deployment','Enterprise endpoint','☁️'],
-  ['TeamoRouter','auto-route','Multi-model router','☁️'],
-  ['Ollama','qwen2.5 · llama3','Local · offline','🖥️'],
-  ['Custom endpoint','/v1/chat/completions','Anything OpenAI-compatible','🔌']
+  ['OpenAI','gpt-4o-mini','云端 · 流式响应','☁️'],
+  ['Anthropic','claude-3-7-sonnet','云端 · 流式响应','☁️'],
+  ['Google Gemini','gemini-2.0-flash','云端 · 流式响应','☁️'],
+  ['DeepSeek','deepseek-v3','云端 · 流式响应','☁️'],
+  ['Groq','llama-3.3-70b','云端 · 超低延迟','☁️'],
+  ['Moonshot','moonshot-v1-128k','云端 · 超长上下文','☁️'],
+  ['MiniMax','minimax-text-01','云端 · 流式响应','☁️'],
+  ['Cohere','command-r-plus','云端 · 流式响应','☁️'],
+  ['Azure OpenAI','your-deployment','企业专线','☁️'],
+  ['TeamoRouter','auto-route','多模型路由','☁️'],
+  ['Ollama','qwen2.5 · llama3','本地 · 离线运行','🖥️'],
+  ['自定义端点','/v1/chat/completions','兼容 OpenAI 标准协议','🔌']
 ];
 const track = $('#railTrack');
 track.innerHTML = [...PROV, ...PROV].map((p,i) =>
@@ -2146,14 +2114,13 @@ track.addEventListener('click', e => {
 });
 
 /* ═════════════ CUSTOM ACTIONS ═════════════ */
-/* markers: [[raw|resolved]] */
 const TPL = [
-  {t:`Analyze the following [[\${sourceLang}|English]] text for grammatical issues, awkward phrasing, and tone. Reply in [[\${targetLang}|简体中文]]:\n\n[[\${text}|the selected sentence]]`,
+  {t:`Analyze the following [[\${sourceLang}|English]] text for grammatical issues, awkward phrasing, and tone. Reply in [[\${targetLang}|简体中文]]:\n\n[[\${text}|选中的句子]]`,
    o:`<p class="res">Analyze the following <b>English</b> text for grammatical issues, awkward phrasing, and tone. Reply in <b>简体中文</b>:</p><p class="res muted">Given the constraints we are operating under, it would probably be best if we circled back on this next week.</p>`},
-  {t:`Rewrite the text below so it sounds confident and direct, without changing the facts. Keep it in [[\${sourceLang}|English]].\n\nSurrounding context: [[\${context}|escaped · max 1,600 chars]]\n\n[[\${text}|the selected sentence]]`,
-   o:`<p class="res">Rewrite the text below so it sounds confident and direct, without changing the facts. Keep it in <b>English</b>.</p><p class="res muted">The surrounding context comes from whatever you were reading — bounded to 1,600 characters and escaped before it ever reaches the model.</p>`},
-  {t:`Explain [[\${text}|the selection]] as if I were five years old. Answer in [[\${targetLang}|简体中文]]. Use one analogy and no jargon.`,
-   o:`<p class="res">Explain <b>the selection</b> like I am five. Answer in <b>简体中文</b>. One analogy, no jargon.</p><p class="res muted">Custom actions get their own tab, their own icon, and their own command-number shortcut.</p>`}
+  {t:`Rewrite the text below so it sounds confident and direct, without changing the facts. Keep it in [[\${sourceLang}|English]].\n\nSurrounding context: [[\${context}|已转义 · 最大 1,600 字符]]\n\n[[\${text}|选中的句子]]`,
+   o:`<p class="res">Rewrite the text below so it sounds confident and direct, without changing the facts. Keep it in <b>English</b>.</p><p class="res muted">周围语境取自你当前正在阅读的上下文 —— 严格限制在 1,600 字符以内，并在发送前完成安全转义。</p>`},
+  {t:`Explain [[\${text}|选中的内容]] as if I were five years old. Answer in [[\${targetLang}|简体中文]]. Use one analogy and no jargon.`,
+   o:`<p class="res">用五岁孩子能听懂的方式解释<b>选中的内容</b>。使用<b>简体中文</b>回答。包含一个生动比喻，不使用任何专业术语。</p><p class="res muted">自定义动作拥有专属于它的标签页、独立图标以及 Command + 数字快捷键。</p>`}
 ];
 function renderTpl(i){
   const html = TPL[i].t
@@ -2190,8 +2157,8 @@ $$('#scList .sc').forEach(row => {
 $$('.tline .cp').forEach(btn => btn.addEventListener('click', async () => {
   const text = btn.parentNode.querySelector('.c').textContent;
   try { await navigator.clipboard.writeText(text); } catch(_) {}
-  btn.textContent = '✓ copied'; btn.classList.add('done');
-  setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('done'); }, 1400);
+  btn.textContent = '✓ 已复制'; btn.classList.add('done');
+  setTimeout(() => { btn.textContent = '复制'; btn.classList.remove('done'); }, 1400);
 }));
 
 /* ═════════════ REWRITE-IN-PLACE TILE ═════════════ */

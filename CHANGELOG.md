@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-24
+
 ### Added
+
+- **Look up Japanese and English offline.** PhraseLens now bundles attributed dictionary
+  packs with readings, inflected forms, definitions, and links to each source and license.
+  Dictionary results stay separate from AI translation, can be copied with their sources,
+  and can be saved to Vocabulary. The Japanese pack has documented coverage limits.
+- **Get started with a guided setup.** A five-step guide helps choose a sign-in method,
+  connect a provider, select a model, configure shortcuts and permissions, and try a sample
+  translation. Advanced provider settings remain available when needed.
+- **Use PhraseLens in English or Simplified Chinese.** The app, setup flow, menus, settings,
+  accessibility labels, errors, and landing page now have English and Simplified Chinese
+  versions, with an in-app language preference and system-language default.
+- **Explain Usage turns a selected word or expression into a practical usage guide.** It says
+  where the expression fits, whether it belongs to speech, writing, casual or formal language,
+  shows its common patterns, calls out the mistake a learner is most likely to make, and gives
+  three natural bilingual examples without forcing the term into a register where it does not
+  belong.
+- **Read a selected word and its translation aloud.** Japanese readings and Chinese pinyin
+  are added to relevant terms, and translated results can now be spoken in the target
+  language's voice.
 
 - **A word or short phrase comes back with a reading you can pronounce.** Japanese is
   annotated in hiragana and Chinese in Hanyu Pinyin with tone marks — `垂直な（すいちょくな）`,
@@ -20,12 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own speak button, in the target language's voice, alongside the one that reads the source
   text. A Markdown answer is flattened first, so a dictionary entry is spoken as its prose
   rather than as its asterisks and code fences.
-
-- **Explain Usage turns a selected word or expression into a practical usage guide.** It says
-  where the expression fits, whether it belongs to speech, writing, casual or formal language,
-  shows its common patterns, calls out the mistake a learner is most likely to make, and gives
-  three natural bilingual examples without forcing the term into a register where it does not
-  belong.
 
 ### Fixed
 
@@ -315,7 +330,8 @@ themselves, so an unrecognized value costs that value and not the collection.
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/mxggle/phrase-lens/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/mxggle/phrase-lens/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/mxggle/phrase-lens/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/mxggle/phrase-lens/compare/v0.5.1...v0.5.2

@@ -9,7 +9,12 @@ final class SettingsStore: ObservableObject {
   private static let setupGuideKey = "setup-guide-dismissed-v1"
 
   @Published var settings: AppSettings {
-    didSet { persist() }
+    didSet {
+      if oldValue.appLanguage != settings.appLanguage {
+        L10n.shared.setLanguage(settings.appLanguage)
+      }
+      persist()
+    }
   }
 
   @Published private(set) var apiKey = ""
@@ -56,6 +61,14 @@ final class SettingsStore: ObservableObject {
       defaults.set(true, forKey: Self.selectionCopyMigrationKey)
     }
     if loadStoredCredentials { loadCredentials() }
+    L10n.shared.setLanguage(settings.appLanguage)
+  }
+
+  var resolvedLocale: Locale {
+    if let id = settings.appLanguage.localeIdentifier {
+      return Locale(identifier: id)
+    }
+    return Locale.current
   }
 
   var hasProviderCredential: Bool {
@@ -148,8 +161,9 @@ final class SettingsStore: ObservableObject {
           self.hasLegacyKeychainCredentials = false
         case .unreadable:
           self.credentialError =
-            "The Keychain did not release the older \(provider.rawValue) entry. "
-            + "Try the import again, or just enter the key above — it is saved outside the Keychain."
+            L10n.isChinese
+              ? "钥匙串未返回旧版 \(provider.rawValue) 凭据。请重试导入，或直接在上方输入密钥（新密钥会保存在钥匙串之外）。"
+              : "The Keychain did not release the older \(provider.rawValue) entry. Try the import again, or just enter the key above — it is saved outside the Keychain."
         }
       }
     }

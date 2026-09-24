@@ -59,6 +59,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | ✍️ **In-Place Writing & Rewrite** | Translate or polish text directly inside any active, editable text field and replace it with a single keystroke. |
 | 🗣️ **Dual Speech Synthesizers** | Read the source text *or the translation* aloud — each in its own language's voice — using high-fidelity **Microsoft Edge Neural TTS** or offline native **macOS System Voices**. |
 | 🈁 **Readings You Can Pronounce** | Words and short phrases come back with a reading: furigana for Japanese (`垂直な（すいちょくな）`), pinyin for Chinese (`词语（cíyǔ）`) — on the term you looked up and on the translation you have to say. |
+| 🌐 **English & Simplified Chinese** | Choose English or 简体中文 in Settings, or follow your macOS language. The setup guide, menus, settings, accessibility labels, errors, and website are localized. |
 | 📚 **History & Vocabulary** | Automatically preserve search histories and manage personal vocabulary collections with quick search and restore. |
 | 🧩 **Custom Prompt Templates** | Create custom AI actions using dynamic variables: `${sourceLang}`, `${targetLang}`, `${text}`, and `${context}`. Duplicate any built-in action to start from its shipped prompt. |
 | 🎛️ **Menu Bar & Global Hotkeys** | Lightweight `MenuBarExtra` companion, customizable global Carbon shortcuts, and launch-at-login support. |

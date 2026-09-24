@@ -94,9 +94,16 @@ protocol LexicalProcessor: Sendable {
 
 enum DictionaryLanguages {
   static func name(_ code: String) -> String {
-    if code == "zh" { return "中文" }
-    if code == "auto" { return "Auto" }
-    return LanguageCode(rawValue: code)?.displayName
-      ?? Locale.current.localizedString(forLanguageCode: code) ?? code
+    if L10n.isChinese {
+      if code == "zh" { return "中文" }
+      if code == "auto" { return "自动" }
+      return LanguageCode(rawValue: code)?.displayName
+        ?? Locale(identifier: "zh-Hans").localizedString(forLanguageCode: code) ?? code
+    } else {
+      if code == "zh" { return "Chinese" }
+      if code == "auto" { return "Auto" }
+      return LanguageCode(rawValue: code)?.displayName
+        ?? Locale(identifier: "en").localizedString(forLanguageCode: code) ?? code
+    }
   }
 }

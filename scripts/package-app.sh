@@ -29,6 +29,12 @@ mkdir -p "${APP_PATH}/Contents/MacOS" "${APP_PATH}/Contents/Resources"
 cp "${EXECUTABLE_PATH}" "${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
 # The dictionary loader uses the signed application's resources directory.
 cp -R "${BUILD_DIR}/release/PhraseLens_PhraseLens.bundle" "${APP_PATH}/Contents/Resources/PhraseLens_PhraseLens.bundle"
+# Copy localization resource bundles to top-level Resources for macOS native bundle resolution
+for lproj in en.lproj zh-Hans.lproj; do
+    if [[ -d "${PROJECT_DIR}/Sources/PhraseLens/Resources/${lproj}" ]]; then
+        cp -R "${PROJECT_DIR}/Sources/PhraseLens/Resources/${lproj}" "${APP_PATH}/Contents/Resources/${lproj}"
+    fi
+done
 # Keep SwiftPM's release binary unstripped for local crash symbolication, but
 # remove local symbols from the distributable copy before it is signed.
 /usr/bin/strip -x "${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
@@ -36,6 +42,17 @@ cp "${PROJECT_DIR}/packaging/Info.plist" "${APP_PATH}/Contents/Info.plist"
 PLIST_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${APP_PATH}/Contents/Info.plist")"
 if [[ "${PLIST_IDENTIFIER}" != "${PRODUCT_IDENTIFIER}" ]]; then
     print -u2 "Unexpected bundle identifier: ${PLIST_IDENTIFIER}"
+    exit 1
+fi
+# Validate CFBundleLocalizations contains both English and Simplified Chinese
+EN_LOC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleLocalizations:0' "${APP_PATH}/Contents/Info.plist" 2>/dev/null || true)"
+ZH_LOC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleLocalizations:1' "${APP_PATH}/Contents/Info.plist" 2>/dev/null || true)"
+if [[ "${EN_LOC}" != "en" || "${ZH_LOC}" != "zh-Hans" ]]; then
+    print -u2 "Missing or incorrect CFBundleLocalizations in Info.plist (expected 'en' and 'zh-Hans', got '${EN_LOC}' and '${ZH_LOC}')"
+    exit 1
+fi
+if [[ ! -d "${APP_PATH}/Contents/Resources/PhraseLens_PhraseLens.bundle" ]]; then
+    print -u2 "Missing resource bundle in ${APP_PATH}/Contents/Resources"
     exit 1
 fi
 if [[ -f "${PROJECT_DIR}/packaging/AppIcon.icns" ]]; then

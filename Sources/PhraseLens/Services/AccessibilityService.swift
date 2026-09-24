@@ -401,7 +401,7 @@ struct AccessibilityService: Sendable {
       let element = focusedElement,
       CFGetTypeID(element) == AXUIElementGetTypeID()
     else {
-      throw TranslationError.provider("No focused text control is available.")
+      throw TranslationError.provider(L10n.isChinese ? "没有可用的焦点文本控件。" : "No focused text control is available.")
     }
     return unsafeDowncast(element, to: AXUIElement.self)
   }
@@ -544,7 +544,7 @@ struct AccessibilityService: Sendable {
     }
     let element = try focusedElement()
     guard !isWithinSecureTextElement(element) else {
-      throw TranslationError.provider("Secure text fields cannot be translated or replaced.")
+      throw TranslationError.provider(L10n.isChinese ? "不能翻译或替换安全文本字段中的内容。" : "Secure text fields cannot be translated or replaced.")
     }
     guard let value = stringAttribute(kAXValueAttribute, from: element), !value.isEmpty else {
       throw TranslationError.noInput
@@ -558,10 +558,10 @@ struct AccessibilityService: Sendable {
     }
     let element = try focusedElement()
     guard !isWithinSecureTextElement(element) else {
-      throw TranslationError.provider("Secure text fields cannot be translated or replaced.")
+      throw TranslationError.provider(L10n.isChinese ? "不能翻译或替换安全文本字段中的内容。" : "Secure text fields cannot be translated or replaced.")
     }
     guard let value = stringAttribute(kAXValueAttribute, from: element) else {
-      throw TranslationError.provider("The focused control is not editable.")
+      throw TranslationError.provider(L10n.isChinese ? "当前获得焦点的控件不可编辑。" : "The focused control is not editable.")
     }
     let range = selectedRange(from: element)
     let nextValue: String
@@ -569,7 +569,7 @@ struct AccessibilityService: Sendable {
     if let range, range.length > 0 {
       let nsValue = value as NSString
       guard range.location >= 0, range.location + range.length <= nsValue.length else {
-        throw TranslationError.provider("The focused control returned an invalid selection.")
+        throw TranslationError.provider(L10n.isChinese ? "当前获得焦点的控件返回了无效选区。" : "The focused control returned an invalid selection.")
       }
       nextValue = nsValue.replacingCharacters(
         in: NSRange(location: range.location, length: range.length),
@@ -588,7 +588,7 @@ struct AccessibilityService: Sendable {
       &settable
     )
     guard settableStatus == .success, settable.boolValue else {
-      throw TranslationError.provider("The focused control does not allow text replacement.")
+      throw TranslationError.provider(L10n.isChinese ? "当前获得焦点的控件不允许替换文本。" : "The focused control does not allow text replacement.")
     }
     let status = AXUIElementSetAttributeValue(
       element,
@@ -596,7 +596,7 @@ struct AccessibilityService: Sendable {
       nextValue as CFString
     )
     guard status == .success else {
-      throw TranslationError.provider("Could not replace text in the focused control.")
+      throw TranslationError.provider(L10n.isChinese ? "无法替换当前获得焦点的控件中的文本。" : "Could not replace text in the focused control.")
     }
 
     var cursorRange = CFRange(location: cursorOffset, length: 0)

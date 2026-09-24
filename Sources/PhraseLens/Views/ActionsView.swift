@@ -72,34 +72,40 @@ struct ActionsView: View {
     // Both of these discard prompts the user wrote by hand, and neither can be
     // taken back, so neither happens on a single click.
     .confirmationDialog(
-      "Delete \(selectedActionName)?",
+      L10n.isChinese ? "确认删除动作“\(selectedActionName)”？" : "Delete \(selectedActionName)?",
       isPresented: $isConfirmingRemove,
       titleVisibility: .visible
     ) {
-      Button("Delete Action", role: .destructive) { removeSelectedAction() }
-      Button("Cancel", role: .cancel) {}
+      Button(L10n.isChinese ? "删除动作" : "Delete Action", role: .destructive) { removeSelectedAction() }
+      Button(L10n.isChinese ? "取消" : "Cancel", role: .cancel) {}
     } message: {
-      Text("Its role prompt and command prompt are deleted with it. There is no undo.")
+      Text(L10n.isChinese ? "该动作的角色提示词与执行命令将被一并删除，此操作无法撤销。" : "Its role prompt and command prompt are deleted with it. There is no undo.")
     }
     .confirmationDialog(
-      "Restore the built-in actions?",
+      L10n.isChinese ? "恢复所有内置动作？" : "Restore the built-in actions?",
       isPresented: $isConfirmingRestore,
       titleVisibility: .visible
     ) {
-      Button("Restore Defaults", role: .destructive) { restoreAllDefaults() }
-      Button("Cancel", role: .cancel) {}
+      Button(L10n.isChinese ? "恢复默认设置" : "Restore Defaults", role: .destructive) { restoreAllDefaults() }
+      Button(L10n.isChinese ? "取消" : "Cancel", role: .cancel) {}
     } message: {
       Text(
-        "Every edit you have made to a built-in prompt is discarded, and the "
-          + "actions you hid and the order you arranged them in go back to the "
-          + "defaults. Your own custom actions are kept."
+        L10n.isChinese
+          ? "对内置动作提示词所做的所有修改将被丢弃，动作的显示顺序与隐藏状态也将恢复默认。您自建的自定义动作将得到保留。"
+          : "Every edit you have made to a built-in prompt is discarded, and the actions you hid and the order you arranged them in go back to the defaults. Your own custom actions are kept."
       )
     }
   }
 
   /// Named in the delete prompt so the dialog says what is about to go.
   private var selectedActionName: String {
-    draftActions.first { $0.id == selectedID }?.name ?? "this action"
+    if let action = draftActions.first(where: { $0.id == selectedID }) {
+      return action.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.name
+    }
+    if let builtIn = draftBuiltIns.first(where: { $0.id == selectedID }) {
+      return builtIn.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : builtIn.name
+    }
+    return L10n.isChinese ? "此动作" : "this action"
   }
 
   // MARK: - Compact
@@ -116,10 +122,13 @@ struct ActionsView: View {
               showsEditorInCompact = false
             }
           } label: {
-            AdaptiveLabel(title: "All Actions", symbol: "chevron.left")
+            AdaptiveLabel(
+              title: L10n.isChinese ? "所有动作" : "All Actions",
+              symbol: "chevron.left"
+            )
           }
           .appButton(.ghost, size: .sm)
-          .accessibilityLabel("Back to all actions")
+          .accessibilityLabel(L10n.isChinese ? "返回动作列表" : "Back to all actions")
           Spacer(minLength: 0)
         }
         .padding(.horizontal, AppSpacing.md)
@@ -143,7 +152,7 @@ struct ActionsView: View {
     VStack(spacing: 0) {
       ScrollView {
         VStack(alignment: .leading, spacing: AppSpacing.lg) {
-          group("Display order", actions: orderedActions)
+          group(L10n.isChinese ? "展示顺序与显示设置" : "Display order", actions: orderedActions)
         }
         .padding(.horizontal, AppSpacing.sm + 2)
         .padding(.vertical, AppSpacing.md)
@@ -153,20 +162,23 @@ struct ActionsView: View {
       Hairline()
 
       HStack(spacing: AppSpacing.xs) {
-        IconButton(title: "Add a custom action", symbol: "plus") {
+        IconButton(
+          title: L10n.isChinese ? "新建动作" : "New action",
+          symbol: "plus"
+        ) {
           addAction()
         }
         IconButton(
-          title: "Delete the selected action",
+          title: L10n.isChinese ? "删除此动作" : "Delete the selected action",
           symbol: "minus",
           isDisabled: !draftActions.contains(where: { $0.id == selectedID })
         ) {
           isConfirmingRemove = true
         }
         Spacer(minLength: 0)
-        Button("Restore Defaults") { isConfirmingRestore = true }
+        Button(L10n.isChinese ? "恢复默认动作" : "Restore default actions") { isConfirmingRestore = true }
           .appButton(.ghost, size: .sm)
-          .help("Restore built-in actions, visibility, and display order")
+          .help(L10n.isChinese ? "恢复内置动作、显示状态与展示顺序" : "Restore built-in actions, visibility, and display order")
       }
       .padding(.horizontal, AppSpacing.sm + 2)
       .frame(height: AppMetrics.paneFooterHeight)
@@ -185,6 +197,7 @@ struct ActionsView: View {
         .padding(.horizontal, AppSpacing.sm + 2)
         .padding(.bottom, AppSpacing.xs)
       ForEach(actions) { action in
+        let isHidden = isActionHidden(action.id)
         HStack(spacing: AppSpacing.xs) {
           Image(systemName: "line.3.horizontal")
             .font(.system(size: 11, weight: .medium))
@@ -192,14 +205,16 @@ struct ActionsView: View {
             .frame(width: 24, height: 34)
             .contentShape(Rectangle())
             .draggable(action.id.uuidString)
-            .help("Drag to reorder \(action.name)")
+            .help(L10n.isChinese ? "拖拽以调整“\(action.name)”的顺序" : "Drag to reorder \(action.name)")
             .accessibilityHidden(true)
           NavRow(
-            title: action.name.isEmpty ? "Untitled Action" : action.name,
+            title: action.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.name,
             symbol: action.mode?.symbol ?? "sparkles",
             isSelected: action.id == selectedID,
-            subtitle: isActionHidden(action.id) ? "Hidden" : nil,
-            trailing: settingsStore.settings.defaultActionID == action.id ? "Default" : nil
+            subtitle: actionSubtitle(for: action),
+            trailing: settingsStore.settings.defaultActionID == action.id
+              ? (L10n.isChinese ? "默认" : "Default")
+              : nil
           ) {
             selectedID = action.id
             if layoutWidth.isCompact {
@@ -209,10 +224,12 @@ struct ActionsView: View {
             }
           }
           IconButton(
-            title: isActionHidden(action.id) ? "Show \(action.name)" : "Hide \(action.name)",
-            symbol: isActionHidden(action.id) ? "eye.slash" : "eye",
-            isDisabled: !isActionHidden(action.id) && visibleActionCount == 1,
-            isOn: isActionHidden(action.id)
+            title: L10n.isChinese
+              ? (isHidden ? "显示动作" : "隐藏动作")
+              : (isHidden ? "Show action" : "Hide action"),
+            symbol: isHidden ? "eye.slash" : "eye",
+            isDisabled: !isHidden && visibleActionCount == 1,
+            isOn: isHidden
           ) {
             toggleVisibility(action.id)
           }
@@ -223,10 +240,19 @@ struct ActionsView: View {
           moveAction(sourceID, before: action.id)
           return true
         }
-        .accessibilityAction(named: "Move up") { moveAction(action.id, by: -1) }
-        .accessibilityAction(named: "Move down") { moveAction(action.id, by: 1) }
+        .accessibilityAction(named: L10n.isChinese ? "上移" : "Move up") { moveAction(action.id, by: -1) }
+        .accessibilityAction(named: L10n.isChinese ? "下移" : "Move down") { moveAction(action.id, by: 1) }
       }
     }
+  }
+
+  private func actionSubtitle(for action: TranslationAction) -> String {
+    if isActionHidden(action.id) {
+      return L10n.isChinese ? "已隐藏" : "Hidden"
+    }
+    return action.isBuiltIn
+      ? (L10n.isChinese ? "内置" : "Built-in")
+      : (L10n.isChinese ? "自定义" : "Custom")
   }
 
   // MARK: - Editor
@@ -252,10 +278,10 @@ struct ActionsView: View {
     } else {
       EmptyState(
         symbol: "slider.horizontal.3",
-        title: "No action selected",
-        message: "Choose an action on the left, or add a custom one."
+        title: L10n.isChinese ? "未选择动作" : "No action selected",
+        message: L10n.isChinese ? "请在左侧选择一个动作，或添加自定义动作。" : "Choose an action on the left, or add a custom one."
       ) {
-        Button("Add a Custom Action") { addAction() }
+        Button(L10n.isChinese ? "添加自定义动作" : "Add a Custom Action") { addAction() }
           .appButton(.primary, size: .sm)
       }
     }
@@ -263,29 +289,43 @@ struct ActionsView: View {
 
   @ViewBuilder
   private func actionEditor(action: Binding<TranslationAction>, isBuiltIn: Bool) -> some View {
-    SettingsCard("Action", caption: "Changes are saved automatically.") {
-      SettingsRow("Name") {
+    SettingsCard(
+      L10n.isChinese ? "动作设置" : "Action",
+      caption: L10n.isChinese ? "所做修改将自动保存。" : "Changes are saved automatically."
+    ) {
+      SettingsRow(L10n.isChinese ? "动作名称" : "Action name") {
         AppTextField(
-          placeholder: "Action name",
+          placeholder: L10n.isChinese ? "动作名称" : "Name",
           text: action.name,
           size: .sm
         )
         .frame(maxWidth: 260)
       }
       Hairline()
+      SettingsRow(L10n.isChinese ? "执行模式" : "Execution mode") {
+        Badge(
+          text: isBuiltIn
+            ? (L10n.isChinese ? "内置" : "Built-in")
+            : (L10n.isChinese ? "自定义" : "Custom"),
+          variant: .neutral
+        )
+      }
+      Hairline()
       SettingsRow(
-        "Render the result as Markdown",
-        detail: "Headings, lists, tables, and fenced code are laid out instead of shown as text."
+        L10n.isChinese ? "以 Markdown 格式渲染结果" : "Render as Markdown",
+        detail: L10n.isChinese
+          ? "支持渲染标题、加粗文本、代码块与列表项。"
+          : "Formats headings, bold text, code blocks, and bullet points."
       ) {
         Toggle("", isOn: action.outputMarkdown)
           .toggleStyle(AppSwitchStyle())
           .labelsHidden()
-          .accessibilityLabel("Render the result as Markdown")
+          .accessibilityLabel(L10n.isChinese ? "以 Markdown 格式渲染结果" : "Render as Markdown")
       }
       Hairline()
       SettingsRow(
-        "Show in translator",
-        detail: "Hidden actions stay configured but do not appear in the action picker."
+        L10n.isChinese ? "在翻译器中显示" : "Show in translator",
+        detail: L10n.isChinese ? "隐藏的动作仍保留配置，但不会出现在动作选择器中。" : "Hidden actions stay configured but do not appear in the action picker."
       ) {
         Toggle(
           "",
@@ -297,16 +337,16 @@ struct ActionsView: View {
         .toggleStyle(AppSwitchStyle())
         .labelsHidden()
         .disabled(!isActionHidden(action.wrappedValue.id) && visibleActionCount == 1)
-        .accessibilityLabel("Show in translator")
+        .accessibilityLabel(L10n.isChinese ? "在翻译器中显示" : "Show in translator")
       }
       Hairline()
       SettingsRow(
-        "Default action",
-        detail: "Use this action when a new translation starts."
+        L10n.isChinese ? "默认动作" : "Default action",
+        detail: L10n.isChinese ? "新翻译开始时默认使用此动作。" : "Use this action when a new translation starts."
       ) {
         Button(
           settingsStore.settings.defaultActionID == action.wrappedValue.id
-            ? "Default" : "Set as Default"
+            ? (L10n.isChinese ? "默认" : "Default") : (L10n.isChinese ? "设为默认" : "Set as Default")
         ) {
           setDefaultAction(action.wrappedValue.id)
         }
@@ -319,69 +359,91 @@ struct ActionsView: View {
       }
       Hairline()
       SettingsRow(
-        "Duplicate action",
-        detail: "Creates a new custom action starting from this one's current prompts."
+        L10n.isChinese ? "制作动作副本" : "Duplicate action",
+        detail: L10n.isChinese ? "基于此动作当前的提示词创建一个新的自定义动作。" : "Creates a new custom action starting from this one's current prompts."
       ) {
-        Button("Duplicate") { duplicateAction(action.wrappedValue) }
+        Button(L10n.isChinese ? "制作副本" : "Duplicate") { duplicateAction(action.wrappedValue) }
           .appButton(.outline, size: .sm)
       }
     }
 
     SettingsCard(
-      "System prompt",
-      caption: "Sets the role the model answers in, before it sees the text.",
+      L10n.isChinese ? "系统提示词 (Role Prompt)" : "System prompt",
+      caption: L10n.isChinese ? "设定模型在查看文本前回答所扮演的角色。" : "Sets the role the model answers in, before it sees the text.",
       showsChrome: false
     ) {
       AppTextEditor(
         text: action.rolePrompt,
-        placeholder: "You are a helpful language assistant.",
+        placeholder: L10n.isChinese ? "设定 AI 的角色定位与行为原则…" : "System prompt instructions…",
         minHeight: 100
       )
     }
 
     SettingsCard(
-      "Command prompt",
-      caption: "What the model is asked to do with the text.",
+      L10n.isChinese ? "用户提示词模板 (Command Prompt)" : "User prompt template",
+      caption: L10n.isChinese ? "要求模型如何处理文本。" : "What the model is asked to do with the text.",
       showsChrome: false
     ) {
       VStack(alignment: .leading, spacing: AppSpacing.sm) {
         AppTextEditor(
           text: action.commandPrompt,
-          placeholder: "${text}",
+          placeholder: L10n.isChinese ? "输入发送给 AI 的提示词内容…" : "Command prompt template…",
           minHeight: 140
         )
-        HStack(spacing: AppSpacing.xs + 2) {
-          Text("Variables")
-            .font(AppFont.caption)
-            .foregroundStyle(palette.mutedForeground)
-          ForEach(
-            ["${sourceLang}", "${targetLang}", "${text}", "${context}"], id: \.self
-          ) { variable in
-            Text(variable)
-              .font(AppFont.monoSmall)
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+          HStack(spacing: AppSpacing.xs + 2) {
+            Text(L10n.isChinese ? "可用变量：" : "Available variables:")
+              .font(AppFont.caption)
               .foregroundStyle(palette.mutedForeground)
-              .padding(.horizontal, 5)
-              .padding(.vertical, 1.5)
-              .background(
-                palette.muted,
-                in: RoundedRectangle(cornerRadius: AppRadius.xs, style: .continuous)
-              )
-              .help(variableHint(variable))
+            ForEach(
+              ["${text}", "${sourceLang}", "${targetLang}", "${context}"], id: \.self
+            ) { variable in
+              Text(variable)
+                .font(AppFont.monoSmall)
+                .foregroundStyle(palette.mutedForeground)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1.5)
+                .background(
+                  palette.muted,
+                  in: RoundedRectangle(cornerRadius: AppRadius.xs, style: .continuous)
+                )
+                .help("\(variable): \(variableHint(variable))")
+            }
           }
+          Text(
+            [
+              "${text}: \(variableHint("${text}"))",
+              "${sourceLang}: \(variableHint("${sourceLang}"))",
+              "${targetLang}: \(variableHint("${targetLang}"))",
+              "${context}: \(variableHint("${context}"))",
+            ].joined(separator: " · ")
+          )
+          .font(AppFont.caption)
+          .foregroundStyle(palette.faintForeground)
         }
       }
     }
 
     HStack(spacing: AppSpacing.sm) {
-      Button("Restore Default") { restoreAction(action.wrappedValue.id) }
-        .appButton(.outline, size: .sm)
+      Button(L10n.isChinese ? "恢复此动作默认提示词" : "Reset to default prompt") {
+        restoreAction(action.wrappedValue.id)
+      }
+      .appButton(.outline, size: .sm)
+
+      if !isBuiltIn {
+        Button(L10n.isChinese ? "删除此动作" : "Delete Action") {
+          isConfirmingRemove = true
+        }
+        .appButton(.destructive, size: .sm)
+      }
+
       Text(
         isBuiltIn
-          ? "Restores the built-in prompt and display options."
-          : "Restores the custom action template."
+          ? (L10n.isChinese ? "恢复内置提示词与显示选项。" : "Restores the built-in prompt and display options.")
+          : (L10n.isChinese ? "恢复自定义动作模板。" : "Restores the custom action template.")
       )
-        .font(AppFont.caption)
-        .foregroundStyle(palette.mutedForeground)
+      .font(AppFont.caption)
+      .foregroundStyle(palette.mutedForeground)
     }
   }
 
@@ -476,7 +538,7 @@ struct ActionsView: View {
       let name = draftActions[index].name
       draftActions[index] = TranslationAction(
         id: id,
-        name: name.isEmpty ? "Custom Action" : name,
+        name: name.isEmpty ? (L10n.isChinese ? "自定义动作" : "Custom Action") : name,
         rolePrompt: "You are a helpful language assistant.",
         commandPrompt: "${text}",
         outputMarkdown: false
@@ -492,7 +554,7 @@ struct ActionsView: View {
 
   private func addAction() {
     let action = TranslationAction(
-      name: "Custom Action",
+      name: L10n.isChinese ? "自定义动作" : "Custom Action",
       rolePrompt: "You are a helpful language assistant.",
       commandPrompt: "${text}",
       outputMarkdown: false
@@ -511,9 +573,9 @@ struct ActionsView: View {
   /// Translate's single-word dictionary lookup); its prompts are exactly
   /// what was visible in the editor at the moment of duplication.
   private func duplicateAction(_ action: TranslationAction) {
-    let base = action.name.isEmpty ? "Untitled Action" : action.name
+    let base = action.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.name
     let copy = TranslationAction(
-      name: "\(base) Copy",
+      name: L10n.isChinese ? "\(base) 副本" : "\(base) Copy",
       rolePrompt: action.rolePrompt,
       commandPrompt: action.commandPrompt,
       outputMarkdown: action.outputMarkdown
@@ -534,11 +596,16 @@ struct ActionsView: View {
 
   private func variableHint(_ variable: String) -> String {
     switch variable {
-    case "${sourceLang}": "The source language, e.g. \"Japanese\"."
-    case "${targetLang}": "The target language, e.g. \"English\"."
-    case "${text}": "The selected or entered text."
-    case "${context}": "Surrounding text captured with the selection, when available."
-    default: variable
+    case "${text}":
+      return L10n.isChinese ? "选中的文本" : "selected text"
+    case "${sourceLang}":
+      return L10n.isChinese ? "源语言" : "source language"
+    case "${targetLang}":
+      return L10n.isChinese ? "目标语言" : "target language"
+    case "${context}":
+      return L10n.isChinese ? "选区周围上下文" : "surrounding context"
+    default:
+      return variable
     }
   }
 

@@ -22,7 +22,7 @@ struct FollowUpThread: View {
       }
       .padding(.top, AppSpacing.lg)
       .accessibilityElement(children: .contain)
-      .accessibilityLabel("Follow-up questions")
+      .accessibilityLabel(L10n.isChinese ? "追问记录" : "Follow-up questions")
     }
   }
 }
@@ -63,7 +63,7 @@ private struct FollowUpTurnView: View {
         .textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityLabel("Question: \(turn.question)")
+        .accessibilityLabel(L10n.isChinese ? "提问：\(turn.question)" : "Question: \(turn.question)")
 
       // Row commands stay out of the reading until the pointer is on the turn
       // they belong to, so a long thread reads as prose rather than as a list
@@ -71,13 +71,13 @@ private struct FollowUpTurnView: View {
       // hovers, and a command it cannot reach is a command it does not have.
       HStack(spacing: 0) {
         IconButton(
-          title: "Copy this answer",
+          title: L10n.isChinese ? "拷贝此回答" : "Copy this answer",
           symbol: "doc.on.doc",
           isDisabled: turn.answer.isEmpty
         ) {
           model.copyFollowUpAnswer(turn.id)
         }
-        IconButton(title: "Remove this question", symbol: "trash") {
+        IconButton(title: L10n.isChinese ? "删除此问题" : "Remove this question", symbol: "trash") {
           model.removeFollowUp(turn.id)
         }
       }
@@ -95,7 +95,7 @@ private struct FollowUpTurnView: View {
     if turn.answer.isEmpty {
       HStack(spacing: AppSpacing.sm) {
         Spinner(size: 12)
-        Text(isAnswering ? "Thinking…" : "No answer")
+        Text(isAnswering ? (L10n.isChinese ? "正在思考…" : "Thinking…") : (L10n.isChinese ? "暂无回答" : "No answer"))
           .font(AppFont.labelRegular)
           .foregroundStyle(palette.mutedForeground)
       }
@@ -140,7 +140,7 @@ struct FollowUpComposer: View {
         if let error = model.followUpError {
           HStack(alignment: .firstTextBaseline, spacing: AppSpacing.xs) {
             InlineNote(text: error, kind: .error)
-            Button("Dismiss") { model.dismissFollowUpError() }
+            Button(L10n.isChinese ? "关闭" : "Dismiss") { model.dismissFollowUpError() }
               .appButton(.ghost, size: .xs)
           }
         }
@@ -161,7 +161,7 @@ struct FollowUpComposer: View {
       draft = handedBack
     }
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Follow-up")
+    .accessibilityLabel(L10n.isChinese ? "追问" : "Follow-up")
   }
 
   // MARK: Suggestions
@@ -209,8 +209,8 @@ struct FollowUpComposer: View {
     HStack(spacing: AppSpacing.sm) {
       AppTextField(
         placeholder: model.followUps.isEmpty
-          ? "Ask a follow-up about this…"
-          : "Ask another…",
+          ? (L10n.isChinese ? "针对此结果继续追问…" : "Ask a follow-up about this…")
+          : (L10n.isChinese ? "提出下一个问题…" : "Ask another…"),
         text: $draft,
         symbol: "text.bubble",
         size: .md,
@@ -232,8 +232,8 @@ struct FollowUpComposer: View {
       }
       .appButton(model.isAnsweringFollowUp ? .secondary : .primary, size: .icon)
       .disabled(!model.isAnsweringFollowUp && !canSend)
-      .help(model.isAnsweringFollowUp ? "Stop answering (⌘.)" : "Ask (↩)")
-      .accessibilityLabel(model.isAnsweringFollowUp ? "Stop answering" : "Ask")
+      .help(model.isAnsweringFollowUp ? (L10n.isChinese ? "停止回答 (⌘.)" : "Stop answering (⌘.)") : (L10n.isChinese ? "提问 (↩)" : "Ask (↩)"))
+      .accessibilityLabel(model.isAnsweringFollowUp ? (L10n.isChinese ? "停止回答" : "Stop answering") : (L10n.isChinese ? "发送追问" : "Ask"))
     }
   }
 

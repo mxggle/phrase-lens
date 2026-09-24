@@ -74,8 +74,8 @@ enum DictionaryDataError: LocalizedError {
   case unavailable, invalid
   var errorDescription: String? {
     switch self {
-    case .unavailable: "The offline dictionary could not be opened. Reinstall the app to restore its data."
-    case .invalid: "The dictionary data is incompatible or damaged."
+    case .unavailable: L10n.isChinese ? "无法打开离线词典。请重新安装应用以恢复数据。" : "The offline dictionary could not be opened. Reinstall the app to restore its data."
+    case .invalid: L10n.isChinese ? "词典数据不兼容或已损坏。" : "The dictionary data is incompatible or damaged."
     }
   }
 }

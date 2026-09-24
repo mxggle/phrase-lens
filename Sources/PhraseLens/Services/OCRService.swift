@@ -24,7 +24,7 @@ struct OCRService: Sendable {
       guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
         let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
       else {
-        throw TranslationError.provider("Could not read the image.")
+        throw TranslationError.provider(L10n.isChinese ? "无法读取图像。" : "Could not read the image.")
       }
       // A click that never became a drag still writes a file, so the empty
       // capture is recognised here rather than surfacing as "no text found".

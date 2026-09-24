@@ -401,14 +401,14 @@ enum ModelCatalogError: LocalizedError {
 
   var errorDescription: String? {
     switch self {
-    case .missingAPIKey: "Save an API key for this provider before fetching models."
-    case .missingOAuthCredentials: "Sign in with ChatGPT before fetching models."
+    case .missingAPIKey: L10n.isChinese ? "请先保存此服务商的 API 密钥，再获取模型列表。" : "Save an API key for this provider before fetching models."
+    case .missingOAuthCredentials: L10n.isChinese ? "请先登录 ChatGPT，再获取模型列表。" : "Sign in with ChatGPT before fetching models."
     case .unsupportedProvider(let message): message
-    case .invalidEndpoint: "The model catalog endpoint could not be created."
-    case .invalidResponse: "The provider returned an invalid model catalog response."
-    case .requestFailed(let status): "Fetching models failed with HTTP \(status)."
-    case .noModels: "The provider returned no selectable models."
-    case .tooManyPages: "The provider returned too many model catalog pages."
-    }
+    case .invalidEndpoint: L10n.isChinese ? "无法创建模型目录接口地址。" : "The model catalog endpoint could not be created."
+    case .invalidResponse: L10n.isChinese ? "服务商返回的模型目录响应无效。" : "The provider returned an invalid model catalog response."
+    case .requestFailed(let status): L10n.isChinese ? "获取模型列表失败 (HTTP \(status))。" : "Fetching models failed with HTTP \(status)."
+    case .noModels: L10n.isChinese ? "服务商没有返回可选模型。" : "The provider returned no selectable models."
+    case .tooManyPages: L10n.isChinese ? "服务商返回的模型目录分页过多。" : "The provider returned too many model catalog pages."
   }
+}
 }

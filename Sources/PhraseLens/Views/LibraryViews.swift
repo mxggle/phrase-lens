@@ -1,5 +1,143 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
+
+// MARK: - Taxonomy Localization Extensions
+
+extension VocabularyFacet {
+  var localizedTitle: String {
+    guard L10n.isChinese else {
+      switch self {
+      case .unit: return "Unit"
+      case .topic: return "Topics"
+      case .partOfSpeech: return "Part of Speech"
+      case .difficulty: return "Level"
+      case .register: return "Register"
+      case .languagePair: return "Language"
+      }
+    }
+    switch self {
+    case .unit: return "类型"
+    case .topic: return "主题"
+    case .partOfSpeech: return "词性"
+    case .difficulty: return "难度等级"
+    case .register: return "语域"
+    case .languagePair: return "语言"
+    }
+  }
+}
+
+extension VocabularyGrouping {
+  var localizedTitle: String {
+    guard L10n.isChinese else { return title }
+    switch self {
+    case .none: return "不分组"
+    case .facet(let facet): return facet.localizedTitle
+    case .month: return "按收藏时间"
+    }
+  }
+}
+
+extension VocabularyUnit {
+  var localizedDisplayName: String {
+    guard L10n.isChinese else { return displayName }
+    switch self {
+    case .word: return "单词"
+    case .phrase: return "短语"
+    case .sentence: return "句子"
+    }
+  }
+}
+
+extension VocabularyPartOfSpeech {
+  var localizedDisplayName: String {
+    guard L10n.isChinese else { return displayName }
+    switch self {
+    case .noun: return "名词"
+    case .verb: return "动词"
+    case .adjective: return "形容词"
+    case .adverb: return "副词"
+    case .conjunction: return "连词"
+    case .particle: return "助词"
+    case .expression: return "习语表达"
+    }
+  }
+}
+
+extension VocabularyRegister {
+  var localizedDisplayName: String {
+    guard L10n.isChinese else { return displayName }
+    switch self {
+    case .spoken: return "口语"
+    case .written: return "书面语"
+    case .formal: return "正式"
+    case .slang: return "俚语与网络"
+    case .honorific: return "敬语"
+    }
+  }
+}
+
+extension VocabularyDifficulty {
+  var localizedDisplayName: String {
+    guard L10n.isChinese else { return displayName }
+    switch self {
+    case .beginner: return "入门"
+    case .elementary: return "初级"
+    case .intermediate: return "中级"
+    case .advanced: return "高级"
+    case .expert: return "精通"
+    }
+  }
+}
+
+extension VocabularyFacetValue {
+  var localizedLabel: String {
+    guard L10n.isChinese else { return label }
+    if isUntagged {
+      return "未分类"
+    }
+    switch facet {
+    case .unit:
+      switch key {
+      case VocabularyUnit.word.rawValue: return "单词"
+      case VocabularyUnit.phrase.rawValue: return "短语"
+      case VocabularyUnit.sentence.rawValue: return "句子"
+      default: return label
+      }
+    case .partOfSpeech:
+      switch key {
+      case VocabularyPartOfSpeech.noun.rawValue: return "名词"
+      case VocabularyPartOfSpeech.verb.rawValue: return "动词"
+      case VocabularyPartOfSpeech.adjective.rawValue: return "形容词"
+      case VocabularyPartOfSpeech.adverb.rawValue: return "副词"
+      case VocabularyPartOfSpeech.conjunction.rawValue: return "连词"
+      case VocabularyPartOfSpeech.particle.rawValue: return "助词"
+      case VocabularyPartOfSpeech.expression.rawValue: return "习语表达"
+      default: return label
+      }
+    case .register:
+      switch key {
+      case VocabularyRegister.spoken.rawValue: return "口语"
+      case VocabularyRegister.written.rawValue: return "书面语"
+      case VocabularyRegister.formal.rawValue: return "正式"
+      case VocabularyRegister.slang.rawValue: return "俚语与网络"
+      case VocabularyRegister.honorific.rawValue: return "敬语"
+      default: return label
+      }
+    case .difficulty:
+      switch key {
+      case String(VocabularyDifficulty.beginner.rawValue): return "入门"
+      case String(VocabularyDifficulty.elementary.rawValue): return "初级"
+      case String(VocabularyDifficulty.intermediate.rawValue): return "中级"
+      case String(VocabularyDifficulty.advanced.rawValue): return "高级"
+      case String(VocabularyDifficulty.expert.rawValue): return "精通"
+      default: return label
+      }
+    case .topic, .languagePair:
+      return label
+    }
+  }
+}
 
 // MARK: - Shared scaffolding
 
@@ -42,7 +180,32 @@ private struct LibraryScaffold<Toolbar: View, Content: View>: View {
       .frame(maxWidth: layoutWidth.isCompact ? .infinity : 320)
 
       if !layoutWidth.isCompact {
-        Text("\(count) \(countNoun)")
+        let text: String = {
+          if L10n.isChinese {
+            if countNoun == "translations" {
+              return "\(count) 条翻译"
+            } else if countNoun == "words" {
+              return "\(count) 个生词"
+            } else {
+              return "\(count) \(countNoun)"
+            }
+          } else {
+            let noun: String
+            if count == 1 {
+              if countNoun == "translations" {
+                noun = "translation"
+              } else if countNoun == "words" {
+                noun = "word"
+              } else {
+                noun = countNoun
+              }
+            } else {
+              noun = countNoun
+            }
+            return "\(count) \(noun)"
+          }
+        }()
+        Text(text)
           .font(AppFont.caption)
           .monospacedDigit()
           .foregroundStyle(palette.mutedForeground)
@@ -72,18 +235,26 @@ extension View {
     perform: @escaping () -> Void
   ) -> some View {
     let noun = count == 1 ? singular : plural
+    let title = L10n.isChinese
+      ? "确认删除这 \(count) 个\(singular == "word" ? "生词" : "条目")？"
+      : "Delete \(count) \(noun)?"
+    let destructiveTitle = L10n.isChinese
+      ? "删除 \(count) 项"
+      : "Delete \(count) \(noun.capitalized)"
+    let cancelTitle = L10n.isChinese ? "取消" : "Cancel"
+    let messageText = L10n.isChinese
+      ? "所选内容将从本机彻底移除，此操作无法撤销。"
+      : "\(count == 1 ? "This \(singular) is" : "These \(count) \(plural) are") removed from this Mac. There is no undo."
+
     return confirmationDialog(
-      "Delete \(count) \(noun)?",
+      title,
       isPresented: isPresented,
       titleVisibility: .visible
     ) {
-      Button("Delete \(count) \(noun.capitalized)", role: .destructive, action: perform)
-      Button("Cancel", role: .cancel) {}
+      Button(destructiveTitle, role: .destructive, action: perform)
+      Button(cancelTitle, role: .cancel) {}
     } message: {
-      Text(
-        "\(count == 1 ? "This \(singular) is" : "These \(count) \(plural) are") removed "
-          + "from this Mac. There is no undo."
-      )
+      Text(messageText)
     }
   }
 }
@@ -234,9 +405,37 @@ private struct LibrarySectionHeader: View {
 
   @Environment(\.palette) private var palette
 
+  private var displayTitle: String {
+    guard L10n.isChinese else { return title }
+    switch title {
+    case "Not tagged": return "未分类"
+    case "Word": return "单词"
+    case "Phrase": return "短语"
+    case "Sentence": return "句子"
+    case "Noun": return "名词"
+    case "Verb": return "动词"
+    case "Adjective": return "形容词"
+    case "Adverb": return "副词"
+    case "Conjunction": return "连词"
+    case "Particle": return "助词"
+    case "Expression": return "习语表达"
+    case "Spoken": return "口语"
+    case "Written": return "书面语"
+    case "Formal": return "正式"
+    case "Slang & internet": return "俚语与网络"
+    case "Honorific": return "敬语"
+    case "Beginner": return "入门"
+    case "Elementary": return "初级"
+    case "Intermediate": return "中级"
+    case "Advanced": return "高级"
+    case "Expert": return "精通"
+    default: return title
+    }
+  }
+
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: AppSpacing.sm) {
-      Text(title)
+      Text(displayTitle)
         .font(AppFont.heading)
         .foregroundStyle(palette.foreground)
         .lineLimit(1)
@@ -256,7 +455,7 @@ private struct LibrarySectionHeader: View {
     // it vertically would overlap the row above whenever it is not pinned.
     .background { palette.background.padding(.horizontal, -AppSpacing.lg) }
     .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(title), \(count) words")
+    .accessibilityLabel(L10n.isChinese ? "\(displayTitle)，\(count) 个生词" : "\(title), \(count) words")
     .accessibilityAddTraits(.isHeader)
   }
 }
@@ -284,9 +483,9 @@ struct HistoryView: View {
     let filteredEntries = filtered
     LibraryScaffold(
       searchText: $searchText,
-      searchPrompt: "Search history",
+      searchPrompt: L10n.isChinese ? "搜索历史记录…" : "Search history…",
       count: filteredEntries.count,
-      countNoun: filteredEntries.count == 1 ? "entry" : "entries"
+      countNoun: "translations"
     ) {
       toolbar
     } content: {
@@ -302,12 +501,28 @@ struct HistoryView: View {
             HistoryRow(entry: entry)
           }
           .contextMenu {
-            Button("Use Again") { model.restore(entry) }
-            Button(entry.favorite ? "Remove from Favorites" : "Add to Favorites") {
+            Button(L10n.isChinese ? "在翻译器中载入" : "Restore in translator") {
+              model.restore(entry)
+            }
+            Divider()
+            Button(L10n.isChinese ? "拷贝原文" : "Copy source text") {
+              copySourceText(of: entry)
+            }
+            Button(L10n.isChinese ? "拷贝译文" : "Copy translated text") {
+              copyTranslatedText(of: entry)
+            }
+            Divider()
+            Button(
+              entry.favorite
+                ? (L10n.isChinese ? "取消收藏" : "Remove from Favorites")
+                : (L10n.isChinese ? "添加到收藏" : "Add to Favorites")
+            ) {
               model.toggleFavorite(entry)
             }
             Divider()
-            Button("Delete", role: .destructive) { confirmDelete(of: [entry.id]) }
+            Button(L10n.isChinese ? "删除此条记录" : "Delete translation", role: .destructive) {
+              confirmDelete(of: [entry.id])
+            }
           }
         }
       }
@@ -315,8 +530,8 @@ struct HistoryView: View {
     .libraryDeleteConfirmation(
       isPresented: $isConfirmingDelete,
       count: pendingDelete.count,
-      singular: "entry",
-      plural: "entries"
+      singular: "translation",
+      plural: "translations"
     ) {
       model.deleteHistory(ids: pendingDelete)
       selection.subtract(pendingDelete)
@@ -338,25 +553,57 @@ struct HistoryView: View {
       if let selected { model.restore(selected) }
     } label: {
       AdaptiveLabel(
-        title: "Use Again",
+        title: L10n.isChinese ? "在翻译器中载入" : "Restore in translator",
         symbol: "arrow.uturn.backward",
         iconOnly: layoutWidth.isCompact
       )
     }
     .appButton(.outline, size: .sm)
     .disabled(selection.count != 1)
-    .help("Load the selected translation back into the translator")
-    .accessibilityLabel("Use the selected translation again")
+    .help(L10n.isChinese ? "在翻译器中载入" : "Restore in translator")
+    .accessibilityLabel(L10n.isChinese ? "在翻译器中载入" : "Restore in translator")
+
+    Button {
+      exportHistory()
+    } label: {
+      AdaptiveLabel(
+        title: L10n.isChinese ? "导出" : "Export",
+        symbol: "square.and.arrow.up",
+        iconOnly: layoutWidth.isCompact
+      )
+    }
+    .appButton(.outline, size: .sm)
+    .disabled(model.history.isEmpty)
+    .help(L10n.isChinese ? "导出历史记录 (JSON)" : "Export History (JSON)")
+    .accessibilityLabel(L10n.isChinese ? "导出历史记录 (JSON)" : "Export History (JSON)")
+
+    Button {
+      confirmDelete(of: Set(model.history.map(\.id)))
+    } label: {
+      AdaptiveLabel(
+        title: L10n.isChinese ? "清空" : "Clear",
+        symbol: "trash.slash",
+        iconOnly: layoutWidth.isCompact
+      )
+    }
+    .appButton(.ghost, size: .sm)
+    .disabled(model.history.isEmpty)
+    .help(L10n.isChinese ? "清空历史记录" : "Clear History")
+    .accessibilityLabel(L10n.isChinese ? "清空历史记录" : "Clear History")
 
     Button {
       confirmDelete(of: selection)
     } label: {
-      AdaptiveLabel(title: "Delete", symbol: "trash", iconOnly: layoutWidth.isCompact)
+      AdaptiveLabel(
+        title: L10n.isChinese ? "删除" : "Delete",
+        symbol: "trash",
+        iconOnly: layoutWidth.isCompact
+      )
     }
     .appButton(.destructiveGhost, size: .sm)
     .disabled(selection.isEmpty)
-    .help("Delete the selected entries")
-    .accessibilityLabel("Delete the selected entries")
+    .help(L10n.isChinese ? "删除所选记录" : "Delete selected translations")
+    .accessibilityLabel(L10n.isChinese ? "删除所选记录" : "Delete selected translations")
   }
 
   private func select(_ id: UUID, extending: Bool) {
@@ -367,21 +614,54 @@ struct HistoryView: View {
     }
   }
 
+  private func copySourceText(of entry: HistoryEntry) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(entry.sourceText, forType: .string)
+  }
+
+  private func copyTranslatedText(of entry: HistoryEntry) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(entry.translatedText, forType: .string)
+  }
+
+  private func exportHistory() {
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.json]
+    panel.nameFieldStringValue = "phraselens-history.json"
+    panel.prompt = L10n.isChinese ? "导出" : "Export"
+    panel.title = L10n.isChinese ? "导出历史记录 (JSON)" : "Export History (JSON)"
+    if panel.runModal() == .OK, let url = panel.url {
+      do {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(model.history)
+        try data.write(to: url)
+      } catch {
+        model.errorMessage = error.localizedDescription
+      }
+    }
+  }
+
   @ViewBuilder
   private var emptyState: some View {
     if searchText.isEmpty {
       EmptyState(
         symbol: "clock.arrow.circlepath",
-        title: "No history yet",
-        message: "Completed translations are saved on this Mac and appear here."
+        title: L10n.isChinese ? "暂无翻译历史" : "No saved translations",
+        message: L10n.isChinese
+          ? "您在工作区或划选浮窗中的翻译记录将自动保存在这里。"
+          : "Translations you make in the workspace or the pop-up are saved here automatically."
       )
     } else {
       EmptyState(
         symbol: "magnifyingglass",
-        title: "No matches",
-        message: "Nothing in your history matches “\(searchText)”."
+        title: L10n.isChinese ? "未找到匹配的翻译记录" : "No matching translations",
+        message: L10n.isChinese
+          ? "尝试使用其他关键词搜索。"
+          : "Try searching for a different word or phrase."
       ) {
-        Button("Clear Search") { searchText = "" }
+        Button(L10n.isChinese ? "清除搜索" : "Clear Search") { searchText = "" }
           .appButton(.outline, size: .sm)
       }
     }
@@ -406,7 +686,7 @@ private struct HistoryRow: View {
           Image(systemName: "star.fill")
             .font(.system(size: 9))
             .foregroundStyle(palette.warning)
-            .accessibilityLabel("Favorite")
+            .accessibilityLabel(L10n.isChinese ? "已收藏" : "Favorite")
         }
         Spacer(minLength: AppSpacing.sm)
         Text(entry.createdAt, format: .relative(presentation: .named))
@@ -436,11 +716,24 @@ private struct HistoryRow: View {
           textBlock(entry.translatedText, isSource: false)
         }
       }
+
+      if let context = entry.selectionContext,
+        !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      {
+        HStack(alignment: .firstTextBaseline, spacing: AppSpacing.xs) {
+          Badge(text: L10n.isChinese ? "语境" : "Context", variant: .neutral)
+          Text(context.trimmingCharacters(in: .whitespacesAndNewlines))
+            .font(AppFont.caption)
+            .foregroundStyle(palette.mutedForeground)
+            .lineLimit(2)
+        }
+      }
     }
     .accessibilityLabel(
-      "\(entry.sourceText). \(entry.dictionarySnapshot == nil ? "Translated" : "Dictionary"): \(entry.translatedText). "
-        + "\(entry.actionName), \(entry.sourceLanguage.displayName) to "
+      "\(entry.sourceText). \(entry.dictionarySnapshot == nil ? (L10n.isChinese ? "翻译" : "Translated") : (L10n.isChinese ? "词典" : "Dictionary")): \(entry.translatedText). "
+        + "\(entry.actionName), \(entry.sourceLanguage.displayName) \(L10n.isChinese ? "至" : "to") "
         + entry.resultLanguageName
+        + (entry.selectionContext.map { " \(L10n.isChinese ? "语境" : "Context"): \($0)" } ?? "")
     )
   }
 
@@ -494,9 +787,9 @@ struct VocabularyView: View {
 
     LibraryScaffold(
       searchText: $searchText,
-      searchPrompt: "Search vocabulary",
+      searchPrompt: L10n.isChinese ? "搜索生词本…" : "Search vocabulary…",
       count: entries.count,
-      countNoun: entries.count == 1 ? "word" : "words"
+      countNoun: "words"
     ) {
       toolbar(sections: sections)
     } content: {
@@ -564,16 +857,23 @@ struct VocabularyView: View {
   private func card(for entry: VocabularyEntry) -> some View {
     LibraryCard(
       isSelected: selection.contains(entry.id),
-      onSelect: { extending in select(entry.id, extending: extending) }
+      onSelect: { extending in select(entry.id, extending: extending) },
+      onOpen: { speak(entry: entry) }
     ) {
       VocabularyRow(entry: entry)
     }
     .contextMenu {
-      Button("Copy Explanation") { copyExplanation(of: entry) }
-      Button("Organize Again") { model.retagVocabulary(ids: [entry.id]) }
-        .disabled(model.isOrganizingVocabulary)
+      Button(L10n.isChinese ? "朗读单词" : "Speak word") { speak(entry: entry) }
+      Button(L10n.isChinese ? "拷贝单词" : "Copy word") { copyWord(of: entry) }
+      Button(L10n.isChinese ? "拷贝释义" : "Copy Explanation") { copyExplanation(of: entry) }
+      Button(L10n.isChinese ? "AI 智能整理分类" : "Organize with AI") {
+        model.retagVocabulary(ids: [entry.id])
+      }
+      .disabled(model.isOrganizingVocabulary)
       Divider()
-      Button("Delete", role: .destructive) { confirmDelete(of: [entry.id]) }
+      Button(L10n.isChinese ? "移出生词本" : "Delete word", role: .destructive) {
+        confirmDelete(of: [entry.id])
+      }
     }
   }
 
@@ -584,13 +884,15 @@ struct VocabularyView: View {
         isFilterPresented = true
       } label: {
         AdaptiveLabel(
-          title: filter.isEmpty ? "Filters" : "Filters (\(filter.count))",
+          title: filter.isEmpty
+            ? (L10n.isChinese ? "筛选" : "Filters")
+            : (L10n.isChinese ? "筛选 (\(filter.count))" : "Filters (\(filter.count))"),
           symbol: "line.3.horizontal.decrease",
           iconOnly: false
         )
       }
       .appButton(filter.isEmpty ? .outline : .secondary, size: .sm)
-      .help("Narrow the collection by type, topic, or level")
+      .help(L10n.isChinese ? "按类型、主题或等级筛选生词本" : "Narrow the collection by type, topic, or level")
       .popover(isPresented: $isFilterPresented, arrowEdge: .bottom) {
         VocabularyFacetRail(sections: sections, filter: $filter)
           .frame(width: 240, height: 360)
@@ -598,29 +900,62 @@ struct VocabularyView: View {
     }
 
     AppSelect(
-      title: "Group the collection into sections",
+      title: L10n.isChinese ? "按分类对生词本进行分组" : "Group the collection into sections",
       selection: $grouping,
       options: VocabularyGrouping.allCases,
       // Narrow windows get the bare axis: the bar is already carrying a search
       // field and two commands, and "Group: Part of speech" is wider than the
       // room left for it.
       label: { grouping in
-        if layoutWidth.isCompact || grouping == .none { return grouping.title }
-        return "Group: \(grouping.title)"
+        let name = grouping.localizedTitle
+        if layoutWidth.isCompact || grouping == .none { return name }
+        return L10n.isChinese ? "分组：\(name)" : "Group: \(name)"
       },
       size: .sm,
       symbol: "square.stack.3d.up"
     )
 
     Button {
+      model.organizeVocabulary()
+    } label: {
+      AdaptiveLabel(
+        title: L10n.isChinese ? "AI 智能整理分类" : "Organize with AI",
+        symbol: "sparkles",
+        iconOnly: layoutWidth.isCompact
+      )
+    }
+    .appButton(.outline, size: .sm)
+    .disabled(model.isOrganizingVocabulary || model.vocabulary.isEmpty)
+    .help(L10n.isChinese ? "AI 智能整理分类" : "Organize with AI")
+    .accessibilityLabel(L10n.isChinese ? "AI 智能整理分类" : "Organize with AI")
+
+    Button {
+      exportVocabulary()
+    } label: {
+      AdaptiveLabel(
+        title: L10n.isChinese ? "导出" : "Export",
+        symbol: "square.and.arrow.up",
+        iconOnly: layoutWidth.isCompact
+      )
+    }
+    .appButton(.outline, size: .sm)
+    .disabled(model.vocabulary.isEmpty)
+    .help(L10n.isChinese ? "导出生词本" : "Export Vocabulary (JSON / CSV)")
+    .accessibilityLabel(L10n.isChinese ? "导出生词本" : "Export Vocabulary")
+
+    Button {
       confirmDelete(of: selection)
     } label: {
-      AdaptiveLabel(title: "Delete", symbol: "trash", iconOnly: layoutWidth.isCompact)
+      AdaptiveLabel(
+        title: L10n.isChinese ? "删除" : "Delete",
+        symbol: "trash",
+        iconOnly: layoutWidth.isCompact
+      )
     }
     .appButton(.destructiveGhost, size: .sm)
     .disabled(selection.isEmpty)
-    .help("Delete the selected words")
-    .accessibilityLabel("Delete the selected words")
+    .help(L10n.isChinese ? "删除所选生词" : "Delete selected words")
+    .accessibilityLabel(L10n.isChinese ? "删除所选生词" : "Delete selected words")
   }
 
   private func confirmDelete(of ids: Set<UUID>) {
@@ -637,38 +972,90 @@ struct VocabularyView: View {
     }
   }
 
+  private func copyExplanation(of entry: VocabularyEntry) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(entry.explanation, forType: .string)
+  }
+
+  private func copyWord(of entry: VocabularyEntry) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(entry.word, forType: .string)
+  }
+
+  private func speak(entry: VocabularyEntry) {
+    let settings = model.settingsStore.settings
+    model.speech.speak(
+      entry.word,
+      language: entry.sourceLanguage,
+      rate: settings.speechRate,
+      volume: settings.speechVolume,
+      provider: settings.resolvedTTSProvider
+    )
+  }
+
+  private func exportVocabulary() {
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.json, .commaSeparatedText]
+    panel.nameFieldStringValue = "phraselens-vocabulary.json"
+    panel.prompt = L10n.isChinese ? "导出" : "Export"
+    panel.title = L10n.isChinese ? "导出生词本" : "Export Vocabulary"
+    if panel.runModal() == .OK, let url = panel.url {
+      do {
+        if url.pathExtension.lowercased() == "csv" {
+          var csv = "Word,Explanation,Source Language,Target Language,Created At\n"
+          for entry in model.vocabulary {
+            let escapedWord = "\"" + entry.word.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+            let escapedExplanation = "\"" + entry.explanation.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+            let line = "\(escapedWord),\(escapedExplanation),\(entry.sourceLanguage.rawValue),\(entry.targetLanguage.rawValue),\(entry.createdAt.ISO8601Format())\n"
+            csv += line
+          }
+          try csv.write(to: url, atomically: true, encoding: .utf8)
+        } else {
+          let encoder = JSONEncoder()
+          encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+          encoder.dateEncodingStrategy = .iso8601
+          let data = try encoder.encode(model.vocabulary)
+          try data.write(to: url)
+        }
+      } catch {
+        model.errorMessage = error.localizedDescription
+      }
+    }
+  }
+
   @ViewBuilder
   private var emptyState: some View {
     if !filter.isEmpty {
       EmptyState(
         symbol: "line.3.horizontal.decrease",
-        title: "No matches",
-        message: "No saved word is filed under every one of those at once."
+        title: L10n.isChinese ? "未找到匹配的生词" : "No matching words",
+        message: L10n.isChinese
+          ? "尝试其他关键词或清除筛选条件。"
+          : "Try a different search term or clear the facet filters."
       ) {
-        Button("Clear Filters") { filter.clear() }
+        Button(L10n.isChinese ? "清除筛选" : "Clear Filters") { filter.clear() }
           .appButton(.outline, size: .sm)
       }
     } else if !searchText.isEmpty {
       EmptyState(
         symbol: "magnifyingglass",
-        title: "No matches",
-        message: "No saved word matches “\(searchText)”."
+        title: L10n.isChinese ? "未找到匹配的生词" : "No matching words",
+        message: L10n.isChinese
+          ? "尝试其他关键词或清除筛选条件。"
+          : "Try a different search term or clear the facet filters."
       ) {
-        Button("Clear Search") { searchText = "" }
+        Button(L10n.isChinese ? "清除搜索" : "Clear Search") { searchText = "" }
           .appButton(.outline, size: .sm)
       }
     } else {
       EmptyState(
         symbol: "books.vertical",
-        title: "No saved words",
-        message: "Choose Collect under a short translation to save it here."
+        title: L10n.isChinese ? "生词本为空" : "No saved words",
+        message: L10n.isChinese
+          ? "在翻译结果或词典卡片中点按书签图标，即可收集想学习的生词。"
+          : "Click the bookmark icon on any result or dictionary entry to collect words you want to study."
       )
     }
-  }
-
-  private func copyExplanation(of entry: VocabularyEntry) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(entry.explanation, forType: .string)
   }
 }
 
@@ -690,28 +1077,38 @@ private struct VocabularyOrganizeBar: View {
     HStack(spacing: AppSpacing.sm) {
       if let progress {
         Spinner(size: 12)
-        Text("Organizing \(progress.completed) of \(progress.total)…")
-          .font(AppFont.caption)
-          .foregroundStyle(palette.secondaryForeground)
-          .monospacedDigit()
+        Text(
+          L10n.isChinese
+            ? "正在整理 \(progress.completed) / \(progress.total)…"
+            : "Organizing \(progress.completed) of \(progress.total)…"
+        )
+        .font(AppFont.caption)
+        .foregroundStyle(palette.secondaryForeground)
+        .monospacedDigit()
         Spacer(minLength: AppSpacing.sm)
-        Button("Stop", action: cancel)
+        Button(L10n.isChinese ? "停止" : "Stop", action: cancel)
           .appButton(.ghost, size: .xs)
       } else {
         Image(systemName: "sparkles")
           .font(.system(size: 10, weight: .semibold))
           .foregroundStyle(palette.mutedForeground)
         Text(
-          unfiled == 1
-            ? "1 word has not been sorted into categories yet."
-            : "\(unfiled) words have not been sorted into categories yet."
+          L10n.isChinese
+            ? "\(unfiled) 个生词尚未分类。"
+            : (unfiled == 1
+              ? "1 word has not been sorted into categories yet."
+              : "\(unfiled) words have not been sorted into categories yet.")
         )
         .font(AppFont.caption)
         .foregroundStyle(palette.secondaryForeground)
         Spacer(minLength: AppSpacing.sm)
-        Button("Organize", action: organize)
+        Button(L10n.isChinese ? "整理" : "Organize", action: organize)
           .appButton(.outline, size: .xs)
-          .help("Have the model file these under type, topic, part of speech, and level")
+          .help(
+            L10n.isChinese
+              ? "使用 AI 模型对这些生词按类型、主题、词性和级别分类"
+              : "Have the model file these under type, topic, part of speech, and level"
+          )
       }
     }
     .padding(.horizontal, AppSpacing.lg)
@@ -738,12 +1135,12 @@ private struct VocabularyFacetRail: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: AppSpacing.sm) {
-        Eyebrow(text: "Filter")
+        Eyebrow(text: L10n.isChinese ? "筛选" : "Filter")
         Spacer(minLength: AppSpacing.xs)
         if !filter.isEmpty {
-          Button("Clear") { filter.clear() }
+          Button(L10n.isChinese ? "全部" : "All") { filter.clear() }
             .appButton(.ghost, size: .xs)
-            .accessibilityLabel("Clear all filters")
+            .accessibilityLabel(L10n.isChinese ? "显示全部（清除筛选）" : "Show all (Clear filters)")
         }
       }
       .frame(height: AppMetrics.paneHeaderHeight)
@@ -755,7 +1152,7 @@ private struct VocabularyFacetRail: View {
         VStack(alignment: .leading, spacing: AppSpacing.lg) {
           ForEach(sections) { section in
             VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-              Eyebrow(text: section.facet.title)
+              Eyebrow(text: section.facet.localizedTitle)
                 .padding(.horizontal, AppSpacing.sm)
                 .padding(.bottom, AppSpacing.xxs)
               ForEach(section.rows) { row in
@@ -774,7 +1171,7 @@ private struct VocabularyFacetRail: View {
     }
     .background(palette.chrome)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Vocabulary filters")
+    .accessibilityLabel(L10n.isChinese ? "生词本筛选" : "Vocabulary filters")
   }
 }
 
@@ -793,7 +1190,7 @@ private struct VocabularyFacetRow: View {
         Image(systemName: isOn ? "checkmark.square.fill" : "square")
           .font(.system(size: 11, weight: .medium))
           .foregroundStyle(isOn ? palette.foreground : palette.faintForeground)
-        Text(row.value.label)
+        Text(row.value.localizedLabel)
           .font(AppFont.labelRegular)
           .foregroundStyle(
             row.value.isUntagged ? palette.mutedForeground : palette.secondaryForeground
@@ -814,8 +1211,8 @@ private struct VocabularyFacetRow: View {
     .buttonStyle(.plain)
     .onHover { isHovering = $0 }
     .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isHovering)
-    .help(row.value.label)
-    .accessibilityLabel("\(row.value.label), \(row.count) words")
+    .help(row.value.localizedLabel)
+    .accessibilityLabel(L10n.isChinese ? "\(row.value.localizedLabel)，\(row.count) 个生词" : "\(row.value.label), \(row.count) words")
     .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : [.isButton])
   }
 
@@ -900,18 +1297,18 @@ private struct VocabularyRow: View {
     var labels: [String] = []
     switch tags.unit {
     case .phrase, .sentence:
-      if let unit = tags.unit { labels.append(unit.displayName) }
+      if let unit = tags.unit { labels.append(unit.localizedDisplayName) }
     case .word, nil:
       if let part = tags.partOfSpeech {
-        labels.append(part.displayName)
+        labels.append(part.localizedDisplayName)
       } else if let unit = tags.unit {
-        labels.append(unit.displayName)
+        labels.append(unit.localizedDisplayName)
       }
     }
     if let level = tags.levelLabel {
       labels.append(level)
     } else if let difficulty = tags.difficulty {
-      labels.append(difficulty.displayName)
+      labels.append(difficulty.localizedDisplayName)
     }
     if let topic = tags.topics?.first { labels.append(topic) }
     return labels

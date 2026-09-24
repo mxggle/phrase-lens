@@ -26,28 +26,53 @@ enum LanguageCode: String, Codable, CaseIterable, Identifiable, Sendable {
   var id: String { rawValue }
 
   var displayName: String {
+    if L10n.isChinese {
+      switch self {
+      case .auto: return "自动检测语言"
+      case .english: return "英语"
+      case .japanese: return "日语"
+      case .simplifiedChinese: return "简体中文"
+      case .traditionalChinese: return "繁体中文"
+      case .korean: return "韩语"
+      case .french: return "法语"
+      case .german: return "德语"
+      case .spanish: return "西班牙语"
+      case .portuguese: return "葡萄牙语"
+      case .italian: return "意大利语"
+      case .russian: return "俄语"
+      case .arabic: return "阿拉伯语"
+      case .hindi: return "印地语"
+      case .thai: return "泰语"
+      case .turkish: return "土耳其语"
+      case .vietnamese: return "越南语"
+      case .indonesian: return "印尼语"
+      case .dutch: return "荷兰语"
+      case .polish: return "波兰语"
+      case .ukrainian: return "乌克兰语"
+      }
+    }
     switch self {
-    case .auto: "Detect language"
-    case .english: "English"
-    case .japanese: "日本語"
-    case .simplifiedChinese: "简体中文"
-    case .traditionalChinese: "繁體中文"
-    case .korean: "한국어"
-    case .french: "Français"
-    case .german: "Deutsch"
-    case .spanish: "Español"
-    case .portuguese: "Português"
-    case .italian: "Italiano"
-    case .russian: "Русский"
-    case .arabic: "العربية"
-    case .hindi: "हिन्दी"
-    case .thai: "ไทย"
-    case .turkish: "Türkçe"
-    case .vietnamese: "Tiếng Việt"
-    case .indonesian: "Bahasa Indonesia"
-    case .dutch: "Nederlands"
-    case .polish: "Polski"
-    case .ukrainian: "Українська"
+    case .auto: return "Detect language"
+    case .english: return "English"
+    case .japanese: return "日本語"
+    case .simplifiedChinese: return "简体中文"
+    case .traditionalChinese: return "繁體中文"
+    case .korean: return "한국어"
+    case .french: return "Français"
+    case .german: return "Deutsch"
+    case .spanish: return "Español"
+    case .portuguese: return "Português"
+    case .italian: return "Italiano"
+    case .russian: return "Русский"
+    case .arabic: return "العربية"
+    case .hindi: return "हिन्दी"
+    case .thai: return "ไทย"
+    case .turkish: return "Türkçe"
+    case .vietnamese: return "Tiếng Việt"
+    case .indonesian: return "Bahasa Indonesia"
+    case .dutch: return "Nederlands"
+    case .polish: return "Polski"
+    case .ukrainian: return "Українська"
     }
   }
 
@@ -55,7 +80,7 @@ enum LanguageCode: String, Codable, CaseIterable, Identifiable, Sendable {
   /// the text it applies to, where "Detect language" spends room the words
   /// need.
   var shortDisplayName: String {
-    self == .auto ? "Auto" : displayName
+    self == .auto ? (L10n.isChinese ? "自动" : "Auto") : displayName
   }
 
   var localeIdentifier: String {
@@ -106,15 +131,27 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
   var id: String { rawValue }
 
   var title: String {
+    if L10n.isChinese {
+      switch self {
+      case .translate: return "翻译"
+      case .polishing: return "润色"
+      case .summarize: return "摘要"
+      case .analyze: return "深度解析"
+      case .explainUsage: return "用法详解"
+      case .explainContext: return "语境解析"
+      case .explainCode: return "代码解析"
+      case .compareSynonyms: return "近义词辨析"
+      }
+    }
     switch self {
-    case .translate: "Translate"
-    case .polishing: "Polish"
-    case .summarize: "Summarize"
-    case .analyze: "Analyze"
-    case .explainUsage: "Explain Usage"
-    case .explainContext: "Explain in Context"
-    case .explainCode: "Explain Code"
-    case .compareSynonyms: "Compare Synonyms"
+    case .translate: return "Translate"
+    case .polishing: return "Polish"
+    case .summarize: return "Summarize"
+    case .analyze: return "Analyze"
+    case .explainUsage: return "Explain Usage"
+    case .explainContext: return "Explain in Context"
+    case .explainCode: return "Explain Code"
+    case .compareSynonyms: return "Compare Synonyms"
     }
   }
 
@@ -421,6 +458,13 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
     Self.factoryBuiltIn(for: id) != nil
   }
 
+  var localizedTitle: String {
+    if isBuiltIn, let mode {
+      return mode.title
+    }
+    return name
+  }
+
   /// Whether this action's answer depends on the text around the selection.
   ///
   /// Explain in Context is built on it, and any action an author wrote a
@@ -639,7 +683,16 @@ enum AppTheme: String, Codable, CaseIterable, Identifiable, Sendable {
   case dark
 
   var id: String { rawValue }
-  var title: String { rawValue.capitalized }
+  var title: String {
+    if L10n.isChinese {
+      switch self {
+      case .system: return "跟随系统"
+      case .light: return "浅色"
+      case .dark: return "深色"
+      }
+    }
+    return rawValue.capitalized
+  }
 }
 
 enum TTSProvider: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -649,9 +702,15 @@ enum TTSProvider: String, Codable, CaseIterable, Identifiable, Sendable {
   var id: String { rawValue }
 
   var displayName: String {
+    if L10n.isChinese {
+      switch self {
+      case .edge: return "Microsoft Edge 神经语音（云端）"
+      case .system: return "macOS 系统语音（本地）"
+      }
+    }
     switch self {
-    case .edge: "Microsoft Edge Neural"
-    case .system: "macOS System Voice"
+    case .edge: return "Microsoft Edge Neural"
+    case .system: return "macOS System Voice"
     }
   }
 }
@@ -663,9 +722,15 @@ enum SelectionPanelPlacementMode: String, Codable, CaseIterable, Identifiable, S
   var id: String { rawValue }
 
   var displayName: String {
+    if L10n.isChinese {
+      switch self {
+      case .nearPointer: return "跟随鼠标光标"
+      case .fixed: return "记忆上次位置"
+      }
+    }
     switch self {
-    case .nearPointer: "Near pointer"
-    case .fixed: "Last position"
+    case .nearPointer: return "Near pointer"
+    case .fixed: return "Last position"
     }
   }
 }
@@ -721,6 +786,7 @@ struct AppSettings: Codable, Equatable, Sendable {
   var selectionPanelPinned = false
   var useClipboardFallback = true
   var theme: AppTheme = .system
+  var appLanguage: AppLanguage = .system
   var fontSize = 15.0
   var speechRate = 0.48
   var speechVolume = 1.0
@@ -756,6 +822,7 @@ struct AppSettings: Codable, Equatable, Sendable {
     case selectionPanelPinned
     case useClipboardFallback
     case theme
+    case appLanguage
     case fontSize
     case speechRate
     case speechVolume
@@ -813,6 +880,7 @@ struct AppSettings: Codable, Equatable, Sendable {
       try container.decodeIfPresent(Bool.self, forKey: .useClipboardFallback)
       ?? true
     theme = try container.decodeIfPresent(AppTheme.self, forKey: .theme) ?? .system
+    appLanguage = try container.decodeIfPresent(AppLanguage.self, forKey: .appLanguage) ?? .system
     fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? 15
     speechRate = try container.decodeIfPresent(Double.self, forKey: .speechRate) ?? 0.48
     speechVolume = try container.decodeIfPresent(Double.self, forKey: .speechVolume) ?? 1
@@ -1021,89 +1089,172 @@ struct FollowUpSuggestion: Identifiable, Hashable, Sendable {
     return words.count <= 3
   }
 
-  private static let word: [FollowUpSuggestion] = [
-    FollowUpSuggestion(
-      label: "Examples",
-      symbol: "text.quote",
-      question:
-        "Give three natural example sentences using this, from everyday to formal, each with a translation."
-    ),
-    FollowUpSuggestion(
-      label: "Nuance",
-      symbol: "arrow.triangle.branch",
-      question:
-        "Which words are easily confused with this one, and what exactly separates them? Show a minimal pair for each."
-    ),
-    FollowUpSuggestion(
-      label: "Collocations",
-      symbol: "link",
-      question:
-        "What does this word usually go with? List the highest-frequency collocations and set phrases with translations."
-    ),
-    FollowUpSuggestion(
-      label: "Word parts",
-      symbol: "square.split.2x1",
-      question:
-        "Break this word into its parts and give its etymology, then list a few words built from the same roots."
-    ),
-    FollowUpSuggestion(
-      label: "Remember it",
-      symbol: "brain",
-      question:
-        "Give me a concrete memory hook for this word, and one short sentence I could use today to make it stick."
-    ),
-  ]
+  private static var word: [FollowUpSuggestion] {
+    if L10n.isChinese {
+      return [
+        FollowUpSuggestion(
+          label: "实用例句",
+          symbol: "text.quote",
+          question: "给出日常到正式的 3 个地道例句，附带中文翻译。"
+        ),
+        FollowUpSuggestion(
+          label: "词义辨析",
+          symbol: "arrow.triangle.branch",
+          question: "这个词容易与哪些词混淆？它们的核心区别是什么？各给出一组对比。"
+        ),
+        FollowUpSuggestion(
+          label: "高频搭配",
+          symbol: "link",
+          question: "这个词常与哪些词搭配？列出高频搭配与固定短语及其中文翻译。"
+        ),
+        FollowUpSuggestion(
+          label: "词根词缀",
+          symbol: "square.split.2x1",
+          question: "拆解这个词的词根词缀与词源，并列出几个派生词。"
+        ),
+        FollowUpSuggestion(
+          label: "记忆要点",
+          symbol: "brain",
+          question: "给出一个生动的记忆联想，以及一句今天就能用上的实用例句。"
+        ),
+      ]
+    }
+    return [
+      FollowUpSuggestion(
+        label: "Examples",
+        symbol: "text.quote",
+        question:
+          "Give three natural example sentences using this, from everyday to formal, each with a translation."
+      ),
+      FollowUpSuggestion(
+        label: "Nuance",
+        symbol: "arrow.triangle.branch",
+        question:
+          "Which words are easily confused with this one, and what exactly separates them? Show a minimal pair for each."
+      ),
+      FollowUpSuggestion(
+        label: "Collocations",
+        symbol: "link",
+        question:
+          "What does this word usually go with? List the highest-frequency collocations and set phrases with translations."
+      ),
+      FollowUpSuggestion(
+        label: "Word parts",
+        symbol: "square.split.2x1",
+        question:
+          "Break this word into its parts and give its etymology, then list a few words built from the same roots."
+      ),
+      FollowUpSuggestion(
+        label: "Remember it",
+        symbol: "brain",
+        question:
+          "Give me a concrete memory hook for this word, and one short sentence I could use today to make it stick."
+      ),
+    ]
+  }
 
-  private static let sentence: [FollowUpSuggestion] = [
-    FollowUpSuggestion(
-      label: "Break it down",
-      symbol: "list.bullet.indent",
-      question:
-        "Break this down chunk by chunk: what each part means and how the parts fit together."
-    ),
-    FollowUpSuggestion(
-      label: "Grammar",
-      symbol: "textformat.abc",
-      question:
-        "Which grammar points does this use? Explain each one and give one more example sentence per point."
-    ),
-    FollowUpSuggestion(
-      label: "Key words",
-      symbol: "star",
-      question:
-        "Which words here are worth learning? For each, give the sense used here and one more example."
-    ),
-    FollowUpSuggestion(
-      label: "Say it differently",
-      symbol: "arrow.2.squarepath",
-      question:
-        "Rewrite this three ways — more casual, more formal, and shorter — and say when each fits."
-    ),
-    FollowUpSuggestion(
-      label: "Why this reading",
-      symbol: "questionmark.circle",
-      question:
-        "Why does it mean this rather than the literal reading? Point out anything idiomatic or easy to misread."
-    ),
-  ]
+  private static var sentence: [FollowUpSuggestion] {
+    if L10n.isChinese {
+      return [
+        FollowUpSuggestion(
+          label: "成分拆解",
+          symbol: "list.bullet.indent",
+          question: "逐块拆解这个句子：各部分的含义以及它们是如何组合的。"
+        ),
+        FollowUpSuggestion(
+          label: "语法要点",
+          symbol: "textformat.abc",
+          question: "这句话用了哪些语法点？详细解析并在每个要点下提供一个补充例句。"
+        ),
+        FollowUpSuggestion(
+          label: "核心词汇",
+          symbol: "star",
+          question: "句中有哪些值得学习的重点词？给出在本句中的含义及一个补充例句。"
+        ),
+        FollowUpSuggestion(
+          label: "同义改写",
+          symbol: "arrow.2.squarepath",
+          question: "提供 3 种改写方式（更口语、更正式、更简练），并说明各自适用的场景。"
+        ),
+        FollowUpSuggestion(
+          label: "深层理解",
+          symbol: "questionmark.circle",
+          question: "为什么是这个意思而不是字面意思？指出习语或容易误读之处。"
+        ),
+      ]
+    }
+    return [
+      FollowUpSuggestion(
+        label: "Break it down",
+        symbol: "list.bullet.indent",
+        question:
+          "Break this down chunk by chunk: what each part means and how the parts fit together."
+      ),
+      FollowUpSuggestion(
+        label: "Grammar",
+        symbol: "textformat.abc",
+        question:
+          "Which grammar points does this use? Explain each one and give one more example sentence per point."
+      ),
+      FollowUpSuggestion(
+        label: "Key words",
+        symbol: "star",
+        question:
+          "Which words here are worth learning? For each, give the sense used here and one more example."
+      ),
+      FollowUpSuggestion(
+        label: "Say it differently",
+        symbol: "arrow.2.squarepath",
+        question:
+          "Rewrite this three ways — more casual, more formal, and shorter — and say when each fits."
+      ),
+      FollowUpSuggestion(
+        label: "Why this reading",
+        symbol: "questionmark.circle",
+        question:
+          "Why does it mean this rather than the literal reading? Point out anything idiomatic or easy to misread."
+      ),
+    ]
+  }
 
-  private static let code: [FollowUpSuggestion] = [
-    FollowUpSuggestion(
-      label: "Line by line",
-      symbol: "list.number",
-      question: "Walk through this line by line and say what each line does."
-    ),
-    FollowUpSuggestion(
-      label: "Risks",
-      symbol: "exclamationmark.triangle",
-      question: "What bugs, edge cases, or security risks does this code have?"
-    ),
-    FollowUpSuggestion(
-      label: "Better version",
-      symbol: "wand.and.stars",
-      question: "How would you write this better? Show the improved version and say what changed."
-    ),
-  ]
+  private static var code: [FollowUpSuggestion] {
+    if L10n.isChinese {
+      return [
+        FollowUpSuggestion(
+          label: "逐行拆解",
+          symbol: "list.number",
+          question: "逐行拆解这段代码，说明每一行的作用。"
+        ),
+        FollowUpSuggestion(
+          label: "潜在隐患",
+          symbol: "exclamationmark.triangle",
+          question: "这段代码存在哪些 Bug、边界情况或安全隐患？"
+        ),
+        FollowUpSuggestion(
+          label: "重构优化",
+          symbol: "wand.and.stars",
+          question: "如何写得更好？展示优化后的代码并说明改动原因。"
+        ),
+      ]
+    }
+    return [
+      FollowUpSuggestion(
+        label: "Line by line",
+        symbol: "list.number",
+        question: "Walk through this line by line and say what each line does."
+      ),
+      FollowUpSuggestion(
+        label: "Risks",
+        symbol: "exclamationmark.triangle",
+        question: "What bugs, edge cases, or security risks does this code have?"
+      ),
+      FollowUpSuggestion(
+        label: "Better version",
+        symbol: "wand.and.stars",
+        question: "How would you write this better? Show the improved version and say what changed."
+      ),
+    ]
+  }
 }
 
 struct SelectionSnapshot: Equatable, Sendable {
@@ -1132,24 +1283,41 @@ enum TranslationError: LocalizedError, Equatable {
   case cancelled
 
   var errorDescription: String? {
+    if L10n.isChinese {
+      switch self {
+      case .missingAPIKey: return "请先在“设置”中添加 API 密钥。"
+      case .missingOAuthCredentials: return "请在“设置”中登录 ChatGPT 账号。"
+      case .oauthExpired: return "ChatGPT 登录状态已过期，请在“设置”中重新登录。"
+      case .invalidEndpoint(let reason): return "无效的 API 接口地址：\(reason)"
+      case .invalidResponse: return "模型服务商返回了无法解析的响应内容。"
+      case .provider(let message): return message
+      case .network(let reason): return "无法连接至模型服务商：\(reason)"
+      case .streamInterrupted(let reason): return "回复在生成完毕前中断：\(reason)"
+      case .noInput: return "请先输入或划选文本。"
+      case .selectionUnavailable: return "未能读取选中文本。请在其他应用中保持文字选中状态，松开快捷键后再按一次 ⌥F。"
+      case .accessibilityPermissionRequired: return "划选文本与文字替换功能需要系统“辅助功能”权限。"
+      case .noTextRecognized: return "该选区内未识别到文字，请尝试更紧凑地框选文字区域。"
+      case .cancelled: return "已取消翻译。"
+      }
+    }
     switch self {
-    case .missingAPIKey: "Add an API key in Settings."
-    case .missingOAuthCredentials: "Please sign in with ChatGPT in Settings."
-    case .oauthExpired: "ChatGPT login session expired. Please sign in again in Settings."
-    case .invalidEndpoint(let reason): "Invalid API endpoint: \(reason)"
-    case .invalidResponse: "The provider returned an unreadable response."
-    case .provider(let message): message
-    case .network(let reason): "Could not reach the provider: \(reason)"
+    case .missingAPIKey: return "Add an API key in Settings."
+    case .missingOAuthCredentials: return "Please sign in with ChatGPT in Settings."
+    case .oauthExpired: return "ChatGPT login session expired. Please sign in again in Settings."
+    case .invalidEndpoint(let reason): return "Invalid API endpoint: \(reason)"
+    case .invalidResponse: return "The provider returned an unreadable response."
+    case .provider(let message): return message
+    case .network(let reason): return "Could not reach the provider: \(reason)"
     case .streamInterrupted(let reason):
-      "The reply was cut off before it finished: \(reason)"
-    case .noInput: "Enter or select text first."
+      return "The reply was cut off before it finished: \(reason)"
+    case .noInput: return "Enter or select text first."
     case .selectionUnavailable:
-      "Selected text could not be read. Keep it selected in the other app, release the shortcut keys, and press ⌥F again."
+      return "Selected text could not be read. Keep it selected in the other app, release the shortcut keys, and press ⌥F again."
     case .accessibilityPermissionRequired:
-      "Accessibility permission is required for selected-text and writing tools."
+      return "Accessibility permission is required for selected-text and writing tools."
     case .noTextRecognized:
-      "No text was found in that area. Try a tighter crop around the text."
-    case .cancelled: "Translation cancelled."
+      return "No text was found in that area. Try a tighter crop around the text."
+    case .cancelled: return "Translation cancelled."
     }
   }
 }

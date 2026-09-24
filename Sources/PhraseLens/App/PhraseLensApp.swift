@@ -81,33 +81,33 @@ struct PhraseLensApp: App {
     .windowStyle(.hiddenTitleBar)
     .commands {
       CommandGroup(after: .newItem) {
-        Button("Translate Selection in Pop-Up") {
+        Button(L10n.isChinese ? "在划选浮窗中翻译" : "Translate Selection in Pop-Up") {
           model.captureSelectionAndTranslate()
         }
         .keyboardShortcut("f", modifiers: [.option])
 
-        Button("Open Full Translator") {
+        Button(L10n.isChinese ? "打开翻译主窗口" : "Open Full Translator") {
           WindowCoordinator.showMain()
         }
         .keyboardShortcut("f", modifiers: [.option, .shift])
 
-        Button("Screenshot OCR") {
+        Button(L10n.isChinese ? "截屏文字识别" : "Screenshot OCR") {
           model.captureOCR()
         }
         .keyboardShortcut("s", modifiers: [.option])
       }
-      CommandMenu("Translation") {
-        Button("Translate") { model.translate() }
+      CommandMenu(L10n.isChinese ? "翻译" : "Translation") {
+        Button(L10n.isChinese ? "翻译" : "Translate") { model.translate() }
           .keyboardShortcut(.return, modifiers: [.command])
-        Button("Stop") { model.stopTranslation() }
+        Button(L10n.isChinese ? "停止" : "Stop") { model.stopTranslation() }
           .keyboardShortcut(".", modifiers: [.command])
-        Button("Ask a Follow-Up") { model.requestFollowUpFocus() }
+        Button(L10n.isChinese ? "深入追问" : "Ask a Follow-Up") { model.requestFollowUpFocus() }
           .keyboardShortcut("l", modifiers: [.command])
           .disabled(!model.canAskFollowUp)
         Divider()
         // The tab bar shows glyphs alone once the window is narrow, so the
         // actions also need a keyboard route that names them.
-        Menu("Action") {
+        Menu(L10n.isChinese ? "动作" : "Action") {
           ForEach(Array(model.visibleActions.enumerated()), id: \.element.id) { index, action in
             Button(action.name) { model.selectAction(action.id) }
               .keyboardShortcut(
@@ -117,14 +117,14 @@ struct PhraseLensApp: App {
               )
           }
         }
-        Button("Next Action") { model.cycleAction(by: 1) }
+        Button(L10n.isChinese ? "下一个动作" : "Next Action") { model.cycleAction(by: 1) }
           .keyboardShortcut("]", modifiers: [.command, .shift])
-        Button("Previous Action") { model.cycleAction(by: -1) }
+        Button(L10n.isChinese ? "上一个动作" : "Previous Action") { model.cycleAction(by: -1) }
           .keyboardShortcut("[", modifiers: [.command, .shift])
         Divider()
-        Button("Copy Result") { model.copyOutput() }
+        Button(L10n.isChinese ? "拷贝结果" : "Copy Result") { model.copyOutput() }
           .keyboardShortcut("c", modifiers: [.command, .shift])
-        Button("Speak Source") { model.speakInput() }
+        Button(L10n.isChinese ? "朗读原文" : "Speak Source") { model.speakInput() }
       }
     }
 
@@ -136,13 +136,13 @@ struct PhraseLensApp: App {
     }
 
     MenuBarExtra("PhraseLens", systemImage: "character.bubble") {
-      Button("Open Translator") { WindowCoordinator.showMain() }
-      Button("Translate Selection in Pop-Up") { model.captureSelectionAndTranslate() }
-      Button("Screenshot OCR") { model.captureOCR() }
+      Button(L10n.isChinese ? "打开翻译窗口" : "Open Translator") { WindowCoordinator.showMain() }
+      Button(L10n.isChinese ? "在划选浮窗中翻译" : "Translate Selection in Pop-Up") { model.captureSelectionAndTranslate() }
+      Button(L10n.isChinese ? "截屏文字识别" : "Screenshot OCR") { model.captureOCR() }
       Divider()
-      SettingsLink { Text("Settings…") }
+      SettingsLink { Text(L10n.isChinese ? "设置…" : "Settings…") }
       Divider()
-      Button("Quit") { NSApp.terminate(nil) }
+      Button(L10n.isChinese ? "退出" : "Quit") { NSApp.terminate(nil) }
     }
   }
 

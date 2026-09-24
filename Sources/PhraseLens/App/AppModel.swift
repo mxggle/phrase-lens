@@ -64,7 +64,7 @@ final class AppModel: ObservableObject {
         resetFollowUps()
         resetDictionary()
         dictionarySourceOverride = "auto"
-        statusMessage = "Ready"
+        statusMessage = L10n.isChinese ? "就绪" : "Ready"
       }
     }
   }
@@ -101,7 +101,7 @@ final class AppModel: ObservableObject {
   /// Changes whenever a command outside the composer asks it for keyboard
   /// focus, which is the only way a menu item can reach a text field.
   @Published private(set) var followUpFocusToken = UUID()
-  @Published var statusMessage = "Ready"
+  @Published var statusMessage = L10n.isChinese ? "就绪" : "Ready"
   @Published var errorMessage: String?
   @Published var history: [HistoryEntry] = []
   @Published var vocabulary: [VocabularyEntry] = []
@@ -371,7 +371,7 @@ final class AppModel: ObservableObject {
       context: selectionContext)
     let ticket = UUID()
     dictionaryRequestID = ticket
-    statusMessage = "Looking up dictionary…"
+    statusMessage = L10n.isChinese ? "正在查词…" : "Looking up dictionary…"
     dictionaryTask = Task {
       do {
         if dictionaryRegistry == nil { dictionaryRegistry = try BundledDictionaries.registry() }
@@ -384,7 +384,9 @@ final class AppModel: ObservableObject {
           if selectedResultTab == .dictionary { translateWithAI(preserveDictionary: true) }
           return
         }
-        statusMessage = result.matches.isEmpty ? "No dictionary entry" : "Dictionary · Offline"
+        statusMessage = result.matches.isEmpty
+          ? (L10n.isChinese ? "未找到词条释义" : "No dictionary entry")
+          : (L10n.isChinese ? "词典 · 离线" : "Dictionary · Offline")
         let saved = result.matches.filter { $0.dictionary.canPersist }
         guard !saved.isEmpty else { return }
         let snapshot = DictionarySnapshot(query: query, definitionLanguage: request.definitionLanguage, matches: saved)
@@ -401,10 +403,10 @@ final class AppModel: ObservableObject {
       catch {
         guard dictionaryRequestID == ticket else { return }
         if case .result = dictionaryState {
-          statusMessage = "Dictionary loaded; history could not be saved"
+          statusMessage = L10n.isChinese ? "词典已加载；历史记录未能保存" : "Dictionary loaded; history could not be saved"
         } else {
           dictionaryState = .failed(error.localizedDescription)
-          statusMessage = "Dictionary unavailable"
+          statusMessage = L10n.isChinese ? "词典不可用" : "Dictionary unavailable"
           if probing && selectedResultTab == .dictionary { translateWithAI(preserveDictionary: true) }
         }
       }
@@ -433,7 +435,7 @@ final class AppModel: ObservableObject {
         try await library.addVocabulary(savedEntry)
         vocabulary.removeAll { $0.matchesIdentity(of: savedEntry) }
         vocabulary.insert(savedEntry, at: 0)
-        statusMessage = "Dictionary entry saved"
+        statusMessage = L10n.isChinese ? "词条已保存至生词本" : "Dictionary entry saved"
       } catch { errorMessage = error.localizedDescription }
     }
   }
@@ -450,7 +452,7 @@ final class AppModel: ObservableObject {
     guard match.dictionary.canPersist else { return }
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(match.plainText, forType: .string)
-    statusMessage = "Dictionary entry copied with source"
+    statusMessage = L10n.isChinese ? "已拷贝词条及出处" : "Dictionary entry copied with source"
   }
 
   func speakDictionaryEntry(_ match: DictionaryMatch) {
@@ -493,7 +495,9 @@ final class AppModel: ObservableObject {
     translationErrorMessage = nil
     errorMessage = nil
     isTranslating = true
-    statusMessage = "Connecting to \(settingsStore.settings.provider.provider.rawValue)…"
+    statusMessage = L10n.isChinese
+      ? "正在连接 \(settingsStore.settings.provider.provider.rawValue)…"
+      : "Connecting to \(settingsStore.settings.provider.provider.rawValue)…"
 
     let settings = settingsStore.settings
     let resolvedSource = TranslationSourceResolver.resolve(
@@ -541,14 +545,14 @@ final class AppModel: ObservableObject {
           let now = clock.now
           if now >= nextUIUpdate {
             outputText = streamedText
-            statusMessage = "Translating…"
+            statusMessage = L10n.isChinese ? "正在翻译…" : "Translating…"
             nextUIUpdate = now.advanced(by: .milliseconds(50))
           }
         }
         guard requestID == activeRequest else { return }
         outputText = streamedText
         isTranslating = false
-        statusMessage = "Completed"
+        statusMessage = L10n.isChinese ? "完成" : "Completed"
         guard !streamedText.isEmpty else {
           throw TranslationError.invalidResponse
         }
@@ -578,12 +582,12 @@ final class AppModel: ObservableObject {
         guard requestID == activeRequest else { return }
         outputText = streamedText
         isTranslating = false
-        statusMessage = "Stopped"
+        statusMessage = L10n.isChinese ? "已停止" : "Stopped"
       } catch {
         guard requestID == activeRequest else { return }
         outputText = streamedText
         isTranslating = false
-        statusMessage = "Failed"
+        statusMessage = L10n.isChinese ? "失败" : "Failed"
         translationErrorMessage = error.localizedDescription
         errorMessage = error.localizedDescription
         // A provider that stopped early still answered. The text on screen is
@@ -619,13 +623,15 @@ final class AppModel: ObservableObject {
     dictionaryRequestID = UUID()
     dictionaryTask?.cancel()
     dictionaryTask = nil
-    if case .loading = dictionaryState { dictionaryState = .failed("Lookup stopped.") }
+    if case .loading = dictionaryState {
+      dictionaryState = .failed(L10n.isChinese ? "已停止查词。" : "Lookup stopped.")
+    }
     requestID = UUID()
     translationTask?.cancel()
     translationTask = nil
     isTranslating = false
     stopFollowUp()
-    statusMessage = "Stopped"
+    statusMessage = L10n.isChinese ? "已停止" : "Stopped"
   }
 
   /// Typing over text that arrived from somewhere else makes it the user's
@@ -655,7 +661,7 @@ final class AppModel: ObservableObject {
     restoredSourceLanguage = nil
     resetFollowUps()
     errorMessage = nil
-    statusMessage = "Ready"
+    statusMessage = L10n.isChinese ? "就绪" : "Ready"
   }
 
   func swapLanguages() {
@@ -680,7 +686,7 @@ final class AppModel: ObservableObject {
     guard !text.isEmpty else { return }
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
-    statusMessage = "Copied"
+    statusMessage = L10n.isChinese ? "已拷贝" : "Copied"
   }
 
   /// Whether this pane is the one currently being read aloud.
@@ -799,7 +805,7 @@ final class AppModel: ObservableObject {
     let turn = FollowUpTurn(question: question, answer: "")
     followUps.append(turn)
     isAnsweringFollowUp = true
-    statusMessage = "Answering…"
+    statusMessage = L10n.isChinese ? "正在回答…" : "Answering…"
 
     followUpRequestID = UUID()
     let activeRequest = followUpRequestID
@@ -834,18 +840,23 @@ final class AppModel: ObservableObject {
         update(turn.id, answer: streamedText)
         isAnsweringFollowUp = false
         guard !streamedText.isEmpty else { throw TranslationError.invalidResponse }
-        statusMessage = "Completed"
+        statusMessage = L10n.isChinese ? "完成" : "Completed"
         await persistFollowUps()
       } catch let error as TranslationError where error == .cancelled {
         guard followUpRequestID == activeRequest else { return }
-        await settleFollowUp(turn.id, question: question, text: streamedText, status: "Stopped")
+        await settleFollowUp(
+          turn.id,
+          question: question,
+          text: streamedText,
+          status: L10n.isChinese ? "已停止" : "Stopped"
+        )
       } catch {
         guard followUpRequestID == activeRequest else { return }
         await settleFollowUp(
           turn.id,
           question: question,
           text: streamedText,
-          status: "Failed",
+          status: L10n.isChinese ? "失败" : "Failed",
           error: error.localizedDescription
         )
       }
@@ -879,7 +890,7 @@ final class AppModel: ObservableObject {
     guard let turn = followUps.first(where: { $0.id == id }), !turn.answer.isEmpty else { return }
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(turn.answer, forType: .string)
-    statusMessage = "Copied"
+    statusMessage = L10n.isChinese ? "已拷贝" : "Copied"
   }
 
   func dismissFollowUpError() {
@@ -972,7 +983,7 @@ final class AppModel: ObservableObject {
     Task {
       do {
         try await library.removeVocabulary(ids: [entry.id])
-        statusMessage = "Removed from vocabulary"
+        statusMessage = L10n.isChinese ? "已从生词本移除" : "Removed from vocabulary"
       } catch {
         vocabulary.insert(entry, at: 0)
         errorMessage = error.localizedDescription
@@ -1004,7 +1015,7 @@ final class AppModel: ObservableObject {
         try await library.addVocabulary(entry)
         vocabulary.removeAll { $0.matchesIdentity(of: entry) }
         vocabulary.insert(entry, at: 0)
-        statusMessage = "Added to vocabulary"
+        statusMessage = L10n.isChinese ? "已添加到生词本" : "Added to vocabulary"
         // Filed straight away, so the word is already browsable by the time
         // the reader next opens the library. It runs unattended: a failure
         // here leaves the word saved and unfiled, which the Organize command
@@ -1062,7 +1073,9 @@ final class AppModel: ObservableObject {
         outputRendering = .plain
       }
     }
-    statusMessage = entry.dictionarySnapshot == nil ? "History restored" : "Dictionary · Saved lookup"
+    statusMessage = entry.dictionarySnapshot == nil
+      ? (L10n.isChinese ? "已恢复历史记录" : "History restored")
+      : (L10n.isChinese ? "词典 · 历史查询" : "Dictionary · Saved lookup")
     if showWindow {
       translatorFocusToken = UUID()
       WindowCoordinator.showMain()
@@ -1126,7 +1139,7 @@ final class AppModel: ObservableObject {
     vocabularyTaggingTask?.cancel()
     vocabularyTaggingTask = nil
     vocabularyOrganizing = nil
-    statusMessage = "Organizing stopped"
+    statusMessage = L10n.isChinese ? "已停止整理" : "Organizing stopped"
   }
 
   /// Sends words to the tagger in batches, saving each batch as it lands.
@@ -1182,7 +1195,9 @@ final class AppModel: ObservableObject {
           }
         }
         if announcing {
-          statusMessage = filed == 1 ? "1 word organized" : "\(filed) words organized"
+          statusMessage = L10n.isChinese
+            ? "已智能分类 \(filed) 个生词"
+            : (filed == 1 ? "1 word organized" : "\(filed) words organized")
         }
       } catch is CancellationError {
         // Stopped on purpose; whatever landed before the stop is already saved.
@@ -1216,7 +1231,7 @@ final class AppModel: ObservableObject {
     Task {
       do {
         try await library.saveCustomActions(actions)
-        statusMessage = "Actions saved"
+        statusMessage = L10n.isChinese ? "动作已保存" : "Actions saved"
       } catch {
         errorMessage = error.localizedDescription
       }
@@ -1379,6 +1394,18 @@ final class AppModel: ObservableObject {
         }
       }
       .store(in: &cancellables)
+
+    settingsStore.$settings
+      .map(\.appLanguage)
+      .removeDuplicates()
+      .dropFirst()
+      .sink { [weak self] _ in
+        guard let self else { return }
+        if self.statusMessage == "Ready" || self.statusMessage == "就绪" {
+          self.statusMessage = L10n.isChinese ? "就绪" : "Ready"
+        }
+      }
+      .store(in: &cancellables)
   }
 
   func handleHotKey(_ action: HotKeyAction, sourceProcessIdentifier: pid_t? = nil) {
@@ -1413,7 +1440,7 @@ final class AppModel: ObservableObject {
     restoredSourceLanguage = nil
     resetFollowUps()
     errorMessage = nil
-    statusMessage = "Reading selection…"
+    statusMessage = L10n.isChinese ? "正在读取划选文字…" : "Reading selection…"
 
     // The menu bar extra and the ⌥F menu item reach this without a source
     // process, and by the time they run PhraseLens is the active application.
@@ -1435,7 +1462,7 @@ final class AppModel: ObservableObject {
         inputText = snapshot.text
         selectionContext = snapshot.surroundingText
         selectionDiagnostics = snapshot.diagnostics
-        statusMessage = "Ready"
+        statusMessage = L10n.isChinese ? "就绪" : "Ready"
         selectDefaultAction()
         if compact {
           SelectionPanelCoordinator.shared.show(model: self)
@@ -1450,10 +1477,10 @@ final class AppModel: ObservableObject {
         // No text selected: skip silently instead of showing an error dialog.
         if let error = error as? TranslationError, error == .selectionUnavailable {
           inputSource = .manual
-          statusMessage = "Ready"
+          statusMessage = L10n.isChinese ? "就绪" : "Ready"
           return
         }
-        statusMessage = "Selection unavailable"
+        statusMessage = L10n.isChinese ? "未能读取选中文本" : "Selection unavailable"
         errorMessage = error.localizedDescription
         if compact {
           SelectionPanelCoordinator.shared.show(model: self)
@@ -1482,7 +1509,7 @@ final class AppModel: ObservableObject {
         }
       } catch let error as TranslationError where error == .cancelled {
         WindowCoordinator.showMain()
-        statusMessage = "OCR cancelled"
+        statusMessage = L10n.isChinese ? "已取消截屏识别" : "OCR cancelled"
       } catch let error as TranslationError where error == .noTextRecognized {
         // A crop that holds no text is an outcome, not a failure, and it is
         // reported the way an empty selection already is. The modal this used to
@@ -1551,7 +1578,7 @@ final class AppModel: ObservableObject {
       ),
       NSWorkspace.shared.open(url)
     else {
-      errorMessage = "Could not open Accessibility settings."
+      errorMessage = L10n.isChinese ? "无法打开辅助功能设置。" : "Could not open Accessibility settings."
       return
     }
   }
@@ -1596,7 +1623,9 @@ final class AppModel: ObservableObject {
       // the temporary built-in fallback selected for the rest of the session.
       reconcileActionSelection(preferDefault: true)
     } catch {
-      errorMessage = "Could not load local library: \(error.localizedDescription)"
+      errorMessage = L10n.isChinese
+        ? "无法载入本地资料库：\(error.localizedDescription)"
+        : "Could not load local library: \(error.localizedDescription)"
     }
   }
 

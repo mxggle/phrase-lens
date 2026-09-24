@@ -67,7 +67,8 @@ enum KeychainError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .unhandled(let status):
-      SecCopyErrorMessageString(status, nil) as String? ?? "Keychain error \(status)"
+      SecCopyErrorMessageString(status, nil) as String?
+        ?? (L10n.isChinese ? "钥匙串错误 \(status)" : "Keychain error \(status)")
     }
   }
 }

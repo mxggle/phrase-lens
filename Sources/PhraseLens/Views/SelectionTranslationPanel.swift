@@ -62,7 +62,7 @@ final class SelectionPanelCoordinator {
     panel.hasShadow = false
     panel.setAccessibilityRole(NSAccessibility.Role.window)
     panel.setAccessibilitySubrole(NSAccessibility.Subrole.floatingWindow)
-    panel.setAccessibilityLabel("Selection translation")
+    panel.setAccessibilityLabel(L10n.tr("panel.accessibility_label"))
     // The panel is dragged by its header alone (`WindowDragArea`). Moving it
     // by the background would mean every drag over the result moved the window
     // instead of selecting the words it passed over.
@@ -503,6 +503,7 @@ private struct SelectionTranslationPanelView: View {
       SelectionPanelBody()
     }
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
+    .environment(\.locale, settingsStore.resolvedLocale)
   }
 }
 
@@ -574,7 +575,7 @@ private struct SelectionPanelBody: View {
     .animation(AppMotion.state(reduceMotion: reduceMotion), value: model.isTranslating)
     .animation(AppMotion.state(reduceMotion: reduceMotion), value: model.errorMessage)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Selection translation")
+    .accessibilityLabel(L10n.tr("panel.accessibility_label"))
   }
 
   // MARK: - Header
@@ -589,7 +590,7 @@ private struct SelectionPanelBody: View {
       AppLogo(size: 20)
         .allowsHitTesting(false)
 
-      Text("Selection")
+      Text(L10n.isChinese ? "划选翻译" : "Selection")
         .font(AppFont.bodyMedium)
         .foregroundStyle(palette.foreground)
         .allowsHitTesting(false)
@@ -601,7 +602,7 @@ private struct SelectionPanelBody: View {
 
         // Closing the pop-up also calls the request off, but that costs the
         // user the result so far. Stopping is the cheaper half of it.
-        IconButton(title: "Stop translating (⌘.)", symbol: "stop.fill") {
+        IconButton(title: L10n.isChinese ? "停止翻译 (⌘.)" : "Stop translating (⌘.)", symbol: "stop.fill") {
           model.stopTranslation()
         }
         .keyboardShortcut(".", modifiers: [.command])
@@ -612,8 +613,8 @@ private struct SelectionPanelBody: View {
       // result. Pinned, only Escape or the close button takes the pop-up down.
       IconButton(
         title: isPinned
-          ? "Unpin: close the pop-up when you click elsewhere"
-          : "Keep the pop-up open when you click elsewhere",
+          ? (L10n.isChinese ? "取消固定：点击其他窗口时关闭浮窗" : "Unpin: close the pop-up when you click elsewhere")
+          : (L10n.isChinese ? "固定浮窗：点击其他地方时保持显示" : "Keep the pop-up open when you click elsewhere"),
         symbol: isPinned ? "pin.fill" : "pin",
         size: .iconSmall,
         isOn: isPinned
@@ -623,7 +624,7 @@ private struct SelectionPanelBody: View {
         SelectionPanelCoordinator.shared.setPinned(pinned)
       }
 
-      IconButton(title: "Close (Escape)", symbol: "xmark", size: .iconSmall) {
+      IconButton(title: L10n.isChinese ? "关闭 (Escape)" : "Close (Escape)", symbol: "xmark", size: .iconSmall) {
         SelectionPanelCoordinator.shared.close()
       }
     }
@@ -660,7 +661,7 @@ private struct SelectionPanelBody: View {
         .foregroundStyle(palette.faintForeground)
         .padding(.top, 2)
         .accessibilityHidden(true)
-      Text(model.inputText.isEmpty ? "Nothing was selected" : model.inputText)
+      Text(model.inputText.isEmpty ? (L10n.isChinese ? "未捕获到选中文本" : "Nothing was selected") : model.inputText)
         .font(AppFont.body)
         .foregroundStyle(
           model.inputText.isEmpty ? palette.mutedForeground : palette.secondaryForeground
@@ -692,13 +693,13 @@ private struct SelectionPanelBody: View {
     case .unused:
       EmptyView()
     case .captured:
-      Badge(text: "Context", variant: .success, symbol: "text.alignleft")
-        .help(model.selectionContextPreview ?? "The surrounding text was captured.")
-        .accessibilityLabel("Surrounding text captured")
+      Badge(text: L10n.isChinese ? "语境" : "Context", variant: .success, symbol: "text.alignleft")
+        .help(L10n.isChinese ? "已自动捕获选区周围上下文。" : "The surrounding text was captured.")
+        .accessibilityLabel(L10n.isChinese ? "已自动捕获选区周围上下文。" : "Surrounding text captured")
     case .missing:
-      Badge(text: "No context", variant: .warning, symbol: "exclamationmark.triangle.fill")
-        .help(model.selectionCaptureSummary)
-        .accessibilityLabel("No surrounding text was captured")
+      Badge(text: L10n.isChinese ? "无语境" : "No context", variant: .warning, symbol: "exclamationmark.triangle.fill")
+        .help(L10n.isChinese ? "未能捕获上下文" : model.selectionCaptureSummary)
+        .accessibilityLabel(L10n.isChinese ? "未能捕获上下文" : "No surrounding text was captured")
     }
   }
 
@@ -707,8 +708,8 @@ private struct SelectionPanelBody: View {
   /// was actually captured, not the first two lines of it.
   private var expandSourceButton: some View {
     let title = isSourceExpanded
-      ? "Show less of the captured text"
-      : "Show all of the captured text"
+      ? (L10n.isChinese ? "收起捕获文本" : "Show less of the captured text")
+      : (L10n.isChinese ? "展开查看全部捕获文本" : "Show all of the captured text")
     return Button {
       isSourceExpanded.toggle()
     } label: {
@@ -740,13 +741,19 @@ private struct SelectionPanelBody: View {
       } else if model.dictionaryVisible {
         DictionaryResultsView()
       } else if model.outputText.isEmpty, model.isTranslating || model.isLookingUpDictionary {
-        message(model.isTranslating ? "Translating…" : "Checking word…", symbol: "ellipsis", tint: palette.mutedForeground)
+        message(
+          model.isTranslating
+            ? (L10n.isChinese ? "正在翻译…" : "Translating…")
+            : (L10n.isChinese ? "正在查词…" : "Checking word…"),
+          symbol: "ellipsis",
+          tint: palette.mutedForeground
+        )
       } else if model.outputText.isEmpty {
         VStack(spacing: AppSpacing.md) {
-          Text("Ready to translate")
+          Text(L10n.isChinese ? "就绪，等待翻译" : "Ready to translate")
             .font(AppFont.body)
             .foregroundStyle(palette.mutedForeground)
-          Button("Translate") {
+          Button(L10n.isChinese ? "翻译" : "Translate") {
             model.translate()
           }
           .appButton(.primary, size: .sm)
@@ -782,15 +789,24 @@ private struct SelectionPanelBody: View {
   }
 
   private var accessibilityPermissionMessage: some View {
-    VStack(alignment: .leading, spacing: AppSpacing.md) {
+    VStack(alignment: .leading, spacing: AppSpacing.sm) {
       Label(
-        "PhraseLens needs Accessibility access to read selected text.",
+        L10n.isChinese ? "需要“辅助功能”权限" : "Accessibility permission required",
         systemImage: "exclamationmark.triangle.fill"
       )
       .font(AppFont.body)
       .foregroundStyle(palette.warning)
 
-      Button("Open Accessibility Settings") {
+      Text(
+        L10n.isChinese
+          ? "PhraseLens 需要辅助功能权限以读取其他应用中的划选文字。"
+          : "PhraseLens needs accessibility permission to read selected text from other apps."
+      )
+      .font(AppFont.caption)
+      .foregroundStyle(palette.secondaryForeground)
+      .fixedSize(horizontal: false, vertical: true)
+
+      Button(L10n.isChinese ? "打开系统设置" : "Open System Settings") {
         model.openAccessibilitySettings()
       }
       .appButton(.secondary, size: .sm)
@@ -816,7 +832,7 @@ private struct SelectionPanelBody: View {
         .help(error)
 
       HStack(spacing: AppSpacing.sm) {
-        Button("Retry") {
+        Button(L10n.tr("panel.retry")) {
           model.translateWithAI(preserveDictionary: model.dictionaryAvailable)
         }
         .appButton(.secondary, size: .sm)
@@ -826,7 +842,7 @@ private struct SelectionPanelBody: View {
         // configuration failure also needs the route that fixes it — and from
         // this pop-up, Settings is otherwise unreachable.
         if model.isConfigurationError {
-          Button("Open Settings") {
+          Button(L10n.tr("panel.open_settings")) {
             WindowCoordinator.prepareForSettings()
             openSettings()
           }
@@ -838,7 +854,7 @@ private struct SelectionPanelBody: View {
     .padding(.horizontal, AppSpacing.md)
     .padding(.vertical, AppSpacing.sm)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Translation problem")
+    .accessibilityLabel(L10n.tr("panel.problem_label"))
   }
 
   private func message(_ text: String, symbol: String, tint: Color) -> some View {
@@ -856,7 +872,7 @@ private struct SelectionPanelBody: View {
     HStack(spacing: AppSpacing.xs) {
       if !model.dictionaryVisible {
         AppSelect(
-          title: "Target language",
+          title: L10n.isChinese ? "目标语言" : "Target language",
           selection: Binding(
             get: { settingsStore.settings.targetLanguage },
             set: { language in
@@ -873,7 +889,7 @@ private struct SelectionPanelBody: View {
         )
 
       } else {
-        Label("Offline", systemImage: "book.closed").font(AppFont.caption)
+        Label(L10n.isChinese ? "离线词典" : "Offline", systemImage: "book.closed").font(AppFont.caption)
           .foregroundStyle(palette.mutedForeground)
       }
 
@@ -882,26 +898,28 @@ private struct SelectionPanelBody: View {
       if !model.dictionaryVisible {
         IconButton(
           title: isCurrentTextCollected
-            ? "Remove from Vocabulary"
-            : "Save selected word or phrase to Vocabulary",
+            ? (L10n.isChinese ? "从生词本中移除此词" : "Remove from Vocabulary")
+            : (L10n.isChinese ? "保存至生词本" : "Save this word to Vocabulary"),
           symbol: isCurrentTextCollected ? "bookmark.fill" : "bookmark",
           isDisabled: !isCurrentTextCollected && !canCollectCurrentText,
           isOn: isCurrentTextCollected
         ) {
           model.toggleCollectCurrentWord()
-      }
+        }
       }
 
       IconButton(
-        title: model.isSpeaking(.source) ? "Stop speaking" : "Speak selected text",
+        title: model.isSpeaking(.source)
+          ? (L10n.isChinese ? "停止朗读" : "Stop speaking")
+          : (L10n.isChinese ? "朗读选中文本" : "Speak selected text"),
         symbol: model.isSpeaking(.source) ? "speaker.slash.fill" : "speaker.wave.2",
         isDisabled: model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       ) {
         model.speakInput()
       }
-      .accessibilityLabel("Speak selected text")
+      .accessibilityLabel(L10n.isChinese ? "朗读选中文本" : "Speak selected text")
 
-      IconButton(title: "Open the full translator window", symbol: "macwindow") {
+      IconButton(title: L10n.isChinese ? "在翻译主窗口中打开" : "Open in the full translator window", symbol: "macwindow") {
         WindowCoordinator.showMain()
       }
 
@@ -909,7 +927,9 @@ private struct SelectionPanelBody: View {
       // commands act on the answer rather than on the selection.
       if !model.dictionaryVisible {
         IconButton(
-          title: model.isSpeaking(.result) ? "Stop speaking" : "Speak the translation",
+          title: model.isSpeaking(.result)
+            ? (L10n.isChinese ? "停止朗读" : "Stop speaking")
+            : (L10n.isChinese ? "朗读译文" : "Speak the translation"),
           // A speaker with a bubble: the answer being spoken, told apart at a
           // glance from the plain speaker that reads the source text.
           symbol: model.isSpeaking(.result) ? "speaker.slash.fill" : "speaker.wave.2.bubble.left",
@@ -919,8 +939,8 @@ private struct SelectionPanelBody: View {
             || (model.isTranslating && !model.isSpeaking(.result))
         ) {
           model.speakOutput()
-      }
-      .accessibilityLabel("Speak translation")
+        }
+        .accessibilityLabel(L10n.isChinese ? "朗读译文" : "Speak translation")
       }
 
       Button {
@@ -937,14 +957,18 @@ private struct SelectionPanelBody: View {
           Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
             .font(.system(size: 11, weight: .medium))
             .contentTransition(.symbolEffect(.replace))
-          Text(didCopy ? "Copied" : "Copy")
+          Text(didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝" : "Copy"))
         }
       }
       .appButton(.primary, size: .sm)
       .symbolEffect(.bounce, value: didCopy)
       .disabled(!model.canCopyResult)
-      .help(model.dictionaryVisible ? "Copy dictionary entries with sources" : "Copy the translation")
-      .accessibilityLabel(didCopy ? "Copied" : (model.dictionaryVisible ? "Copy dictionary entries with sources" : "Copy the translation"))
+      .help(
+        model.dictionaryVisible
+          ? (didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝词条释义与出处" : "Copy dictionary entries with sources"))
+          : (didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝 (⇧⌘C)" : "Copy the translation (⇧⌘C)"))
+      )
+      .accessibilityLabel(didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝 (⇧⌘C)" : "Copy the translation (⇧⌘C)"))
     }
     .padding(.horizontal, AppSpacing.md)
     .frame(height: AppMetrics.paneFooterHeight + 6)

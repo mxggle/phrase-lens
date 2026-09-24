@@ -71,11 +71,11 @@ struct ShortcutRecorder: View {
       } label: {
         Group {
           if isRecording {
-            Text("Press keys…")
+            Text(L10n.isChinese ? "按下快捷键…" : "Press keys…")
               .font(AppFont.label)
               .foregroundStyle(palette.mutedForeground)
           } else if value.isEmpty {
-            Text("None")
+            Text(L10n.isChinese ? "无" : "None")
               .font(AppFont.label)
               .foregroundStyle(palette.mutedForeground)
           } else {
@@ -88,14 +88,14 @@ struct ShortcutRecorder: View {
       .focused($isFocused)
       .help(
         isRecording
-          ? "Press the key combination, or Escape to cancel"
-          : "Click to record a shortcut"
+          ? (L10n.isChinese ? "按下快捷键组合，或按 Escape 取消" : "Press the key combination, or Escape to cancel")
+          : (L10n.isChinese ? "点按录制快捷键" : "Click to record a shortcut")
       )
-      .accessibilityLabel("\(accessibilityTitle) shortcut")
-      .accessibilityValue(value.isEmpty ? "None" : value)
+      .accessibilityLabel(L10n.isChinese ? "\(accessibilityTitle)快捷键" : "\(accessibilityTitle) shortcut")
+      .accessibilityValue(value.isEmpty ? (L10n.isChinese ? "无" : "None") : value)
 
       IconButton(
-        title: "Remove \(accessibilityTitle) shortcut",
+        title: L10n.isChinese ? "清除快捷键" : "Remove \(accessibilityTitle) shortcut",
         symbol: "xmark",
         isDisabled: value.isEmpty
       ) {
@@ -133,7 +133,7 @@ struct ShortcutRecorder: View {
 
     let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     guard let key = HotKeyParser.keyLabel(forKeyCode: UInt32(event.keyCode)) else {
-      reject("Unsupported key")
+      reject(L10n.isChinese ? "不支持此按键" : "Unsupported key")
       return
     }
 
@@ -145,20 +145,20 @@ struct ShortcutRecorder: View {
 
     // A global shortcut without ⌘, ⌥ or ⌃ would swallow ordinary typing.
     guard flags.contains(.command) || flags.contains(.option) || flags.contains(.control) else {
-      reject("Add ⌘, ⌥ or ⌃")
+      reject(L10n.isChinese ? "请添加 ⌘、⌥ 或 ⌃ 修饰键" : "Add ⌘, ⌥ or ⌃")
       return
     }
 
     let candidate = symbols + key
     guard (try? HotKeyParser.parse(candidate)) != nil else {
-      reject("Unsupported key")
+      reject(L10n.isChinese ? "不支持此按键" : "Unsupported key")
       return
     }
 
     // Caught here the clash has a name; left to Carbon it would come back as a
     // bare OSStatus, and only after the shortcut was already stored.
     if let owner = GlobalHotKeyManager.shared.conflictingAction(for: candidate, ignoring: value) {
-      reject("Already used by \(owner.displayName)")
+      reject(L10n.isChinese ? "已被“\(owner.displayName)”占用" : "Already used by \(owner.displayName)")
       return
     }
 

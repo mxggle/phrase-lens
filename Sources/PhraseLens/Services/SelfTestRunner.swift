@@ -1661,6 +1661,99 @@ enum SelfTestRunner {
       )
     }
 
+    do {
+      let savedLanguage = L10n.shared.currentLanguage
+      defer { L10n.shared.setLanguage(savedLanguage) }
+
+      L10n.shared.setLanguage(.simplifiedChinese)
+      check(LanguageCode.auto.displayName == "自动检测语言", "LanguageCode.auto displayName in Chinese", failures: &failures)
+      check(LanguageCode.english.displayName == "英语", "LanguageCode.english displayName in Chinese", failures: &failures)
+      check(LanguageCode.simplifiedChinese.displayName == "简体中文", "LanguageCode.simplifiedChinese displayName in Chinese", failures: &failures)
+      check(LanguageCode.traditionalChinese.displayName == "繁体中文", "LanguageCode.traditionalChinese displayName in Chinese", failures: &failures)
+      check(LanguageCode.auto.shortDisplayName == "自动", "LanguageCode.auto shortDisplayName in Chinese", failures: &failures)
+      check(LanguageCode.english.shortDisplayName == "英语", "LanguageCode.english shortDisplayName in Chinese", failures: &failures)
+
+      check(ActionMode.translate.title == "翻译", "ActionMode.translate title in Chinese", failures: &failures)
+      check(ActionMode.polishing.title == "润色", "ActionMode.polishing title in Chinese", failures: &failures)
+      check(ActionMode.summarize.title == "摘要", "ActionMode.summarize title in Chinese", failures: &failures)
+      check(ActionMode.analyze.title == "深度解析", "ActionMode.analyze title in Chinese", failures: &failures)
+      check(ActionMode.explainUsage.title == "用法详解", "ActionMode.explainUsage title in Chinese", failures: &failures)
+      check(ActionMode.explainContext.title == "语境解析", "ActionMode.explainContext title in Chinese", failures: &failures)
+      check(ActionMode.explainCode.title == "代码解析", "ActionMode.explainCode title in Chinese", failures: &failures)
+      check(ActionMode.compareSynonyms.title == "近义词辨析", "ActionMode.compareSynonyms title in Chinese", failures: &failures)
+
+      check(AppTheme.system.title == "跟随系统", "AppTheme.system title in Chinese", failures: &failures)
+      check(AppTheme.light.title == "浅色", "AppTheme.light title in Chinese", failures: &failures)
+      check(AppTheme.dark.title == "深色", "AppTheme.dark title in Chinese", failures: &failures)
+
+      check(TTSProvider.edge.displayName == "Microsoft Edge 神经语音（云端）", "TTSProvider.edge displayName in Chinese", failures: &failures)
+      check(TTSProvider.system.displayName == "macOS 系统语音（本地）", "TTSProvider.system displayName in Chinese", failures: &failures)
+
+      check(SelectionPanelPlacementMode.nearPointer.displayName == "跟随鼠标光标", "SelectionPanelPlacementMode.nearPointer in Chinese", failures: &failures)
+      check(SelectionPanelPlacementMode.fixed.displayName == "记忆上次位置", "SelectionPanelPlacementMode.fixed in Chinese", failures: &failures)
+
+      let translateAction = TranslationAction.builtIns.first { $0.mode == .translate }!
+      check(translateAction.localizedTitle == "翻译", "TranslationAction.localizedTitle in Chinese", failures: &failures)
+      let customAction = TranslationAction(name: "Custom")
+      check(customAction.localizedTitle == "Custom", "Custom TranslationAction.localizedTitle", failures: &failures)
+
+      let wordSuggestions = FollowUpSuggestion.suggestions(for: "word", mode: nil)
+      check(wordSuggestions.map(\.label) == ["实用例句", "词义辨析", "高频搭配", "词根词缀", "记忆要点"], "word suggestions labels in Chinese", failures: &failures)
+      check(wordSuggestions[0].question == "给出日常到正式的 3 个地道例句，附带中文翻译。", "word suggestion question in Chinese", failures: &failures)
+
+      let sentenceSuggestions = FollowUpSuggestion.suggestions(for: "This is a longer sentence for testing suggestions.", mode: nil)
+      check(sentenceSuggestions.map(\.label) == ["成分拆解", "语法要点", "核心词汇", "同义改写", "深层理解"], "sentence suggestions labels in Chinese", failures: &failures)
+      check(sentenceSuggestions[0].question == "逐块拆解这个句子：各部分的含义以及它们是如何组合的。", "sentence suggestion question in Chinese", failures: &failures)
+
+      let codeSuggestions = FollowUpSuggestion.suggestions(for: "let x = 1", mode: .explainCode)
+      check(codeSuggestions.map(\.label) == ["逐行拆解", "潜在隐患", "重构优化"], "code suggestions labels in Chinese", failures: &failures)
+      check(codeSuggestions[0].question == "逐行拆解这段代码，说明每一行的作用。", "code suggestion question in Chinese", failures: &failures)
+
+      check(TranslationError.missingAPIKey.errorDescription == "请先在“设置”中添加 API 密钥。", "TranslationError.missingAPIKey in Chinese", failures: &failures)
+      check(TranslationError.invalidEndpoint("test").errorDescription == "无效的 API 接口地址：test", "TranslationError.invalidEndpoint in Chinese", failures: &failures)
+
+      check(VocabularyUnit.word.displayName == "单词", "VocabularyUnit.word in Chinese", failures: &failures)
+      check(VocabularyUnit.phrase.displayName == "短语", "VocabularyUnit.phrase in Chinese", failures: &failures)
+      check(VocabularyUnit.sentence.displayName == "句子", "VocabularyUnit.sentence in Chinese", failures: &failures)
+
+      check(VocabularyPartOfSpeech.noun.displayName == "名词", "VocabularyPartOfSpeech.noun in Chinese", failures: &failures)
+      check(VocabularyPartOfSpeech.verb.displayName == "动词", "VocabularyPartOfSpeech.verb in Chinese", failures: &failures)
+      check(VocabularyPartOfSpeech.expression.displayName == "常用语/短语", "VocabularyPartOfSpeech.expression in Chinese", failures: &failures)
+
+      check(VocabularyRegister.spoken.displayName == "口语", "VocabularyRegister.spoken in Chinese", failures: &failures)
+      check(VocabularyRegister.slang.displayName == "俚语与网络用语", "VocabularyRegister.slang in Chinese", failures: &failures)
+
+      check(VocabularyDifficulty.beginner.displayName == "初级", "VocabularyDifficulty.beginner in Chinese", failures: &failures)
+      check(VocabularyDifficulty.expert.displayName == "精通", "VocabularyDifficulty.expert in Chinese", failures: &failures)
+
+      check(DictionaryLanguages.name("zh") == "中文", "DictionaryLanguages.name zh in Chinese", failures: &failures)
+      check(DictionaryLanguages.name("auto") == "自动", "DictionaryLanguages.name auto in Chinese", failures: &failures)
+      check(DictionaryLanguages.name("en") == "英语", "DictionaryLanguages.name en in Chinese", failures: &failures)
+
+      check(loc("common.ok") == "好", "loc common.ok in Chinese", failures: &failures)
+      check(loc("common.copy") == "拷贝", "loc common.copy in Chinese", failures: &failures)
+      check(loc("common.duplicate") == "制作副本", "loc common.duplicate in Chinese", failures: &failures)
+      check(loc("common.settings") == "设置", "loc common.settings in Chinese", failures: &failures)
+      check(loc("section.group.library") == "资源库", "loc section.group.library in Chinese", failures: &failures)
+      check(loc("translator.characters", 42) == "源文本共 42 个字符", "loc translator.characters in Chinese", failures: &failures)
+
+      L10n.shared.setLanguage(.english)
+      check(LanguageCode.auto.displayName == "Detect language", "LanguageCode.auto displayName in English", failures: &failures)
+      check(LanguageCode.auto.shortDisplayName == "Auto", "LanguageCode.auto shortDisplayName in English", failures: &failures)
+      check(LanguageCode.english.displayName == "English", "LanguageCode.english displayName in English", failures: &failures)
+      check(ActionMode.translate.title == "Translate", "ActionMode.translate title in English", failures: &failures)
+      check(translateAction.localizedTitle == "Translate", "TranslationAction.localizedTitle in English", failures: &failures)
+      check(DictionaryLanguages.name("zh") == "Chinese", "DictionaryLanguages.name zh in English", failures: &failures)
+      check(DictionaryLanguages.name("auto") == "Auto", "DictionaryLanguages.name auto in English", failures: &failures)
+
+      check(loc("common.ok") == "OK", "loc common.ok in English", failures: &failures)
+      check(loc("common.copy") == "Copy", "loc common.copy in English", failures: &failures)
+      check(loc("common.duplicate") == "Duplicate", "loc common.duplicate in English", failures: &failures)
+      check(loc("common.settings") == "Settings", "loc common.settings in English", failures: &failures)
+      check(loc("section.group.library") == "Library", "loc section.group.library in English", failures: &failures)
+      check(loc("translator.characters", 42) == "42 characters in the source text", "loc translator.characters in English", failures: &failures)
+    }
+
     return failures
   }
 

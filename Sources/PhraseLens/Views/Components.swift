@@ -602,8 +602,8 @@ struct AppTextField: View {
             .foregroundStyle(palette.faintForeground)
         }
         .buttonStyle(.plain)
-        .help("Clear")
-        .accessibilityLabel("Clear \(placeholder)")
+        .help(L10n.tr("common.clear"))
+        .accessibilityLabel(L10n.isChinese ? "清除\(placeholder)" : "Clear \(placeholder)")
       }
     }
     .padding(.horizontal, AppSpacing.sm + 2)
@@ -905,7 +905,7 @@ struct ActionTabBar: View {
       pullDown
     }
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Action")
+    .accessibilityLabel(L10n.tr("menu.action"))
   }
 
   private var armedAction: TranslationAction? {
@@ -951,7 +951,7 @@ struct ActionTabBar: View {
         Image(systemName: armedAction?.mode?.symbol ?? "sparkles")
           .font(.system(size: size.iconSize, weight: .medium))
           .foregroundStyle(palette.foreground)
-        Text(armedAction?.name ?? "Action")
+        Text(armedAction?.name ?? L10n.tr("menu.action"))
           .font(size.font)
           .foregroundStyle(palette.foreground)
           .lineLimit(1)
@@ -1692,10 +1692,10 @@ struct SearchableSelect: View {
   let title: String
   @Binding var selection: String
   let options: [String]
-  var placeholder = "Nothing selected"
-  var searchPrompt = "Search"
-  var emptyMessage = "The list is empty."
-  var customValueLabel: (String) -> String = { "Use “\($0)”" }
+  var placeholder = L10n.isChinese ? "未选择" : "Nothing selected"
+  var searchPrompt = L10n.isChinese ? "搜索" : "Search"
+  var emptyMessage = L10n.isChinese ? "列表为空。" : "The list is empty."
+  var customValueLabel: (String) -> String = { L10n.isChinese ? "使用“\($0)”" : "Use “\($0)”" }
   var size: AppControlSize = .sm
   var fillsWidth = true
 
@@ -1817,7 +1817,7 @@ struct SearchableSelect: View {
           .truncationMode(.middle)
         Spacer(minLength: 0)
         if isCustom {
-          Text("Custom")
+          Text(L10n.isChinese ? "自定义" : "Custom")
             .font(AppFont.caption)
             .foregroundStyle(palette.mutedForeground)
         }
