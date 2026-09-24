@@ -9,3 +9,4 @@ swift build --disable-sandbox -Xswiftc -warnings-as-errors
 .build/debug/PhraseLens --self-test
 .build/debug/PhraseLens --dictionary-self-test
 python3 -m unittest discover -s scripts/dictionary -p 'test_*.py'
+python3 -m unittest discover -s scripts -p 'test_release.py'
