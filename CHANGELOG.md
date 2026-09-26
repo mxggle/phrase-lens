@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-27
+
 ### Added
 
 - Filter translation history to favorites and access open, copy, favorite, and
@@ -29,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show readable history previews without raw Markdown formatting.
 - Open shortcut settings directly from the shortcut conflict warning.
 - Use self-hiding overlay scrollbars in text editors to avoid empty scrollbar tracks.
+
+### Added
+
+- improve translator and library workflows.
 
 ## [0.7.2] — 2026-09-27
 
@@ -365,7 +371,8 @@ themselves, so an unrecognized value costs that value and not the collection.
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/mxggle/phrase-lens/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/mxggle/phrase-lens/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/mxggle/phrase-lens/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/mxggle/phrase-lens/compare/v0.6.0...v0.7.0
