@@ -121,10 +121,12 @@ struct DictionaryResultsView: View {
 
 /// Result navigation is distinct from the action strip: both tabs describe
 /// the same source text and keep their own result when the user switches.
-struct ResultTabBar: View {
+struct ResultTabBar<Trailing: View>: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
   @State private var showingLanguages = false
+  /// Commands on the visible result, at the row's trailing end.
+  @ViewBuilder var trailing: Trailing
 
   var body: some View {
     if model.dictionaryAvailable {
@@ -175,6 +177,7 @@ struct ResultTabBar: View {
             .padding(AppSpacing.md)
           }
         }
+        trailing
       }
       .padding(.horizontal, AppSpacing.md)
       .padding(.vertical, AppSpacing.sm)
@@ -182,4 +185,8 @@ struct ResultTabBar: View {
       Hairline()
     }
   }
+}
+
+extension ResultTabBar where Trailing == EmptyView {
+  init() { self.init { EmptyView() } }
 }

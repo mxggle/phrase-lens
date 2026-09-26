@@ -267,6 +267,10 @@ private struct LibraryCard<Content: View>: View {
   let isSelected: Bool
   let onSelect: (_ extending: Bool) -> Void
   var onOpen: (() -> Void)?
+  /// Commands on this one row, shown in its top-right corner while the
+  /// pointer is over it. They make the common moves one click instead of
+  /// "select, then find the matching button in the toolbar".
+  var hoverActions: (() -> AnyView)?
   @ViewBuilder var content: Content
 
   @Environment(\.palette) private var palette
@@ -287,6 +291,19 @@ private struct LibraryCard<Content: View>: View {
       .overlay {
         if isSelected {
           shape.strokeBorder(palette.ring, lineWidth: 3).padding(-2)
+        }
+      }
+      .overlay(alignment: .topTrailing) {
+        if let hoverActions, isHovering || isSelected {
+          HStack(spacing: 0) { hoverActions() }
+            .padding(2)
+            .background(palette.surfaceElevated, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+            .overlay {
+              RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+                .strokeBorder(palette.border, lineWidth: 1)
+            }
+            .padding(AppSpacing.sm)
+            .transition(.opacity)
         }
       }
       .contentShape(shape)
@@ -469,10 +486,12 @@ struct HistoryView: View {
   @State private var selection = Set<UUID>()
   @State private var pendingDelete = Set<UUID>()
   @State private var isConfirmingDelete = false
+  @State private var favoritesOnly = false
 
   private var filtered: [HistoryEntry] {
-    guard !searchText.isEmpty else { return model.history }
-    return model.history.filter {
+    let pool = favoritesOnly ? model.history.filter(\.favorite) : model.history
+    guard !searchText.isEmpty else { return pool }
+    return pool.filter {
       $0.sourceText.localizedCaseInsensitiveContains(searchText)
         || $0.translatedText.localizedCaseInsensitiveContains(searchText)
         || $0.actionName.localizedCaseInsensitiveContains(searchText)
@@ -496,7 +515,8 @@ struct HistoryView: View {
           LibraryCard(
             isSelected: selection.contains(entry.id),
             onSelect: { extending in select(entry.id, extending: extending) },
-            onOpen: { model.restore(entry) }
+            onOpen: { model.restore(entry) },
+            hoverActions: { AnyView(rowActions(for: entry)) }
           ) {
             HistoryRow(entry: entry)
           }
@@ -545,65 +565,84 @@ struct HistoryView: View {
     isConfirmingDelete = true
   }
 
+  /// Open, copy, favourite, delete — the moves made on one row, on the row.
+  @ViewBuilder
+  private func rowActions(for entry: HistoryEntry) -> some View {
+    IconButton(
+      title: L10n.isChinese ? "在翻译器中打开" : "Open in translator",
+      symbol: "arrow.up.forward.app"
+    ) { model.restore(entry) }
+    IconButton(
+      title: L10n.isChinese ? "拷贝译文" : "Copy translated text",
+      symbol: "doc.on.doc"
+    ) { copyTranslatedText(of: entry) }
+    IconButton(
+      title: entry.favorite
+        ? (L10n.isChinese ? "取消收藏" : "Remove from Favorites")
+        : (L10n.isChinese ? "添加到收藏" : "Add to Favorites"),
+      symbol: entry.favorite ? "star.fill" : "star"
+    ) { model.toggleFavorite(entry) }
+    IconButton(
+      title: L10n.isChinese ? "删除此条记录" : "Delete translation",
+      symbol: "trash"
+    ) { confirmDelete(of: [entry.id]) }
+  }
+
+  /// Row commands live on the rows. What is left here acts on the collection,
+  /// and the one command that wipes all of it sits behind a menu rather than
+  /// beside the everyday ones, where a slip of the pointer would reach it.
   @ViewBuilder
   private var toolbar: some View {
-    let selected = selection.first.flatMap { id in model.history.first { $0.id == id } }
-
     Button {
-      if let selected { model.restore(selected) }
+      favoritesOnly.toggle()
     } label: {
       AdaptiveLabel(
-        title: L10n.isChinese ? "在翻译器中载入" : "Restore in translator",
-        symbol: "arrow.uturn.backward",
+        title: L10n.isChinese ? "收藏" : "Favorites",
+        symbol: favoritesOnly ? "star.fill" : "star",
         iconOnly: layoutWidth.isCompact
       )
     }
-    .appButton(.outline, size: .sm)
-    .disabled(selection.count != 1)
-    .help(L10n.isChinese ? "在翻译器中载入" : "Restore in translator")
-    .accessibilityLabel(L10n.isChinese ? "在翻译器中载入" : "Restore in translator")
+    .appButton(favoritesOnly ? .secondary : .outline, size: .sm)
+    .help(L10n.isChinese ? "只显示已收藏的记录" : "Show only favorite translations")
+    .accessibilityLabel(L10n.isChinese ? "只显示收藏" : "Favorites only")
+    .accessibilityAddTraits(favoritesOnly ? [.isSelected] : [])
 
-    Button {
-      exportHistory()
-    } label: {
-      AdaptiveLabel(
-        title: L10n.isChinese ? "导出" : "Export",
-        symbol: "square.and.arrow.up",
-        iconOnly: layoutWidth.isCompact
-      )
+    if !selection.isEmpty {
+      Button {
+        confirmDelete(of: selection)
+      } label: {
+        AdaptiveLabel(
+          title: L10n.isChinese ? "删除所选 (\(selection.count))" : "Delete \(selection.count)",
+          symbol: "trash",
+          iconOnly: layoutWidth.isCompact
+        )
+      }
+      .appButton(.destructiveGhost, size: .sm)
+      .help(L10n.isChinese ? "删除所选记录" : "Delete selected translations")
+      .accessibilityLabel(L10n.isChinese ? "删除所选记录" : "Delete selected translations")
     }
-    .appButton(.outline, size: .sm)
-    .disabled(model.history.isEmpty)
-    .help(L10n.isChinese ? "导出历史记录 (JSON)" : "Export History (JSON)")
-    .accessibilityLabel(L10n.isChinese ? "导出历史记录 (JSON)" : "Export History (JSON)")
 
-    Button {
-      confirmDelete(of: Set(model.history.map(\.id)))
+    Menu {
+      Button(L10n.isChinese ? "导出为 JSON…" : "Export as JSON…", systemImage: "square.and.arrow.up") {
+        exportHistory()
+      }
+      .disabled(model.history.isEmpty)
+      Divider()
+      Button(L10n.isChinese ? "清空全部历史记录…" : "Clear All History…", systemImage: "trash", role: .destructive) {
+        confirmDelete(of: Set(model.history.map(\.id)))
+      }
+      .disabled(model.history.isEmpty)
     } label: {
-      AdaptiveLabel(
-        title: L10n.isChinese ? "清空" : "Clear",
-        symbol: "trash.slash",
-        iconOnly: layoutWidth.isCompact
-      )
+      Image(systemName: "ellipsis")
+        .font(.system(size: 12, weight: .semibold))
+        .frame(width: AppMetrics.controlHeightSmall, height: AppMetrics.controlHeightSmall)
+        .contentShape(Rectangle())
     }
-    .appButton(.ghost, size: .sm)
-    .disabled(model.history.isEmpty)
-    .help(L10n.isChinese ? "清空历史记录" : "Clear History")
-    .accessibilityLabel(L10n.isChinese ? "清空历史记录" : "Clear History")
-
-    Button {
-      confirmDelete(of: selection)
-    } label: {
-      AdaptiveLabel(
-        title: L10n.isChinese ? "删除" : "Delete",
-        symbol: "trash",
-        iconOnly: layoutWidth.isCompact
-      )
-    }
-    .appButton(.destructiveGhost, size: .sm)
-    .disabled(selection.isEmpty)
-    .help(L10n.isChinese ? "删除所选记录" : "Delete selected translations")
-    .accessibilityLabel(L10n.isChinese ? "删除所选记录" : "Delete selected translations")
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .help(L10n.isChinese ? "更多" : "More")
+    .accessibilityLabel(L10n.isChinese ? "更多历史记录命令" : "More history commands")
   }
 
   private func select(_ id: UUID, extending: Bool) {
@@ -645,7 +684,18 @@ struct HistoryView: View {
 
   @ViewBuilder
   private var emptyState: some View {
-    if searchText.isEmpty {
+    if favoritesOnly, searchText.isEmpty {
+      EmptyState(
+        symbol: "star",
+        title: L10n.isChinese ? "还没有收藏的记录" : "No favorites yet",
+        message: L10n.isChinese
+          ? "将鼠标移到任意记录上，点按星标即可收藏。"
+          : "Hover over any translation and click the star to keep it here."
+      ) {
+        Button(L10n.isChinese ? "显示全部" : "Show All") { favoritesOnly = false }
+          .appButton(.outline, size: .sm)
+      }
+    } else if searchText.isEmpty {
       EmptyState(
         symbol: "clock.arrow.circlepath",
         title: L10n.isChinese ? "暂无翻译历史" : "No saved translations",
@@ -701,7 +751,7 @@ private struct HistoryRow: View {
       if layoutWidth >= .wide {
         HStack(alignment: .top, spacing: AppSpacing.lg) {
           textBlock(entry.sourceText, isSource: true)
-          textBlock(entry.translatedText, isSource: false)
+          textBlock(translatedPreview, isSource: false)
             .overlay(alignment: .leading) {
               Rectangle()
                 .fill(palette.border)
@@ -713,7 +763,7 @@ private struct HistoryRow: View {
       } else {
         VStack(alignment: .leading, spacing: AppSpacing.xs + 2) {
           textBlock(entry.sourceText, isSource: true)
-          textBlock(entry.translatedText, isSource: false)
+          textBlock(translatedPreview, isSource: false)
         }
       }
 
@@ -735,6 +785,12 @@ private struct HistoryRow: View {
         + entry.resultLanguageName
         + (entry.selectionContext.map { " \(L10n.isChinese ? "语境" : "Context"): \($0)" } ?? "")
     )
+  }
+
+  /// Results are stored as the model wrote them, often Markdown. Three lines
+  /// of preview cannot lay that out, and bare `**` and `*` read as damage.
+  private var translatedPreview: String {
+    VocabularyPreview.text(for: entry.translatedText, word: entry.sourceText)
   }
 
   private func textBlock(_ text: String, isSource: Bool) -> some View {
@@ -791,7 +847,7 @@ struct VocabularyView: View {
       count: entries.count,
       countNoun: "words"
     ) {
-      toolbar(sections: sections)
+      toolbar(sections: sections, showsOrganizeBar: showsOrganizeBar)
     } content: {
       HStack(spacing: 0) {
         if showsRail {
@@ -858,7 +914,8 @@ struct VocabularyView: View {
     LibraryCard(
       isSelected: selection.contains(entry.id),
       onSelect: { extending in select(entry.id, extending: extending) },
-      onOpen: { speak(entry: entry) }
+      onOpen: { speak(entry: entry) },
+      hoverActions: { AnyView(rowActions(for: entry)) }
     ) {
       VocabularyRow(entry: entry)
     }
@@ -878,7 +935,20 @@ struct VocabularyView: View {
   }
 
   @ViewBuilder
-  private func toolbar(sections: [VocabularyFacetSection]) -> some View {
+  private func rowActions(for entry: VocabularyEntry) -> some View {
+    IconButton(title: L10n.isChinese ? "朗读单词" : "Speak word", symbol: "speaker.wave.2") {
+      speak(entry: entry)
+    }
+    IconButton(title: L10n.isChinese ? "拷贝单词" : "Copy word", symbol: "doc.on.doc") {
+      copyWord(of: entry)
+    }
+    IconButton(title: L10n.isChinese ? "移出生词本" : "Delete word", symbol: "trash") {
+      confirmDelete(of: [entry.id])
+    }
+  }
+
+  @ViewBuilder
+  private func toolbar(sections: [VocabularyFacetSection], showsOrganizeBar: Bool) -> some View {
     if layoutWidth.isCompact, !sections.isEmpty {
       Button {
         isFilterPresented = true
@@ -915,47 +985,56 @@ struct VocabularyView: View {
       symbol: "square.stack.3d.up"
     )
 
-    Button {
-      model.organizeVocabulary()
-    } label: {
-      AdaptiveLabel(
-        title: L10n.isChinese ? "AI 智能整理分类" : "Organize with AI",
-        symbol: "sparkles",
-        iconOnly: layoutWidth.isCompact
-      )
+    if !selection.isEmpty {
+      Button {
+        confirmDelete(of: selection)
+      } label: {
+        AdaptiveLabel(
+          title: L10n.isChinese ? "删除所选 (\(selection.count))" : "Delete \(selection.count)",
+          symbol: "trash",
+          iconOnly: layoutWidth.isCompact
+        )
+      }
+      .appButton(.destructiveGhost, size: .sm)
+      .help(L10n.isChinese ? "删除所选生词" : "Delete selected words")
+      .accessibilityLabel(L10n.isChinese ? "删除所选生词" : "Delete selected words")
     }
-    .appButton(.outline, size: .sm)
-    .disabled(model.isOrganizingVocabulary || model.vocabulary.isEmpty)
-    .help(L10n.isChinese ? "AI 智能整理分类" : "Organize with AI")
-    .accessibilityLabel(L10n.isChinese ? "AI 智能整理分类" : "Organize with AI")
 
-    Button {
-      exportVocabulary()
-    } label: {
-      AdaptiveLabel(
-        title: L10n.isChinese ? "导出" : "Export",
-        symbol: "square.and.arrow.up",
-        iconOnly: layoutWidth.isCompact
-      )
+    // The strip above the grid already offers to organize whatever is
+    // unfiled; a second button with the same effect beside it only makes the
+    // reader wonder how the two differ.
+    if !showsOrganizeBar {
+      Button {
+        model.organizeVocabulary()
+      } label: {
+        AdaptiveLabel(
+          title: L10n.isChinese ? "AI 整理" : "Organize with AI",
+          symbol: "sparkles",
+          iconOnly: layoutWidth.isCompact
+        )
+      }
+      .appButton(.outline, size: .sm)
+      .disabled(model.isOrganizingVocabulary || model.vocabulary.isEmpty)
+      .help(L10n.isChinese ? "使用 AI 按类型、主题、词性和级别整理生词" : "Have the model file words by type, topic, part of speech, and level")
+      .accessibilityLabel(L10n.isChinese ? "AI 智能整理分类" : "Organize with AI")
     }
-    .appButton(.outline, size: .sm)
-    .disabled(model.vocabulary.isEmpty)
-    .help(L10n.isChinese ? "导出生词本" : "Export Vocabulary (JSON / CSV)")
-    .accessibilityLabel(L10n.isChinese ? "导出生词本" : "Export Vocabulary")
 
-    Button {
-      confirmDelete(of: selection)
+    Menu {
+      Button(L10n.isChinese ? "导出 (JSON / CSV)…" : "Export (JSON / CSV)…", systemImage: "square.and.arrow.up") {
+        exportVocabulary()
+      }
+      .disabled(model.vocabulary.isEmpty)
     } label: {
-      AdaptiveLabel(
-        title: L10n.isChinese ? "删除" : "Delete",
-        symbol: "trash",
-        iconOnly: layoutWidth.isCompact
-      )
+      Image(systemName: "ellipsis")
+        .font(.system(size: 12, weight: .semibold))
+        .frame(width: AppMetrics.controlHeightSmall, height: AppMetrics.controlHeightSmall)
+        .contentShape(Rectangle())
     }
-    .appButton(.destructiveGhost, size: .sm)
-    .disabled(selection.isEmpty)
-    .help(L10n.isChinese ? "删除所选生词" : "Delete selected words")
-    .accessibilityLabel(L10n.isChinese ? "删除所选生词" : "Delete selected words")
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .help(L10n.isChinese ? "更多" : "More")
+    .accessibilityLabel(L10n.isChinese ? "更多生词本命令" : "More vocabulary commands")
   }
 
   private func confirmDelete(of ids: Set<UUID>) {

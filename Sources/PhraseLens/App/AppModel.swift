@@ -1077,9 +1077,13 @@ final class AppModel: ObservableObject {
       ? (L10n.isChinese ? "已恢复历史记录" : "History restored")
       : (L10n.isChinese ? "词典 · 历史查询" : "Dictionary · Saved lookup")
     if showWindow {
-      translatorFocusToken = UUID()
-      WindowCoordinator.showMain()
+      openTranslator()
     }
+  }
+
+  func openTranslator() {
+    translatorFocusToken = UUID()
+    WindowCoordinator.showMain()
   }
 
   func toggleFavorite(_ entry: HistoryEntry) {

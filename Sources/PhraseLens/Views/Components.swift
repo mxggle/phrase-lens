@@ -638,6 +638,7 @@ struct AppTextEditor: View {
         .font(.system(size: fontSize, design: monospaced ? .monospaced : .default))
         .foregroundStyle(palette.foreground)
         .scrollContentBackground(.hidden)
+        .textEditorOverlayScrollers()
         .focused($isFocused)
         .padding(.horizontal, AppSpacing.sm - 1)
         .padding(.vertical, AppSpacing.sm - 2)
@@ -842,10 +843,15 @@ struct ChipToggleStyle: ToggleStyle {
 ///
 /// The strip never scrolls. A 30-pt scroller has no wheel axis, no visible edge
 /// affordance, and clips labels mid-word, so instead the bar renders the widest
-/// variant that fits the space it was offered — every label, then the armed
-/// label with glyphs for the rest, then glyphs alone — and drops to a pull-down
-/// when even glyphs would overflow. Every tab keeps its name in a tooltip and
-/// in its accessibility label, so the narrow variants stay identifiable.
+/// variant that fits the space it was offered: every tab spelled out, then as
+/// many spelled-out tabs as fit with the rest behind a More menu, and finally a
+/// single pull-down.
+///
+/// Every tab that is drawn keeps its name. A row of bare glyphs — a wand, three
+/// lines, two slightly different documents — asks the reader to hover each one
+/// to learn what it does, which is exactly the work a tab strip exists to
+/// save. The armed action is always one of the visible tabs, so the strip
+/// never hides what is running behind the menu.
 struct ActionTabBar: View {
   enum Size {
     /// Window chrome.
@@ -882,13 +888,6 @@ struct ActionTabBar: View {
     }
   }
 
-  /// How many names a variant spells out. Ordered widest to narrowest.
-  private enum Labels: String {
-    case all
-    case armedOnly
-    case none
-  }
-
   let actions: [TranslationAction]
   @Binding var selection: UUID
   var size: Size = .regular
@@ -899,9 +898,11 @@ struct ActionTabBar: View {
 
   var body: some View {
     ViewThatFits(in: .horizontal) {
-      strip(labels: .all)
-      strip(labels: .armedOnly)
-      strip(labels: .none)
+      // Widest first: every tab, then one fewer tab each time with the rest
+      // behind More.
+      ForEach(Array(stride(from: actions.count, through: 1, by: -1)), id: \.self) { visible in
+        strip(visibleCount: visible)
+      }
       pullDown
     }
     .accessibilityElement(children: .contain)
@@ -917,12 +918,27 @@ struct ActionTabBar: View {
     selection = id
   }
 
+  /// The first `count` actions in display order, with the armed one swapped
+  /// into the last slot when it would otherwise fall behind the menu.
+  private func visibleActions(count: Int) -> [TranslationAction] {
+    var visible = Array(actions.prefix(count))
+    if let armed = armedAction, !visible.contains(where: { $0.id == armed.id }), !visible.isEmpty {
+      visible[visible.count - 1] = armed
+    }
+    return visible
+  }
+
   // MARK: - Variants
 
-  private func strip(labels: Labels) -> some View {
-    HStack(spacing: 2) {
-      ForEach(actions) { action in
-        tab(action, labels: labels)
+  private func strip(visibleCount: Int) -> some View {
+    let visible = visibleActions(count: visibleCount)
+    let overflow = actions.filter { action in !visible.contains { $0.id == action.id } }
+    return HStack(spacing: 2) {
+      ForEach(visible) { action in
+        tab(action, variant: visibleCount)
+      }
+      if !overflow.isEmpty {
+        moreMenu(overflow)
       }
     }
     .padding(3)
@@ -931,8 +947,38 @@ struct ActionTabBar: View {
     .animation(AppMotion.state(reduceMotion: reduceMotion), value: selection)
   }
 
-  /// Last resort, for a container too narrow for one glyph per action: the
-  /// armed action reads as a pill, and the rest of the list is one click away.
+  /// The actions that did not fit, one click away and still named.
+  private func moreMenu(_ overflow: [TranslationAction]) -> some View {
+    Menu {
+      ForEach(overflow) { action in
+        Button {
+          select(action.id)
+        } label: {
+          Label(action.name, systemImage: action.mode?.symbol ?? "sparkles")
+        }
+      }
+    } label: {
+      // One text run, so the menu's label keeps the chevron after the word
+      // rather than laying the glyph out first as a button image.
+      Text("\(L10n.isChinese ? "更多" : "More") \(Image(systemName: "chevron.down"))")
+        .font(size.font)
+        .lineLimit(1)
+        .foregroundStyle(palette.mutedForeground)
+      .fixedSize()
+      .padding(.horizontal, size.horizontalPadding)
+      .frame(height: size.height)
+      .contentShape(Rectangle())
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .help(overflow.map(\.name).joined(separator: " · "))
+    .accessibilityLabel(L10n.isChinese ? "更多动作" : "More actions")
+  }
+
+  /// Last resort, for a container too narrow for even one named tab and the
+  /// More menu: the armed action reads as a pill, and the rest of the list is
+  /// one click away.
   private var pullDown: some View {
     Menu {
       ForEach(actions) { action in
@@ -993,20 +1039,17 @@ struct ActionTabBar: View {
       .shadow(color: palette.shadow, radius: 1.5, y: 1)
   }
 
-  private func tab(_ action: TranslationAction, labels: Labels) -> some View {
+  private func tab(_ action: TranslationAction, variant: Int) -> some View {
     let isSelected = action.id == selection
-    let showsName = labels == .all || (labels == .armedOnly && isSelected)
     return Button {
       select(action.id)
     } label: {
       HStack(spacing: AppSpacing.xs + 1) {
         Image(systemName: action.mode?.symbol ?? "sparkles")
           .font(.system(size: size.iconSize, weight: .medium))
-        if showsName {
-          Text(action.name)
-            .font(size.font)
-            .lineLimit(1)
-        }
+        Text(action.name)
+          .font(size.font)
+          .lineLimit(1)
       }
       .foregroundStyle(isSelected ? palette.foreground : palette.mutedForeground)
       .fixedSize()
@@ -1017,7 +1060,7 @@ struct ActionTabBar: View {
           // One geometry group per variant: `ViewThatFits` builds all of them
           // to measure, and a shared id would put several sources in one group.
           armedPill
-            .matchedGeometryEffect(id: "armedActionTab-\(labels.rawValue)", in: pill)
+            .matchedGeometryEffect(id: "armedActionTab-\(variant)", in: pill)
         }
       }
       .contentShape(Rectangle())
@@ -1472,6 +1515,54 @@ extension View {
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)
     )
+  }
+}
+
+/// The text-editor counterpart of `OverlayScrollerChrome`.
+///
+/// `TextEditor` owns its `NSScrollView` privately, so a probe planted in the
+/// editor's background is a sibling of that scroll view, not inside it. The
+/// probe finds it instead by position: the text scroll view under its own
+/// centre. Without this, "Show scroll bars: Always" gives an empty source box
+/// a full-height scroller track that reads as a stray bar in the card.
+private struct TextEditorScrollerChrome: NSViewRepresentable {
+  func makeNSView(context _: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    DispatchQueue.main.async { apply(from: view) }
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context _: Context) {
+    DispatchQueue.main.async { apply(from: view) }
+  }
+
+  private func apply(from probe: NSView) {
+    guard let root = probe.window?.contentView else { return }
+    let centre = probe.convert(NSPoint(x: probe.bounds.midX, y: probe.bounds.midY), to: nil)
+    guard let scrollView = Self.textScrollView(in: root, containing: centre) else { return }
+    scrollView.scrollerStyle = .overlay
+    scrollView.autohidesScrollers = true
+    scrollView.verticalScroller?.controlSize = .small
+  }
+
+  private static func textScrollView(in view: NSView, containing point: NSPoint) -> NSScrollView? {
+    if let scrollView = view as? NSScrollView, scrollView.documentView is NSTextView,
+      scrollView.convert(scrollView.bounds, to: nil).contains(point)
+    {
+      return scrollView
+    }
+    for subview in view.subviews {
+      if let found = textScrollView(in: subview, containing: point) { return found }
+    }
+    return nil
+  }
+}
+
+extension View {
+  /// Gives a `TextEditor` thin, self-hiding overlay scrollers. Apply it to the
+  /// editor itself.
+  func textEditorOverlayScrollers() -> some View {
+    background(TextEditorScrollerChrome().accessibilityHidden(true))
   }
 }
 

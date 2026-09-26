@@ -241,7 +241,9 @@ private struct SidebarView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: AppSpacing.lg) {
           ForEach(AppSection.Group.allCases) { group in
-            let sections = AppSection.allCases.filter { $0.group == group }
+            // Setup is shown here only on first launch; its persistent entry
+            // lives in Settings rather than alongside everyday work.
+            let sections = AppSection.allCases.filter { $0.group == group && $0 != .setup }
             if !sections.isEmpty {
               VStack(alignment: .leading, spacing: 2) {
                 if !isCollapsed {
@@ -417,6 +419,7 @@ private struct NavBar: View {
   @EnvironmentObject private var model: AppModel
   @Environment(\.palette) private var palette
   @Environment(\.layoutWidth) private var layoutWidth
+  @Environment(\.openSettings) private var openSettings
 
   var body: some View {
     HStack(spacing: AppSpacing.md) {
@@ -443,27 +446,27 @@ private struct NavBar: View {
       Spacer(minLength: AppSpacing.sm)
 
       if !model.shortcutErrors.isEmpty {
-        Badge(
-          text: L10n.isChinese ? "快捷键" : "Shortcuts",
-          variant: .warning,
-          symbol: "exclamationmark.triangle.fill"
-        )
+        // A warning with nowhere to go is only an alarm. The badge opens the
+        // pane where the conflicting shortcut can be changed.
+        Button {
+          SettingsNavigation.show(.shortcuts) { openSettings() }
+        } label: {
+          Badge(
+            text: L10n.isChinese ? "快捷键冲突" : "Shortcut conflict",
+            variant: .warning,
+            symbol: "exclamationmark.triangle.fill"
+          )
+        }
+        .buttonStyle(.plain)
         .help(
           L10n.isChinese
-            ? "部分全局快捷键注册失败：\n" + model.shortcutErrors.joined(separator: "\n")
-            : "Some global shortcuts could not be registered:\n"
+            ? "部分全局快捷键注册失败，点按前往设置修改：\n" + model.shortcutErrors.joined(separator: "\n")
+            : "Some global shortcuts could not be registered. Click to change them:\n"
               + model.shortcutErrors.joined(separator: "\n")
         )
-        .accessibilityLabel(L10n.isChinese ? "快捷键注册问题" : "Shortcut registration problem")
+        .accessibilityLabel(L10n.isChinese ? "快捷键冲突，前往设置" : "Shortcut conflict. Opens Settings.")
         .layoutPriority(2)
       }
-
-      // The bar's fixed ends — title, warnings, the run command — claim their
-      // width first. Whatever is left is what the control strip measures
-      // itself against, so it sheds labels instead of pushing the primary
-      // command off the edge.
-      NavBarActions(section: section)
-        .layoutPriority(2)
     }
     .padding(.horizontal, AppSpacing.lg)
     .frame(height: AppMetrics.navBarHeight)
@@ -503,60 +506,6 @@ private struct NavBarControls: View {
           model.translate()
         }
       }
-    )
-  }
-}
-
-/// Window-level commands for the current section. Kept out of `NavBar` so the
-/// bar itself does not rebuild on every keystroke in the translator.
-private struct NavBarActions: View {
-  let section: AppSection
-
-  @EnvironmentObject private var model: AppModel
-  @Environment(\.layoutWidth) private var layoutWidth
-
-  var body: some View {
-    switch section {
-    case .translator:
-      translateButton
-    case .setup, .history, .vocabulary, .actions:
-      EmptyView()
-    }
-  }
-
-  private var isInputEmpty: Bool {
-    model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-  }
-
-  private var translateButton: some View {
-    Button {
-      if model.isTranslating {
-        model.stopTranslation()
-      } else {
-        model.translate()
-      }
-    } label: {
-      HStack(spacing: AppSpacing.xs + 2) {
-        Image(systemName: model.isTranslating ? "stop.fill" : "arrow.turn.down.left")
-          .font(.system(size: 11, weight: .semibold))
-          .contentTransition(.symbolEffect(.replace))
-        if !layoutWidth.isCompact {
-          Text(model.isTranslating ? (L10n.isChinese ? "停止" : "Stop") : model.primaryActionTitle)
-        }
-      }
-    }
-    .appButton(.primary, size: .md)
-    .keyboardShortcut(.return, modifiers: [.command])
-    .disabled(!model.isTranslating && isInputEmpty)
-    .help(
-      model.isTranslating
-        ? (L10n.isChinese ? "停止翻译 (⌘.)" : "Stop translating (⌘.)")
-        : (L10n.isChinese ? "\(model.primaryActionTitle) (⌘↩)" : "\(model.primaryActionTitle) (⌘↩)")
-    )
-    .accessibilityLabel(
-      model.isTranslating
-        ? (L10n.isChinese ? "停止翻译" : "Stop translating")
-        : model.primaryActionTitle
     )
   }
 }

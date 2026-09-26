@@ -8,6 +8,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
   case shortcuts
   case speech
   case network
+  case setup
   case about
 
   var id: String { rawValue }
@@ -19,6 +20,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case .shortcuts: L10n.isChinese ? "快捷键" : "Shortcuts"
     case .speech: L10n.isChinese ? "语音朗读" : "Speech"
     case .network: L10n.isChinese ? "网络代理" : "Network"
+    case .setup: L10n.isChinese ? "新手引导" : "Getting Started"
     case .about: L10n.isChinese ? "关于" : "About"
     }
   }
@@ -30,6 +32,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case .shortcuts: "keyboard"
     case .speech: "speaker.wave.2"
     case .network: "network"
+    case .setup: "checklist"
     case .about: "info.circle"
     }
   }
@@ -41,6 +44,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case .shortcuts: L10n.isChinese ? "全局快捷键与系统权限" : "Global keys and the permission they need"
     case .speech: L10n.isChinese ? "语音播放引擎与朗读参数" : "Voice playback and writing replacement"
     case .network: L10n.isChinese ? "代理服务器与直连白名单" : "Proxy configuration"
+    case .setup: L10n.isChinese ? "连接服务商、启用快捷键并体验首次翻译" : "Connect a provider, enable shortcuts, and try a translation"
     case .about: L10n.isChinese ? "版本号与开源许可协议" : "Version and licensing"
     }
   }
@@ -117,6 +121,7 @@ private struct SettingsWindowConfig: NSViewRepresentable {
 private struct SettingsShell: View {
   @Binding var pane: SettingsPane
 
+  @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
   @Environment(\.palette) private var palette
 
@@ -178,19 +183,30 @@ private struct SettingsShell: View {
       Hairline()
 
       WidthReader { _, _ in
-        ScrollView {
-          Group {
-            switch pane {
-            case .general: GeneralSettingsPane()
-            case .provider: ProviderSettingsPane()
-            case .shortcuts: ShortcutSettingsPane()
-            case .speech: SpeechWritingSettingsPane()
-            case .network: NetworkSettingsPane()
-            case .about: AboutSettingsPane()
+        if pane == .setup {
+          ScrollView {
+            SetupGuideView {
+              pane = .general
+              model.openTranslator()
             }
+            .frame(minHeight: 540)
           }
-          .padding(AppSpacing.xl)
-          .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+          ScrollView {
+            Group {
+              switch pane {
+              case .general: GeneralSettingsPane()
+              case .provider: ProviderSettingsPane()
+              case .shortcuts: ShortcutSettingsPane()
+              case .speech: SpeechWritingSettingsPane()
+              case .network: NetworkSettingsPane()
+              case .about: AboutSettingsPane()
+              case .setup: EmptyView()
+              }
+            }
+            .padding(AppSpacing.xl)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          }
         }
       }
     }

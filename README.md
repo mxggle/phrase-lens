@@ -130,7 +130,7 @@ You only need to do this once. macOS remembers the choice for every later launch
 
 PhraseLens opens **Getting Started** on a fresh installation. Its five tabs cover Account, Connect, Model, Shortcuts, and Try it, with one task per tab and no page scrolling. Choose what you already have: a ChatGPT account, an OpenAI Platform API key, a key from another AI service, or Ollama on this Mac. The guide then shows the matching sign-in or key field and a model picker. OpenAI Platform keys come from the [API key dashboard](https://platform.openai.com/api-keys) and have separate billing from ChatGPT subscriptions. Ollama needs a running local server and a downloaded model instead of a key. Advanced Provider Settings remains available for custom configurations. Try the sample translation at the end; saved settings alone do not verify the connection.
 
-The guide then offers **Accessibility** permission for translating selections in other apps and replacing focused text. Typed translation works without it. **Screenshot OCR** needs **Screen Recording** permission when you first use that feature. Both permissions can be managed in **System Settings → Privacy & Security**. You can skip the guide and reopen **Getting Started** from the sidebar.
+The guide then offers **Accessibility** permission for translating selections in other apps and replacing focused text. Typed translation works without it. **Screenshot OCR** needs **Screen Recording** permission when you first use that feature. Both permissions can be managed in **System Settings → Privacy & Security**. You can skip the guide and reopen it from **Settings → Getting Started**. It does not occupy a permanent entry in the main sidebar.
 
 ---
 

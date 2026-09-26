@@ -66,8 +66,6 @@ struct TranslatorView: View {
           .padding(.leading, layoutWidth.isCompact ? 0 : AppSpacing.xs)
           .padding(.top, layoutWidth.isCompact ? AppSpacing.xs : 0)
       }
-
-      statusBar
     }
     .padding(.horizontal, AppSpacing.lg)
     .padding(.top, AppSpacing.md)
@@ -154,6 +152,10 @@ struct TranslatorView: View {
           model.clear()
         }
 
+        statusLine
+          .padding(.leading, AppSpacing.xs)
+          .layoutPriority(-1)
+
         Spacer(minLength: AppSpacing.xs)
 
         Text("\(model.inputText.count)")
@@ -161,6 +163,12 @@ struct TranslatorView: View {
           .monospacedDigit()
           .foregroundStyle(palette.mutedForeground)
           .accessibilityLabel(L10n.isChinese ? "原文共 \(model.inputText.count) 个字符" : "\(model.inputText.count) characters in the source text")
+
+        // The run command sits at the foot of the text it runs on, where the
+        // eye and the pointer already are once the text is typed. In the
+        // window's top-right corner it was the farthest point on screen from
+        // the source box.
+        TranslateButton()
       }
     }
   }
@@ -181,6 +189,7 @@ struct TranslatorView: View {
         .lineSpacing(3)
         .foregroundStyle(palette.foreground)
         .scrollContentBackground(.hidden)
+        .textEditorOverlayScrollers()
         .focused($inputFocused)
         .padding(.horizontal, AppMetrics.readingInset - 5)
         .padding(.vertical, AppMetrics.readingInset - 8)
@@ -202,28 +211,31 @@ struct TranslatorView: View {
 
   private var resultPane: some View {
     PaneContainer {
-      ResultTabBar()
-      PaneHeader(label: L10n.isChinese ? "译文与结果" : "Result") {
+      ResultTabBar {
         if model.dictionaryVisible {
-          Label(L10n.isChinese ? "离线词典" : "Offline", systemImage: "book.closed").font(AppFont.caption)
-        } else {
+          IconButton(title: didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝词条释义与出处" : "Copy dictionary entries with sources"), symbol: didCopy ? "checkmark" : "doc.on.doc", isDisabled: !model.canCopyResult) {
+            copyOutput()
+          }
+        }
+      }
+      // In dictionary mode the tab row already carries the language pair and
+      // the copy command, so a second strip saying "Offline" would only push
+      // the entries down.
+      if !model.dictionaryVisible {
+        PaneHeader(label: L10n.isChinese ? "译文与结果" : "Result") {
           AppSelect(
             title: L10n.isChinese ? "目标语言" : "Target language",
             selection: $settingsStore.settings.targetLanguage,
             options: model.visibleTargetLanguages,
             label: { $0.shortDisplayName }
           )
-        }
-        if model.isTranslating {
-          Spinner()
-            .transition(.opacity)
-        }
-      } trailing: {
-        if model.dictionaryVisible {
-          IconButton(title: didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝词条释义与出处" : "Copy dictionary entries with sources"), symbol: didCopy ? "checkmark" : "doc.on.doc", isDisabled: !model.canCopyResult) {
-            copyOutput()
+          if model.isTranslating {
+            Spinner()
+              .transition(.opacity)
           }
-        } else { resultCommands }
+        } trailing: {
+          resultCommands
+        }
       }
 
       resultBody
@@ -329,27 +341,28 @@ struct TranslatorView: View {
 
   // MARK: - Status
 
-  private var statusBar: some View {
-    HStack(spacing: AppSpacing.sm) {
-      StatusDot(
-        color: model.isTranslating ? palette.foreground : palette.faintForeground,
-        isActive: model.isTranslating
-      )
-      Text(model.statusMessage)
-        .lineLimit(1)
-
-      Spacer(minLength: AppSpacing.sm)
-
-      // The language pair used to be repeated here. It is set two rows up, in
-      // the pane headers, and a status bar that echoes a control the eye can
-      // already see is a line of text nobody reads.
+  /// Transient feedback — translating, copied, saved — in the source pane's
+  /// own strip rather than on a line of its own under both cards. The resting
+  /// "Ready" says nothing an idle window does not, so it is not drawn.
+  @ViewBuilder
+  private var statusLine: some View {
+    let idle = model.statusMessage == "Ready" || model.statusMessage == "就绪"
+    if !idle || model.isTranslating {
+      HStack(spacing: AppSpacing.xs + 2) {
+        StatusDot(
+          color: model.isTranslating ? palette.foreground : palette.faintForeground,
+          isActive: model.isTranslating
+        )
+        Text(model.statusMessage)
+          .lineLimit(1)
+          .truncationMode(.tail)
+      }
+      .font(AppFont.caption)
+      .foregroundStyle(palette.mutedForeground)
+      .transition(.opacity)
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(L10n.isChinese ? "状态：\(model.statusMessage)" : "Status: \(model.statusMessage)")
     }
-    .font(AppFont.caption)
-    .foregroundStyle(palette.mutedForeground)
-    .frame(height: AppMetrics.statusBarHeight)
-    .frame(maxWidth: .infinity)
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel(L10n.isChinese ? "状态：\(model.statusMessage)" : "Status: \(model.statusMessage)")
   }
 
   private func copyOutput() {
@@ -433,5 +446,61 @@ struct PaneFooter<Content: View>: View {
       .frame(height: AppMetrics.paneFooterHeight)
       .background(palette.chrome)
     }
+  }
+}
+
+// MARK: - Run command
+
+/// The translator's one primary command. Its own view so that the source pane
+/// footer it sits in does not have to know how it is labelled.
+private struct TranslateButton: View {
+  @EnvironmentObject private var model: AppModel
+  @Environment(\.palette) private var palette
+  @Environment(\.layoutWidth) private var layoutWidth
+
+  private var isInputEmpty: Bool {
+    model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private var title: String {
+    if model.isTranslating { return L10n.isChinese ? "停止" : "Stop" }
+    if model.dictionaryVisible { return L10n.isChinese ? "查词" : "Look Up" }
+    return L10n.isChinese ? "翻译" : "Translate"
+  }
+
+  var body: some View {
+    Button {
+      if model.isTranslating {
+        model.stopTranslation()
+      } else {
+        model.translate()
+      }
+    } label: {
+      HStack(spacing: AppSpacing.xs + 2) {
+        if model.isTranslating {
+          Image(systemName: "stop.fill")
+            .font(.system(size: 10, weight: .semibold))
+        }
+        if !layoutWidth.isCompact || !model.isTranslating {
+          Text(title)
+        }
+        // The shortcut is printed on the button, so it is learned by using
+        // the button rather than by hovering it.
+        if !model.isTranslating, !layoutWidth.isCompact {
+          Text("⌘↩")
+            .font(AppFont.caption)
+            .opacity(0.6)
+        }
+      }
+    }
+    .appButton(.primary, size: .sm)
+    .keyboardShortcut(.return, modifiers: [.command])
+    .disabled(!model.isTranslating && isInputEmpty)
+    .help(
+      model.isTranslating
+        ? (L10n.isChinese ? "停止翻译 (⌘.)" : "Stop translating (⌘.)")
+        : "\(title) (⌘↩)"
+    )
+    .accessibilityLabel(title)
   }
 }

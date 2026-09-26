@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Filter translation history to favorites and access open, copy, favorite, and
+  delete commands directly on history rows. Vocabulary cards now offer speak,
+  copy, and delete commands on hover or selection.
+
+### Changed
+
+- Keep action names visible in the translator toolbar and move overflow actions
+  into a More menu while keeping the selected action visible.
+- Place Translate / Look Up and transient status beside the source text, and
+  combine dictionary result navigation and copy into a single header.
+- Move the persistent Getting Started entry into Settings while preserving the
+  automatic guide on a fresh installation.
+- Simplify library toolbars, group export and history clearing under More, and
+  avoid duplicate vocabulary organization buttons.
+
+### Fixed
+
+- Show readable history previews without raw Markdown formatting.
+- Open shortcut settings directly from the shortcut conflict warning.
+- Use self-hiding overlay scrollbars in text editors to avoid empty scrollbar tracks.
+
 ## [0.7.2] — 2026-09-27
 
 ### Fixed

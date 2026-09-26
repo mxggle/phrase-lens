@@ -64,7 +64,7 @@ accessibility.
 | `Badge`, `KeyCombo` | State labels and keycaps. |
 | `StatusDot`, `Spinner` | Live state. Both readable under Reduce Motion. |
 | `AppTextField`, `AppTextEditor`, `AppSelect`, `AppSwitchStyle`, `ChipToggleStyle` | Inputs. `AppSelect` wraps `Menu`, so the list itself is a real AppKit menu. |
-| `ActionTabBar` | Scrolling segmented switcher; the armed pill slides between tabs. |
+| `ActionTabBar` | Segmented switcher; every drawn tab is named, overflow goes behind a More menu, and the armed pill slides between tabs. |
 | `NavRow` | Selectable row, used by both sidebars and the Actions source list. |
 | `SettingsCard` / `SettingsRow` / `SettingsBlock` / `InlineNote` | Settings scaffolding, replacing `Form`'s grouped sections. |
 | `EmptyState` | "Nothing here yet", in four progressively shorter forms. |
@@ -103,12 +103,16 @@ the app's own chrome reaches the top edge and the sidebar reserves
    commands for that section.
 3. Content: each section owns its layout inside the detail column.
 
-**Translator.** An action tab strip and the language pair above a resizable
-split of a source card and a result card. Each card carries a title strip and a
-command footer.
+**Translator.** An action tab strip in the top bar above a resizable split of a
+source card and a result card. The source card's footer carries the run command
+(Translate / Look Up, ⌘↩) and transient status, so the primary command sits at
+the foot of the text it runs on. In dictionary mode the result card has a single
+header row: result type, dictionary languages, and copy.
 
 **Library.** History and Vocabulary share one scaffold — filter bar, then a
-collection of selectable cards. History is a single column of rows; vocabulary
+collection of selectable cards. Per-row commands appear on the card under the
+pointer; the toolbar keeps collection-wide commands, with destructive bulk
+actions behind its ⋯ menu. History is a single column of rows; vocabulary
 tiles into as many columns as the window holds.
 
 **Actions.** A source list with an add/remove bar beneath it and a settings-style
