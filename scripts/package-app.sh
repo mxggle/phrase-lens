@@ -85,7 +85,35 @@ if [[ -z "${SIGNING_IDENTITY}" ]]; then
     exit 1
 fi
 
-codesign --force --options runtime --sign "${SIGNING_IDENTITY}" "${APP_PATH}"
+# Embed Sparkle with symlinks intact and sign each nested executable inside out.
+# --deep is a verification option, not a substitute for signing nested code.
+SPARKLE_SOURCE="${BUILD_DIR}/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+SPARKLE_FRAMEWORK="${APP_PATH}/Contents/Frameworks/Sparkle.framework"
+if [[ ! -d "${SPARKLE_SOURCE}" ]]; then
+    print -u2 "Sparkle framework missing; resolve the pinned Swift package first."
+    exit 1
+fi
+mkdir -p "${APP_PATH}/Contents/Frameworks"
+ditto "${SPARKLE_SOURCE}" "${SPARKLE_FRAMEWORK}"
+cp "${BUILD_DIR}/artifacts/sparkle/Sparkle/LICENSE" "${APP_PATH}/Contents/Resources/Sparkle-LICENSE.txt"
+for component in \
+    "XPCServices/Installer.xpc" \
+    "XPCServices/Downloader.xpc" \
+    "Autoupdate" \
+    "Updater.app"; do
+    codesign --force --options runtime --preserve-metadata=entitlements \
+        --sign "${SIGNING_IDENTITY}" "${SPARKLE_FRAMEWORK}/Versions/B/${component}"
+done
+codesign --force --options runtime --sign "${SIGNING_IDENTITY}" "${SPARKLE_FRAMEWORK}"
+
+# Probe the selected identity on the framework rather than guessing from its
+# display name. Self-signed identities have no Apple Team ID.
+SIGNING_TEAM="$(codesign --display --verbose=4 "${SPARKLE_FRAMEWORK}" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+SIGNING_ENTITLEMENTS=()
+if [[ -z "${SIGNING_TEAM}" || "${SIGNING_TEAM}" == "not set" ]]; then
+    SIGNING_ENTITLEMENTS=(--entitlements "${PROJECT_DIR}/packaging/LocalSigning.entitlements")
+fi
+codesign --force --options runtime "${SIGNING_ENTITLEMENTS[@]}" --sign "${SIGNING_IDENTITY}" "${APP_PATH}"
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 SIGNED_IDENTIFIER="$(codesign --display --verbose=4 "${APP_PATH}" 2>&1 | sed -n 's/^Identifier=//p')"
 if [[ "${SIGNED_IDENTIFIER}" != "${PRODUCT_IDENTIFIER}" ]]; then

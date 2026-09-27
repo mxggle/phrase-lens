@@ -73,5 +73,152 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(release.plan()["next"], "1.0.0")
 
 
+class SparkleFeedTests(unittest.TestCase):
+    def setUp(self):
+        import base64
+        spec = importlib.util.spec_from_file_location('sparkle_appcast', SCRIPT.with_name('sparkle-appcast.py'))
+        self.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.module)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.archive = self.root / 'PhraseLens.zip'
+        self.archive.write_bytes(b'archive')
+        self.feed = self.root / 'appcast.xml'
+        self.info = {'CFBundleVersion': '13', 'CFBundleShortVersionString': '0.9.0',
+                     'LSMinimumSystemVersion': '13.0', 'SUFeedURL': self.module.FEED_URL,
+                     'SUPublicEDKey': base64.b64encode(b'k' * 32).decode()}
+        self.signature = base64.b64encode(b's' * 64).decode()
+        self.xml = f'''<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>
+        <sparkle:version>13</sparkle:version><sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
+        <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+        <enclosure url="{self.module.RELEASE_ROOT}/v0.9.0/PhraseLens.zip" length="7"
+        sparkle:edSignature="{self.signature}" /></item></channel></rss>'''
+
+    def test_validates_pinned_signed_feed(self):
+        self.feed.write_text(self.xml)
+        self.assertEqual(self.module.validate(self.feed, self.archive, self.info), self.signature)
+
+    def test_rejects_unpinned_wrong_length_or_missing_signature(self):
+        for old, new in [('v0.9.0', 'latest'), ('length="7"', 'length="8"'),
+                         (self.signature, ''), ('<sparkle:version>13', '<sparkle:version>12'),
+                         ('<sparkle:minimumSystemVersion>13.0', '<sparkle:minimumSystemVersion>12.0')]:
+            with self.subTest(old=old):
+                self.feed.write_text(self.xml.replace(old, new))
+                with self.assertRaises(ValueError):
+                    self.module.validate(self.feed, self.archive, self.info)
+
+    def test_key_mismatch_fails_before_generation_without_output(self):
+        app = self.root / 'PhraseLens.app'
+        (app / 'Contents').mkdir(parents=True)
+        (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(self.info))
+        output = self.root / 'output.xml'
+        with patch.object(self.module, 'verify_artifacts', return_value=self.info), patch.object(self.module, 'run', return_value='different key') as run:
+            with self.assertRaises(ValueError):
+                self.module.generate(self.root, self.archive, app, output)
+        self.assertFalse(output.exists())
+        self.assertEqual(run.call_args.args[-1], '-p')
+
+    def test_missing_key_fails_without_feed_output(self):
+        app = self.root / 'PhraseLens.app'
+        (app / 'Contents').mkdir(parents=True)
+        (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(self.info))
+        output = self.root / 'output.xml'
+        with patch.object(self.module, 'verify_artifacts', return_value=self.info), patch.object(self.module, 'run', side_effect=subprocess.CalledProcessError(1, 'generate_keys')):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.module.generate(self.root, self.archive, app, output)
+        self.assertFalse(output.exists())
+
+
+class ArtifactPreflightTests(unittest.TestCase):
+    setUp = SparkleFeedTests.setUp
+
+    def production_info(self):
+        info = dict(self.info, CFBundleIdentifier='com.harry.phraselens', CFBundleExecutable='PhraseLens',
+                    SUVerifyUpdateBeforeExtraction=True, SURequireSignedFeed=True,
+                    SUSignedFeedFailureExpirationInterval=0, SUEnableSystemProfiling=False,
+                    SUAutomaticallyUpdate=False)
+        return info
+
+    def test_security_and_identity_mismatch_rejected(self):
+        info = self.production_info()
+        self.module.validate_metadata(info, info)
+        for key, value in [('CFBundleIdentifier', 'test.app'), ('SUPublicEDKey', self.signature),
+                           ('CFBundleVersion', '12'), ('SURequireSignedFeed', False),
+                           ('SUVerifyUpdateBeforeExtraction', False),
+                           ('SUSignedFeedFailureExpirationInterval', 1728000),
+                           ('SUAutomaticallyUpdate', True), ('SUEnableSystemProfiling', True)]:
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.module.validate_metadata(dict(info, **{key: value}), info)
+        for key in ('SURequireSignedFeed', 'SUVerifyUpdateBeforeExtraction'):
+            insecure = dict(info, **{key: False})
+            with self.assertRaises(ValueError):
+                self.module.validate_metadata(insecure, insecure)
+
+    def test_zip_rejects_traversal_absolute_and_symlink_escape(self):
+        import stat, zipfile
+        for name in ('../escape', '/absolute', 'PhraseLens.app/../../escape', 'bad\\path'):
+            with self.subTest(name=name):
+                with zipfile.ZipFile(self.archive, 'w') as archive:
+                    archive.writestr(name, b'bad')
+                with self.assertRaises(ValueError):
+                    self.module.validate_zip_entries(self.archive)
+        with zipfile.ZipFile(self.archive, 'w') as archive:
+            link = zipfile.ZipInfo('PhraseLens.app/link')
+            link.external_attr = (stat.S_IFLNK | 0o777) << 16
+            archive.writestr(link, '../../escape')
+        with self.assertRaises(ValueError):
+            self.module.validate_zip_entries(self.archive)
+
+    def test_zip_rejects_writing_through_symlink(self):
+        import stat, zipfile
+        with zipfile.ZipFile(self.archive, 'w') as archive:
+            link = zipfile.ZipInfo('PhraseLens.app/link')
+            link.external_attr = (stat.S_IFLNK | 0o777) << 16
+            archive.writestr(link, 'Contents')
+            archive.writestr('PhraseLens.app/link/file', b'bad')
+        with self.assertRaises(ValueError):
+            self.module.validate_zip_entries(self.archive)
+
+    def test_same_version_content_permissions_and_links_must_match(self):
+        import shutil
+        app = self.root / 'PhraseLens.app'
+        (app / 'Contents').mkdir(parents=True)
+        info = self.production_info()
+        (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
+        file = app / 'Contents/executable'
+        file.write_bytes(b'original')
+        candidate = self.root / 'other.app'
+        shutil.copytree(app, candidate)
+        with patch.object(self.module, 'run'):
+            self.module.compare_bundle(candidate, app, info)
+            (candidate / 'Contents/executable').write_bytes(b'changed')
+            with self.assertRaises(ValueError):
+                self.module.compare_bundle(candidate, app, info)
+            (candidate / 'Contents/executable').write_bytes(b'original')
+            (candidate / 'Contents/executable').chmod(0o755)
+            with self.assertRaises(ValueError):
+                self.module.compare_bundle(candidate, app, info)
+            (candidate / 'Contents/executable').unlink()
+            (candidate / 'Contents/executable').symlink_to('/tmp')
+            with self.assertRaises(ValueError):
+                self.module.compare_bundle(candidate, app, info)
+
+    def test_dmg_detaches_when_bundle_validation_fails(self):
+        import zipfile
+        app = self.root / 'PhraseLens.app'
+        (app / 'Contents').mkdir(parents=True)
+        info = self.production_info()
+        (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
+        production = self.root / 'production.plist'
+        production.write_bytes(plistlib.dumps(info))
+        with zipfile.ZipFile(self.archive, 'w') as archive:
+            archive.writestr('PhraseLens.app/Contents/Info.plist', plistlib.dumps(info))
+        with patch.object(self.module, 'run') as run, patch.object(self.module, 'compare_bundle', side_effect=[None, ValueError('stale dmg')]):
+            with self.assertRaises(ValueError):
+                self.module.verify_artifacts(self.archive, app, self.root / 'release.dmg', production)
+        self.assertEqual(run.call_args.args[1], 'detach')
+
+
 if __name__ == "__main__":
     unittest.main()

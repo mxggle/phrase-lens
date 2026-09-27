@@ -45,7 +45,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case .speech: L10n.isChinese ? "语音播放引擎与朗读参数" : "Voice playback and writing replacement"
     case .network: L10n.isChinese ? "代理服务器与直连白名单" : "Proxy configuration"
     case .setup: L10n.isChinese ? "连接服务商、启用快捷键并体验首次翻译" : "Connect a provider, enable shortcuts, and try a translation"
-    case .about: L10n.isChinese ? "版本号与开源许可协议" : "Version and licensing"
+    case .about: L10n.isChinese ? "版本、软件更新与开源许可协议" : "Version, software updates, and licensing"
     }
   }
 }
@@ -1306,6 +1306,7 @@ private struct NetworkSettingsPane: View {
 
 private struct AboutSettingsPane: View {
   @Environment(\.palette) private var palette
+  @EnvironmentObject private var appUpdater: AppUpdater
 
   var body: some View {
     PaneStack {
@@ -1329,6 +1330,52 @@ private struct AboutSettingsPane: View {
                 .foregroundStyle(palette.mutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
             }
+          }
+        }
+      }
+
+      SettingsCard(L10n.isChinese ? "软件更新" : "Software Updates") {
+        SettingsRow(
+          L10n.isChinese ? "检查新版本" : "Check for a new version",
+          detail: appUpdater.lastUpdateCheckDate.map {
+            (L10n.isChinese ? "上次检查：" : "Last checked: ") + $0.formatted(date: .abbreviated, time: .shortened)
+          } ?? (L10n.isChinese ? "下载更新后可直接安装并重新启动。" : "Download an update, then install and relaunch.")
+        ) {
+          Button(L10n.isChinese ? "检查更新…" : "Check for Updates…") { appUpdater.checkForUpdates() }
+            .appButton(.outline, size: .sm)
+            .disabled(!appUpdater.canCheckForUpdates)
+        }
+        Hairline()
+        SettingsRow(
+          L10n.isChinese ? "自动检查更新" : "Check automatically",
+          detail: L10n.isChinese ? "定期检查新版本；有更新时通知您。" : "Check periodically and notify you when an update is available."
+        ) {
+          Toggle(L10n.isChinese ? "自动检查更新" : "Check automatically", isOn: Binding(
+            get: { appUpdater.automaticallyChecksForUpdates },
+            set: { appUpdater.setAutomaticallyChecksForUpdates($0) }
+          ))
+          .labelsHidden()
+          .disabled(!appUpdater.isAvailable)
+        }
+        Hairline()
+        SettingsRow(
+          L10n.isChinese ? "自动下载并安装更新" : "Download and install automatically",
+          detail: L10n.isChinese
+            ? "在后台下载已验证的更新，并在退出时安装；也可按提示立即重启。"
+            : "Download verified updates in the background and install when you quit, or relaunch when prompted."
+        ) {
+          Toggle(L10n.isChinese ? "自动下载并安装更新" : "Download and install automatically", isOn: Binding(
+            get: { appUpdater.automaticallyDownloadsUpdates },
+            set: { appUpdater.setAutomaticallyDownloadsUpdates($0) }
+          ))
+          .labelsHidden()
+          .disabled(!appUpdater.isAvailable || !appUpdater.allowsAutomaticUpdates)
+        }
+        if let error = appUpdater.startupError {
+          SettingsBlock { InlineNote(text: error, kind: .warning) }
+        } else if !appUpdater.isAvailable {
+          SettingsBlock {
+            InlineNote(text: L10n.isChinese ? "请使用已打包的应用来检查更新。" : "Use the packaged app to check for updates.", kind: .info)
           }
         }
       }

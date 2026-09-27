@@ -6,15 +6,26 @@ cd "${SCRIPT_DIR:h}"
 
 publish_release() {
     local version="$1"
-    if [[ ! -f dist/PhraseLens.dmg || ! -f dist/PhraseLens.zip || ! -f dist/SHA256SUMS.txt ]]; then
-        print -u2 "Release assets are missing from dist/. Package this version before retrying."
-        exit 1
+    if [[ ! -f dist/PhraseLens.dmg || ! -f dist/PhraseLens.zip ]]; then
+        print -u2 "Release assets are missing; package this version before retrying."
+        return 1
     fi
+    if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/PhraseLens.app/Contents/Info.plist)" != "${version}" ]]; then
+        print -u2 "Packaged app version does not match the release."
+        return 1
+    fi
+    python3 scripts/sparkle-appcast.py --dmg dist/PhraseLens.dmg
+    ( cd dist && shasum -a 256 PhraseLens.dmg PhraseLens.zip appcast.xml > SHA256SUMS.txt )
     if gh release view "v${version}" >/dev/null 2>&1; then
-        gh release upload "v${version}" dist/PhraseLens.dmg dist/PhraseLens.zip dist/SHA256SUMS.txt --clobber
+        if [[ "$(gh release view "v${version}" --json isDraft --jq .isDraft)" != "true" ]]; then
+            print -u2 "Release v${version} is already public; refusing to replace signed assets."
+            exit 1
+        fi
+        gh release upload "v${version}" dist/PhraseLens.dmg dist/PhraseLens.zip dist/SHA256SUMS.txt dist/appcast.xml --clobber
     else
-        gh release create "v${version}" dist/PhraseLens.dmg dist/PhraseLens.zip dist/SHA256SUMS.txt \
-            --title "PhraseLens v${version}" --notes-file <(python3 - "${version}" <<'PY'
+        local notes_file
+        notes_file="$(mktemp)"
+        if ! python3 - "${version}" > "${notes_file}" <<'PYNOTES'
 import re, sys
 from pathlib import Path
 version = re.escape(sys.argv[1])
@@ -23,9 +34,35 @@ match = re.search(rf'^## \[{version}\].*?\n(.*?)(?=^## \[)', text, re.M | re.S)
 if not match:
     raise SystemExit('Release notes missing from CHANGELOG.md')
 print(match.group(1).strip())
-PY
-)
+PYNOTES
+        then
+            rm -f "${notes_file}"
+            return 1
+        fi
+        if ! gh release create "v${version}" dist/PhraseLens.dmg dist/PhraseLens.zip dist/SHA256SUMS.txt dist/appcast.xml --draft \
+            --title "PhraseLens v${version}" --notes-file "${notes_file}"; then
+            rm -f "${notes_file}"
+            return 1
+        fi
+        rm -f "${notes_file}"
     fi
+    # Download the draft assets and compare every byte before latest can advance.
+    local verification_dir
+    verification_dir="$(mktemp -d)"
+    if ! gh release download "v${version}" --dir "${verification_dir}"; then
+        rm -rf "${verification_dir}"
+        return 1
+    fi
+    local asset
+    for asset in PhraseLens.dmg PhraseLens.zip SHA256SUMS.txt appcast.xml; do
+        if ! cmp -s "dist/${asset}" "${verification_dir}/${asset}"; then
+            print -u2 "Uploaded asset ${asset} does not match; release remains draft."
+            rm -rf "${verification_dir}"
+            return 1
+        fi
+    done
+    rm -rf "${verification_dir}"
+    gh release edit "v${version}" --draft=false --latest
     gh release view "v${version}" --json url,assets --jq '{url, assets: [.assets[].name]}'
 }
 
@@ -75,7 +112,8 @@ print -r -- "${PLAN}"
 python3 scripts/release.py prepare >/dev/null
 ./scripts/test.sh
 ./scripts/package-app.sh
-( cd dist && shasum -a 256 PhraseLens.dmg PhraseLens.zip > SHA256SUMS.txt )
+python3 scripts/sparkle-appcast.py --dmg dist/PhraseLens.dmg
+( cd dist && shasum -a 256 PhraseLens.dmg PhraseLens.zip appcast.xml > SHA256SUMS.txt )
 codesign --verify --deep --strict dist/PhraseLens.app
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/PhraseLens.app/Contents/Info.plist)" = "${NEXT}"
 

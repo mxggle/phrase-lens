@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Check for updates from the app menu or Settings → About. Automatic checks and
+  background download/install are separate opt-in preferences.
+- Authenticate both update feeds and archives with Ed25519 signatures; verify
+  release artifacts before publishing a complete GitHub release.
+- Existing users must manually install this first updater-enabled release.
+  Initial installation still requires macOS approval for an unnotarized app.
+
 ## [0.8.0] — 2026-09-27
 
 ### Added

@@ -6,6 +6,7 @@ import SwiftUI
 struct PhraseLensApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @StateObject private var model: AppModel
+  @StateObject private var appUpdater: AppUpdater
 
   init() {
     if CommandLine.arguments.contains("--dictionary-self-test") {
@@ -28,7 +29,15 @@ struct PhraseLensApp: App {
     }
     let model: AppModel
     #if DEBUG
-    if CommandLine.arguments.contains("--dictionary-preview") {
+    if AppUpdater.isUpdateTest,
+      let path = Bundle.main.object(forInfoDictionaryKey: "PhraseLensUpdateTestDirectory") as? String {
+      let directory = URL(fileURLWithPath: path, isDirectory: true)
+      let defaults = UserDefaults.standard
+      let settings = SettingsStore(defaults: defaults,
+        credentials: CredentialStore(directory: directory, defaults: defaults), loadStoredCredentials: false)
+      settings.dismissSetupGuide()
+      model = AppModel(settingsStore: settings, library: LibraryStore(directory: directory), integrateWithSystem: false)
+    } else if CommandLine.arguments.contains("--dictionary-preview") {
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PhraseLens-preview-\(UUID())")
       let defaults = UserDefaults(suiteName: "PhraseLens-preview-\(UUID())")!
       let settings = SettingsStore(defaults: defaults,
@@ -55,6 +64,7 @@ struct PhraseLensApp: App {
     model = AppModel()
     #endif
     _model = StateObject(wrappedValue: model)
+    _appUpdater = StateObject(wrappedValue: AppUpdater())
     AppDelegate.sharedModel = model
   }
 
@@ -80,6 +90,10 @@ struct PhraseLensApp: App {
     // sidebar reserves the space the traffic lights need.
     .windowStyle(.hiddenTitleBar)
     .commands {
+      CommandGroup(after: .appInfo) {
+        Button(L10n.isChinese ? "检查更新…" : "Check for Updates…") { appUpdater.checkForUpdates() }
+          .disabled(!appUpdater.canCheckForUpdates)
+      }
       CommandGroup(after: .newItem) {
         Button(L10n.isChinese ? "在划选浮窗中翻译" : "Translate Selection in Pop-Up") {
           model.captureSelectionAndTranslate()
@@ -130,6 +144,7 @@ struct PhraseLensApp: App {
 
     Settings {
       SettingsView()
+        .environmentObject(appUpdater)
         .environmentObject(model)
         .environmentObject(model.settingsStore)
         .environmentObject(model.modelCatalog)
@@ -141,6 +156,8 @@ struct PhraseLensApp: App {
       Button(L10n.isChinese ? "截屏文字识别" : "Screenshot OCR") { model.captureOCR() }
       Divider()
       SettingsLink { Text(L10n.isChinese ? "设置…" : "Settings…") }
+      Button(L10n.isChinese ? "检查更新…" : "Check for Updates…") { appUpdater.checkForUpdates() }
+        .disabled(!appUpdater.canCheckForUpdates)
       Divider()
       Button(L10n.isChinese ? "退出" : "Quit") { NSApp.terminate(nil) }
     }

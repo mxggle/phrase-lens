@@ -37,5 +37,19 @@
 	<string>AGPL-3.0-or-later</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/mxggle/phrase-lens/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>WX0dGh9tySPnvD6Q1AGscUv0S70Jn6azUz5xFaVJSNY=</string>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUSignedFeedFailureExpirationInterval</key>
+	<integer>0</integer>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
 </dict>
 </plist>

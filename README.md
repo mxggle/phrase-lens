@@ -121,10 +121,16 @@ Release builds are code-signed but **not yet notarized by Apple**, so macOS bloc
 
 Alternatively, launch it once normally, then go to **System Settings → Privacy & Security**, scroll to the Security section, and click **Open Anyway** next to the PhraseLens message.
 
-You only need to do this once. macOS remembers the choice for every later launch and update.
+macOS remembers approval for this installed app. Future downloads or changes to signing can still require approval.
 
 > [!NOTE]
 > Don't disable Gatekeeper system-wide to work around this. The steps above approve this one app and leave the rest of your Mac protected.
+
+### Application updates
+
+Updater-enabled builds use Sparkle 2.10.0. Install the first such release manually; Sparkle asks about automatic checks on the second launch, and automatic downloading requires a separate opt-in. You can also check manually and change update preferences in Settings. System profiling is disabled.
+
+Archives and the feed are authenticated with Ed25519, and archives are verified before extraction. This works without a paid Apple account, but does not provide Apple notarization or remove initial macOS approval requirements. See [update setup, security, release workflow, and testing](docs/UPDATES.md).
 
 ### First-run setup
 
@@ -186,15 +192,20 @@ SemVer bump from commit messages (`feat` = minor, `!` or `BREAKING CHANGE:` =
 major, other changes = patch), updates the app bundle version, `CHANGELOG.md`,
 and both landing pages, runs the self-tests, builds and signs universal DMG/ZIP
 artifacts, creates checksums, and atomically pushes the release commit and tag.
-It then creates the GitHub release. The existing Pages workflow deploys the
-landing pages when `main` changes.
+It generates a signed Sparkle appcast and stages all assets in a draft GitHub
+release. Only after downloading and comparing the uploaded bytes does it publish
+the draft as latest. The existing Pages workflow deploys the landing pages when
+`main` changes.
 
-This local release command uses the Mac's code-signing identity and `gh`
-authentication. Optional Apple notarization uses `NOTARY_PROFILE` or the
+This local release command uses the Mac's code-signing identity, `gh`
+authentication, and the existing `phraselens-updates` Ed25519 key in the login
+Keychain. Missing or mismatched update keys stop the release. See
+[UPDATES.md](docs/UPDATES.md) for key continuity and backup requirements. Optional Apple notarization uses `NOTARY_PROFILE` or the
 `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, and `NOTARY_PASSWORD` variables supported
 by `package-app.sh`. Without those credentials the release remains signed but
 not notarized, as described above. If the GitHub asset upload fails after the
-tag is pushed, run `./scripts/release.sh --resume` from the same checkout.
+tag is pushed, run `./scripts/release.sh --resume` from the same checkout to
+finish its draft. Published release assets are never replaced automatically.
 
 ---
 
