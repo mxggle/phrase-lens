@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-09-27
+
 ### Added
 
 - Check for updates from the app menu or Settings → About. Automatic checks and
@@ -15,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release artifacts before publishing a complete GitHub release.
 - Existing users must manually install this first updater-enabled release.
   Initial installation still requires macOS approval for an unnotarized app.
+
+### Added
+
+- add signed automatic app updates.
 
 ## [0.8.0] — 2026-09-27
 
@@ -380,7 +386,8 @@ themselves, so an unrecognized value costs that value and not the collection.
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/mxggle/phrase-lens/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/mxggle/phrase-lens/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/mxggle/phrase-lens/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/mxggle/phrase-lens/compare/v0.7.0...v0.7.1
