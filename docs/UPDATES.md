@@ -1,10 +1,10 @@
 # Application updates
 
-PhraseLens uses pinned Sparkle 2.10.0 to check for updates, download signed archives, install the replacement application, and relaunch. No paid Apple Developer account is needed for the Sparkle Ed25519 signing key or update protocol. Apple notarization and Developer ID distribution remain separate requirements that this setup does not satisfy.
+PhraseLens uses pinned Sparkle 2.10.0 to check for updates, download signed archives, install the replacement application, and relaunch. No paid Apple Developer account is needed for the Sparkle Ed25519 signing key or update protocol. Apple notarization is separate and needs a Developer ID; see [Notarization](#notarization).
 
 ## User experience and bootstrap
 
-Install the first updater-enabled release manually from [GitHub Releases](https://github.com/mxggle/phrase-lens/releases/latest) and move PhraseLens.app into Applications. Older builds without Sparkle cannot discover this update themselves. Approve an unnotarized application through macOS's app-specific Open/Open Anyway flow when available; never disable Gatekeeper globally.
+Install the first updater-enabled release manually from [GitHub Releases](https://github.com/mxggle/phrase-lens/releases/latest) and move PhraseLens.app into Applications. Older builds without Sparkle cannot discover this update themselves. Until releases are notarized, approve the application through macOS's app-specific Open/Open Anyway flow; never disable Gatekeeper globally.
 
 Sparkle asks whether to check automatically on the second launch. Users can also check manually and change the update preferences in Settings. Automatic downloading requires a separate explicit opt-in. System profiling is disabled. Update checks contact GitHub for release metadata and assets; they do not send translation text or provider credentials.
 
@@ -30,6 +30,27 @@ The production key already exists on the configured release Mac. `-p` reads the 
 For a new independent deployment only, Sparkle's `generate_keys --account YOUR_ACCOUNT` creates a private key in Keychain and prints the public key. Choose the account before embedding its public key and distributing the first build. Keep private keys out of source control, logs, release assets, and environment arguments. Access to the release Mac's signing Keychain is required for unattended releases; locked or unavailable Keychain access must stop the release.
 
 Maintainers are responsible for a secure, recoverable signing-key backup. The normal release scripts never export the key. Without the original Ed25519 key and without an Apple Developer ID fallback, losing the key means users must manually install a new trusted build. Do not silently rotate the embedded key or weaken verification to recover.
+
+## Notarization
+
+Notarization lets a downloaded PhraseLens open without the Open Anyway step. It needs a paid Apple Developer Program membership. Once per Mac:
+
+1. Enroll at [developer.apple.com/programs](https://developer.apple.com/programs/) and note the 10-character Team ID.
+2. Create a **Developer ID Application** certificate in Xcode > Settings > Accounts > Manage Certificates, or at developer.apple.com > Certificates. `security find-identity -v -p codesigning` must list it.
+3. Create an app-specific password at [account.apple.com](https://account.apple.com) > Sign-In and Security.
+4. Store the credentials in the login Keychain. notarytool prompts for the password:
+
+   ```bash
+   xcrun notarytool store-credentials phraselens-notary --apple-id <apple-id> --team-id <team-id>
+   ```
+
+`package-app.sh` prefers a Developer ID identity over any other signing identity, signs every component with a secure timestamp, notarizes and staples both the app and the DMG, and checks both with Gatekeeper. Self-signed local builds keep working without a timestamp and skip notarization.
+
+`release.sh` checks the `phraselens-notary` profile before it changes any version files. It refuses to publish an app or DMG without a stapled ticket unless `ALLOW_UNNOTARIZED=1` is set. Use `NOTARY_PROFILE` to choose a different profile.
+
+Switching from the self-signed identity to Developer ID changes the app's designated requirement. Existing users must grant Accessibility and Screen Recording again after that update; mention this in its release notes. Sparkle accepts the update because the Ed25519 key does not change. Rotate only one of the update key and the signing identity in a single release.
+
+After the first notarized release, remove the `caveats` block from `Casks/phraselens.rb` in [mxggle/homebrew-tap](https://github.com/mxggle/homebrew-tap) and the "Opening it the first time" section from the README.
 
 ## Release automation
 
@@ -63,6 +84,6 @@ python3 scripts/sparkle-appcast.py --dmg dist/PhraseLens.dmg
 
 Verify the actual signed feed, archive acceptance, installation, relaunch, and rejection of tampered content separately from unit tests. Record the results from the current run rather than treating the presence of the harness as a passing result.
 
-Ed25519 authenticates updates to an already trusted application. It does not provide Apple notarization, malware review, or a Developer ID identity. Initial installation remains manual, and macOS can still require app-specific approval or reject a downloaded build under its policies. No paid-account bootstrap, notarization, or public deployment is implied by this implementation.
+Ed25519 authenticates updates to an already trusted application. It does not provide Apple notarization, malware review, or a Developer ID identity. Initial installation remains manual, and macOS can still require app-specific approval or reject a downloaded build under its policies. A notarized release removes the first-launch approval; see [Notarization](#notarization).
 
 References: [Sparkle setup and signing](https://sparkle-project.org/documentation/), [publishing updates](https://sparkle-project.org/documentation/publishing/), and [security settings](https://sparkle-project.org/documentation/customization/).

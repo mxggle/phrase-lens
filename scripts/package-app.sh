@@ -107,11 +107,21 @@ done
 
 SIGNING_IDENTITY="${CODE_SIGN_IDENTITY:-}"
 if [[ -z "${SIGNING_IDENTITY}" ]]; then
+    # Prefer a Developer ID identity: only it can be notarized for distribution.
+    SIGNING_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Developer ID Application: / { print $2; exit }')"
+fi
+if [[ -z "${SIGNING_IDENTITY}" ]]; then
     SIGNING_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk '/valid identities found/ { next } /\) [A-F0-9]{40} / { print $2; exit }')"
 fi
 if [[ -z "${SIGNING_IDENTITY}" ]]; then
     print -u2 "No stable code-signing identity is available. Refusing an ad-hoc build."
     exit 1
+fi
+# Notarization requires a secure timestamp on every signature. Self-signed
+# local builds skip it so they stay fast and work offline.
+TIMESTAMP_ARGS=(--timestamp=none)
+if security find-identity -v -p codesigning 2>/dev/null | grep -F -- "${SIGNING_IDENTITY}" | grep -q '"Developer ID Application: '; then
+    TIMESTAMP_ARGS=(--timestamp)
 fi
 
 # Embed Sparkle with symlinks intact and sign each nested executable inside out.
@@ -130,10 +140,10 @@ for component in \
     "XPCServices/Downloader.xpc" \
     "Autoupdate" \
     "Updater.app"; do
-    codesign --force --options runtime --preserve-metadata=entitlements \
+    codesign --force --options runtime "${TIMESTAMP_ARGS[@]}" --preserve-metadata=entitlements \
         --sign "${SIGNING_IDENTITY}" "${SPARKLE_FRAMEWORK}/Versions/B/${component}"
 done
-codesign --force --options runtime --sign "${SIGNING_IDENTITY}" "${SPARKLE_FRAMEWORK}"
+codesign --force --options runtime "${TIMESTAMP_ARGS[@]}" --sign "${SIGNING_IDENTITY}" "${SPARKLE_FRAMEWORK}"
 
 # Probe the selected identity on the framework rather than guessing from its
 # display name. Self-signed identities have no Apple Team ID.
@@ -142,7 +152,7 @@ SIGNING_ENTITLEMENTS=()
 if [[ -z "${SIGNING_TEAM}" || "${SIGNING_TEAM}" == "not set" ]]; then
     SIGNING_ENTITLEMENTS=(--entitlements "${PROJECT_DIR}/packaging/LocalSigning.entitlements")
 fi
-codesign --force --options runtime "${SIGNING_ENTITLEMENTS[@]}" --sign "${SIGNING_IDENTITY}" "${APP_PATH}"
+codesign --force --options runtime "${TIMESTAMP_ARGS[@]}" "${SIGNING_ENTITLEMENTS[@]}" --sign "${SIGNING_IDENTITY}" "${APP_PATH}"
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 SIGNED_IDENTIFIER="$(codesign --display --verbose=4 "${APP_PATH}" 2>&1 | sed -n 's/^Identifier=//p')"
 if [[ "${SIGNED_IDENTIFIER}" != "${PRODUCT_IDENTIFIER}" ]]; then
@@ -233,6 +243,25 @@ cp -R "${APP_PATH}" "${DMG_ROOT}/"
 ln -s /Applications "${DMG_ROOT}/Applications"
 hdiutil create -volname "${PRODUCT_NAME}" -srcfolder "${DMG_ROOT}" -ov -format UDZO "${DMG_PATH}" >/dev/null
 rm -rf "${DMG_ROOT}"
+
+# The disk image is what users download, so it carries its own signature and
+# stapled ticket; the app inside is already stapled above.
+if (( NOTARIZED )); then
+    codesign --force --timestamp --sign "${SIGNING_IDENTITY}" "${DMG_PATH}"
+    print "Submitting ${DMG_PATH:t} to the Apple notary service."
+    if ! xcrun notarytool submit "${DMG_PATH}" "${NOTARY_ARGS[@]}" --wait; then
+        print -u2 "Notarization of ${DMG_PATH:t} failed. Run 'xcrun notarytool log <submission-id>' for the details."
+        exit 1
+    fi
+    if ! xcrun stapler staple "${DMG_PATH}" || ! xcrun stapler validate "${DMG_PATH}"; then
+        print -u2 "Could not staple a valid notarization ticket to ${DMG_PATH:t}."
+        exit 1
+    fi
+    if ! spctl --assess --type open --context context:primary-signature --verbose=4 "${DMG_PATH}"; then
+        print -u2 "Gatekeeper rejects ${DMG_PATH:t} after notarization."
+        exit 1
+    fi
+fi
 
 print "App: ${APP_PATH}"
 print "ZIP: ${ZIP_PATH}"

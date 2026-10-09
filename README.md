@@ -218,10 +218,11 @@ the draft as latest. The existing Pages workflow deploys the landing pages when
 This local release command uses the Mac's code-signing identity, `gh`
 authentication, and the existing `phraselens-updates` Ed25519 key in the login
 Keychain. Missing or mismatched update keys stop the release. See
-[UPDATES.md](docs/UPDATES.md) for key continuity and backup requirements. Optional Apple notarization uses `NOTARY_PROFILE` or the
-`NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, and `NOTARY_PASSWORD` variables supported
-by `package-app.sh`. Without those credentials the release remains signed but
-not notarized, as described above. If the GitHub asset upload fails after the
+[UPDATES.md](docs/UPDATES.md) for key continuity and backup requirements.
+Releases are notarized with the `phraselens-notary` keychain profile (or
+`NOTARY_PROFILE`); a missing profile stops the release before any file changes.
+See [Notarization](docs/UPDATES.md#notarization) for the one-time setup.
+`ALLOW_UNNOTARIZED=1` publishes a signed but unnotarized build instead. If the GitHub asset upload fails after the
 tag is pushed, run `./scripts/release.sh --resume` from the same checkout to
 finish its draft. Published release assets are never replaced automatically.
 

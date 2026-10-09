@@ -4,6 +4,21 @@ set -euo pipefail
 SCRIPT_DIR="${0:A:h}"
 cd "${SCRIPT_DIR:h}"
 
+# Public releases must pass Gatekeeper on first launch. ALLOW_UNNOTARIZED=1
+# publishes a signed but unnotarized build, which macOS blocks until approved.
+require_notarized() {
+    if xcrun stapler validate -q dist/PhraseLens.app && xcrun stapler validate -q dist/PhraseLens.dmg; then
+        return 0
+    fi
+    if [[ "${ALLOW_UNNOTARIZED:-}" == "1" ]]; then
+        print -u2 "WARNING: publishing an unnotarized build because ALLOW_UNNOTARIZED=1."
+        return 0
+    fi
+    print -u2 "dist/PhraseLens.app or dist/PhraseLens.dmg has no notarization ticket."
+    print -u2 "Set NOTARY_PROFILE (see docs/UPDATES.md), or ALLOW_UNNOTARIZED=1 to publish anyway."
+    return 1
+}
+
 publish_release() {
     local version="$1"
     if [[ ! -f dist/PhraseLens.dmg || ! -f dist/PhraseLens.zip ]]; then
@@ -14,6 +29,7 @@ publish_release() {
         print -u2 "Packaged app version does not match the release."
         return 1
     fi
+    require_notarized || return 1
     python3 scripts/sparkle-appcast.py --dmg dist/PhraseLens.dmg
     ( cd dist && shasum -a 256 PhraseLens.dmg PhraseLens.zip appcast.xml > SHA256SUMS.txt )
     if gh release view "v${version}" >/dev/null 2>&1; then
@@ -135,6 +151,15 @@ if [[ "${1:-}" == "--resume" ]]; then
     exit 0
 fi
 
+# Check notarization credentials before any version files change.
+if [[ "${ALLOW_UNNOTARIZED:-}" != "1" && -z "${NOTARY_APPLE_ID:-}" ]]; then
+    export NOTARY_PROFILE="${NOTARY_PROFILE:-phraselens-notary}"
+    if ! xcrun notarytool history --keychain-profile "${NOTARY_PROFILE}" >/dev/null 2>&1; then
+        print -u2 "Notary profile '${NOTARY_PROFILE}' is missing or rejected. See docs/UPDATES.md > Notarization."
+        exit 1
+    fi
+fi
+
 PLAN="$(python3 scripts/release.py plan)"
 NEXT="$(print -r -- "${PLAN}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("next", ""))')"
 if [[ -z "${NEXT}" ]]; then
@@ -146,6 +171,7 @@ print -r -- "${PLAN}"
 python3 scripts/release.py prepare >/dev/null
 ./scripts/test.sh
 ./scripts/package-app.sh
+require_notarized
 python3 scripts/sparkle-appcast.py --dmg dist/PhraseLens.dmg
 ( cd dist && shasum -a 256 PhraseLens.dmg PhraseLens.zip appcast.xml > SHA256SUMS.txt )
 codesign --verify --deep --strict dist/PhraseLens.app
