@@ -3,6 +3,7 @@
 
 import argparse
 import datetime
+import hashlib
 import json
 import plistlib
 import re
@@ -108,10 +109,29 @@ def prepare(result):
         path.write_text(updated)
 
 
+def update_cask(dmg, cask_path):
+    version = plistlib.loads(PLIST.read_bytes())["CFBundleShortVersionString"]
+    digest = hashlib.sha256(Path(dmg).read_bytes()).hexdigest()
+    cask = cask_path.read_text()
+    for key, value in (("version", version), ("sha256", digest)):
+        cask, count = re.subn(rf'^(  {key} ")[^"]*(")$', lambda m: m.group(1) + value + m.group(2), cask, flags=re.M)
+        if count != 1:
+            raise SystemExit(f"Expected one {key} line in {cask_path.name}")
+    cask_path.write_text(cask)
+    return {"version": version, "sha256": digest}
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["plan", "prepare"])
+    parser.add_argument("command", choices=["plan", "prepare", "cask"])
+    parser.add_argument("dmg", nargs="?", type=Path, help="Release disk image for the cask command")
+    parser.add_argument("cask_path", nargs="?", type=Path, help="Cask file in the Homebrew tap")
     args = parser.parse_args()
+    if args.command == "cask":
+        if not args.dmg or not args.cask_path:
+            parser.error("cask requires the release disk image and the tap's cask file")
+        print(json.dumps(update_cask(args.dmg, args.cask_path), indent=2))
+        return
     result = plan()
     if args.command == "prepare":
         prepare(result)

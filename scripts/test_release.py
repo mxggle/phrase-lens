@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import plistlib
 import subprocess
@@ -71,6 +72,19 @@ class ReleaseTests(unittest.TestCase):
                  "commit", "--allow-empty", "-qm", "fix!: remove old behavior")
         with patch.multiple(release, ROOT=self.root, PLIST=self.plist):
             self.assertEqual(release.plan()["next"], "1.0.0")
+
+    def test_cask_tracks_packaged_version_and_disk_image_digest(self):
+        cask = self.root / "phraselens.rb"
+        cask.write_text('cask "phraselens" do\n  version "0.6.0"\n  sha256 "old"\n\n'
+                        '  url "https://example.com/v#{version}/PhraseLens.dmg"\nend\n')
+        dmg = self.root / "PhraseLens.dmg"
+        dmg.write_bytes(b"disk image")
+        with patch.multiple(release, PLIST=self.plist):
+            release.update_cask(dmg, cask)
+        text = cask.read_text()
+        self.assertIn('  version "0.7.0"\n', text)
+        self.assertIn(f'  sha256 "{hashlib.sha256(b"disk image").hexdigest()}"\n', text)
+        self.assertIn("v#{version}/PhraseLens.dmg", text)
 
 
 class SparkleFeedTests(unittest.TestCase):

@@ -64,7 +64,41 @@ PYNOTES
     rm -rf "${verification_dir}"
     gh release edit "v${version}" --draft=false --latest
     gh release view "v${version}" --json url,assets --jq '{url, assets: [.assets[].name]}'
+    update_homebrew_tap "${version}"
 }
+
+# Runs after the release is public so the cask never points at a draft asset.
+update_homebrew_tap() {
+    local version="$1" tap_dir
+    tap_dir="$(mktemp -d)"
+    if ! gh repo clone mxggle/homebrew-tap "${tap_dir}" -- --quiet \
+        || ! python3 scripts/release.py cask dist/PhraseLens.dmg "${tap_dir}/Casks/phraselens.rb" >/dev/null; then
+        print -u2 "Homebrew tap update failed; the release is live. Retry with ./scripts/release.sh --update-tap."
+        rm -rf "${tap_dir}"
+        return 1
+    fi
+    if git -C "${tap_dir}" diff --quiet; then
+        rm -rf "${tap_dir}"
+        return 0
+    fi
+    git -C "${tap_dir}" commit --quiet -am "phraselens ${version}"
+    if ! git -C "${tap_dir}" push --quiet origin main; then
+        print -u2 "Homebrew tap push failed; the release is live. Retry with ./scripts/release.sh --update-tap."
+        rm -rf "${tap_dir}"
+        return 1
+    fi
+    rm -rf "${tap_dir}"
+}
+
+if [[ "${1:-}" == "--update-tap" ]]; then
+    VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/PhraseLens.app/Contents/Info.plist)"
+    if [[ "$(gh release view "v${VERSION}" --json isDraft --jq .isDraft)" != "false" ]]; then
+        print -u2 "Release v${VERSION} is not public yet; refusing to point the cask at it."
+        exit 1
+    fi
+    update_homebrew_tap "${VERSION}"
+    exit 0
+fi
 
 if [[ "${1:-}" == "--dry-run" ]]; then
     git fetch origin main --tags --quiet

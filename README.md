@@ -110,6 +110,16 @@ New Kimi profiles use the international API endpoint. Existing provider endpoint
 
 ## 📥 Install
 
+### Homebrew
+
+```bash
+brew install --cask mxggle/tap/phraselens
+```
+
+PhraseLens updates itself in-app, so `brew upgrade` leaves it alone unless you pass `--greedy`. The first launch still needs the one-time approval below.
+
+### Direct download
+
 Grab the latest `PhraseLens.dmg` or `PhraseLens.zip` from the [Releases page](https://github.com/mxggle/phrase-lens/releases/latest), then drag **PhraseLens.app** into your **Applications** folder.
 
 ### Opening it the first time
