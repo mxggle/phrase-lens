@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-09
+
 ### Added
 
 - Named AI connections with independent credentials, multiple accounts per provider,
@@ -42,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field is empty. Check editability before requesting a translation.
 - Make the main-window global shortcut hide the focused window when pressed
   again, while still raising a visible window that is behind another app.
+
+### Added
+
+- add AI connections, Definition action, and result buttons.
 
 ## [0.9.0] — 2026-09-27
 
@@ -422,7 +428,8 @@ themselves, so an unrecognized value costs that value and not the collection.
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/mxggle/phrase-lens/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/mxggle/phrase-lens/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/mxggle/phrase-lens/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/mxggle/phrase-lens/compare/v0.7.1...v0.7.2
