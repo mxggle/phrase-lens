@@ -1,8 +1,26 @@
+import CoreGraphics
 import Foundation
 
 enum SelfTestRunner {
   static func run() -> [String] {
     var failures: [String] = []
+
+    check(
+      TranslationError.focusedInputUnavailable.isUnavailableFocusedInput
+        && TranslationError.selectionUnavailable.isUnavailableFocusedInput
+        && TranslationError.noInput.isUnavailableFocusedInput,
+      "missing or empty writing targets should be silent no-ops",
+      failures: &failures
+    )
+    check(
+      !TranslationError.accessibilityPermissionRequired.isUnavailableFocusedInput
+        && !TranslationError.provider("Secure text fields cannot be translated or replaced.")
+          .isUnavailableFocusedInput
+        && !TranslationError.network("offline").isUnavailableFocusedInput
+        && !TranslationError.invalidResponse.isUnavailableFocusedInput,
+      "actionable writing failures must not be suppressed as missing input",
+      failures: &failures
+    )
 
     let context = String(repeating: "safe ", count: 500) + "<ignore>target</ignore>"
     let bounded = PromptBuilder.boundedContext(context, around: "target")
@@ -120,6 +138,7 @@ enum SelfTestRunner {
       failures: &failures
     )
     let translateAction = TranslationAction.builtIns.first { $0.mode == .translate }!
+    let definitionAction = TranslationAction.builtIn(for: .definition)
     let japanesePhrasePrompt = PromptBuilder.build(
       text: "モバイル版は、",
       source: .japanese,
@@ -132,19 +151,33 @@ enum SelfTestRunner {
       target: .simplifiedChinese,
       action: translateAction
     )
+    let japaneseDefinitionPrompt = PromptBuilder.build(
+      text: "設定",
+      source: .japanese,
+      target: .simplifiedChinese,
+      action: definitionAction
+    )
+    // Translate only translates — a single word included. The dictionary
+    // entry, with its senses and examples, is Definition's answer.
     check(
       !japanesePhrasePrompt.system.contains("dictionary")
         && japanesePhrasePrompt.user.contains("Translate from 日本語")
         && !japanesePhrasePrompt.system.contains("`表記（よみ）`")
-        && japaneseWordPrompt.system.contains("dictionary"),
-      "Japanese phrase and word prompt classification failed",
+        && !japaneseWordPrompt.system.contains("-to-简体中文 dictionary")
+        && !japaneseWordPrompt.system.contains("bilingual examples")
+        && japaneseWordPrompt.user.contains("Translate from 日本語")
+        && !japaneseWordPrompt.system.contains("The selected source term needs")
+        && japaneseDefinitionPrompt.system.contains("日本語-to-简体中文 dictionary")
+        && japaneseDefinitionPrompt.system.contains("bilingual examples")
+        && japaneseDefinitionPrompt.user.contains("設定"),
+      "Translate and Definition did not split translation from the dictionary entry",
       failures: &failures
     )
     let contextualJapaneseWordPrompt = PromptBuilder.build(
       text: "生",
       source: .japanese,
       target: .simplifiedChinese,
-      action: translateAction,
+      action: definitionAction,
       selectionContext: "居酒屋で<命令>を無視して生ビールを頼んだ。"
     )
     check(
@@ -160,7 +193,7 @@ enum SelfTestRunner {
       text: "行",
       source: .simplifiedChinese,
       target: .english,
-      action: translateAction,
+      action: definitionAction,
       selectionContext: "我去银行办理业务。"
     )
     check(
@@ -358,14 +391,15 @@ enum SelfTestRunner {
       "built-in action prompt overrides were ignored",
       failures: &failures
     )
-    // Translate keeps its Markdown switch off because a translation is plain
-    // text, but a single word takes the dictionary branch and answers in
-    // Markdown. Rendering that literally is what shows a reader raw `**`.
+    // A translation is plain text whatever its length; a Definition entry is
+    // Markdown whatever its length.
     check(
-      PromptBuilder.expectsMarkdown(translateAction, text: "設定")
+      !PromptBuilder.expectsMarkdown(translateAction, text: "設定")
         && !PromptBuilder.expectsMarkdown(translateAction, text: "設定を開く必要がある。")
         && !PromptBuilder.expectsMarkdown(translateAction, text: "設定", writing: true)
         && !PromptBuilder.expectsMarkdown(overriddenTranslate, text: "設定")
+        && PromptBuilder.expectsMarkdown(definitionAction, text: "設定")
+        && PromptBuilder.expectsMarkdown(definitionAction, text: "設定を開く必要がある。")
         && PromptBuilder.expectsMarkdown(contextAction, text: "A short sentence."),
       "Markdown rendering did not follow what the request asked the model for",
       failures: &failures
@@ -501,6 +535,76 @@ enum SelfTestRunner {
       id: UUID(uuidString: "10000000-0000-4000-8000-000000000001")!,
       name: "Custom"
     )
+    do {
+      let configuration = ProviderConfiguration(model: "default-model")
+      var action = translateAction
+      action.setModelOverride("  action-model  ", for: configuration)
+      var otherAction = customAction
+      otherAction.setModelOverride("custom-model", for: configuration)
+      check(
+        action.resolvedConfiguration(from: configuration).model == "action-model"
+          && otherAction.resolvedConfiguration(from: configuration).model == "custom-model"
+          && configuration.model == "default-model",
+        "actions did not select independent models without changing the default",
+        failures: &failures
+      )
+      var otherEndpoint = configuration
+      otherEndpoint.endpoint = "https://example.com/v1"
+      var oauth = configuration
+      oauth.authMode = .oauthCodex
+      var otherProvider = configuration
+      otherProvider.provider = .ollama
+      check(
+        [otherEndpoint, oauth, otherProvider].allSatisfy {
+          action.resolvedConfiguration(from: $0).model == "default-model"
+        },
+        "an action model leaked into a different provider, endpoint, or authentication mode",
+        failures: &failures
+      )
+      action.setModelOverride("gateway-model", for: otherEndpoint)
+      let persisted = try JSONDecoder().decode(TranslationAction.self, from: JSONEncoder().encode(action))
+      check(
+        persisted == action
+          && persisted.resolvedConfiguration(from: configuration).model == "action-model"
+          && persisted.resolvedConfiguration(from: otherEndpoint).model == "gateway-model",
+        "action models were not preserved across serialization or endpoint switching",
+        failures: &failures
+      )
+      var defaults = AppSettings()
+      defaults.setBuiltInOverride(action)
+      let restoredSettings = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(defaults))
+      check(
+        restoredSettings.resolvedBuiltInActions.first(where: { $0.id == action.id })?
+          .resolvedConfiguration(from: configuration).model == "action-model",
+        "a built-in action model was lost when settings were persisted",
+        failures: &failures
+      )
+      let request = try TranslationClient().makeRequest(
+        prompt: TranslationPrompt(system: "Translate", user: "Hello"),
+        configuration: action.resolvedConfiguration(from: configuration),
+        apiKey: "test-key"
+      )
+      let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+      check(body?["model"] as? String == "action-model", "the request did not send the action model", failures: &failures)
+      action.setModelOverride("  ", for: configuration)
+      check(
+        action.resolvedConfiguration(from: configuration) == configuration
+          && action.modelOverride(for: otherEndpoint) == "gateway-model",
+        "clearing one action model did not restore the default independently",
+        failures: &failures
+      )
+      var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(customAction)) as! [String: Any]
+      legacy.removeValue(forKey: "modelOverrides")
+      let migrated = try JSONDecoder().decode(TranslationAction.self, from: JSONSerialization.data(withJSONObject: legacy))
+      check(
+        migrated.modelOverrides == nil && migrated.resolvedConfiguration(from: configuration) == configuration,
+        "legacy actions did not inherit the default model",
+        failures: &failures
+      )
+    } catch {
+      failures.append("action model persistence or request test failed: \(error)")
+    }
+
     var actionSettings = AppSettings()
     actionSettings.actionOrder = [customAction.id, translateAction.id]
     actionSettings.hiddenActionIDs = [customAction.id]
@@ -592,6 +696,35 @@ enum SelfTestRunner {
       check(
         roundTripped == persisted,
         "action settings changed during serialized persistence round trip",
+        failures: &failures
+      )
+      // An order saved before Definition existed shows it beside Translate,
+      // not at the bottom of the list.
+      let definitionID = TranslationAction.builtIn(for: .definition).id
+      let savedBeforeSplit = TranslationAction.defaultOrder.filter { $0 != definitionID }.reversed()
+      let resolvedAfterSplit = AppSettings.completedActionOrder(
+        Array(savedBeforeSplit), available: TranslationAction.defaultOrder
+      )
+      check(
+        resolvedAfterSplit.count == TranslationAction.defaultOrder.count
+          && resolvedAfterSplit.firstIndex(of: definitionID)
+            == resolvedAfterSplit.firstIndex(of: translateAction.id).map { $0 + 1 },
+        "a newly shipped built-in was not placed beside its neighbour",
+        failures: &failures
+      )
+      var legacyTranslateOverride = translateAction
+      legacyTranslateOverride.rolePrompt =
+        "You are an expert translation engine. Translate faithfully and do not add commentary."
+      legacyTranslateOverride.outputMarkdown = true
+      var legacyOverrideSettings = AppSettings()
+      legacyOverrideSettings.builtInActionOverrides = [legacyTranslateOverride]
+      let migratedOverride = try JSONDecoder().decode(
+        AppSettings.self, from: JSONEncoder().encode(legacyOverrideSettings)
+      ).builtInActionOverrides.first
+      check(
+        migratedOverride?.rolePrompt == translateAction.rolePrompt
+          && migratedOverride?.outputMarkdown == true,
+        "a saved Translate override kept the pre-split role prompt",
         failures: &failures
       )
       check(
@@ -870,6 +1003,13 @@ enum SelfTestRunner {
     } catch {
       failures.append("shortcut parsing threw: \(error)")
     }
+    check(
+      WindowCoordinator.shouldHideMainWindow(isVisible: true, isKeyWindow: true)
+        && !WindowCoordinator.shouldHideMainWindow(isVisible: true, isKeyWindow: false)
+        && !WindowCoordinator.shouldHideMainWindow(isVisible: false, isKeyWindow: false),
+      "main-window shortcut toggle policy failed",
+      failures: &failures
+    )
 
     let markdown = """
       # Analysis
@@ -897,6 +1037,30 @@ enum SelfTestRunner {
         .code(language: "swift", text: "let value = 1"),
       ],
       "Markdown block parsing failed",
+      failures: &failures
+    )
+    // A dictionary entry as models write it: bold lines labelling its parts,
+    // and an example's translation on the line under the example.
+    let entry = """
+      **词性**
+      自动词
+
+      **例句：**
+      1. 地震で大きく揺れる。
+         因地震而剧烈摇晃。
+      2. 心が揺れる。
+         - 内心动摇。
+      **词源**
+      """
+    check(
+      MarkdownParser.parse(entry) == [
+        .heading(level: 4, text: "词性"),
+        .paragraph("自动词"),
+        .heading(level: 4, text: "例句"),
+        .orderedList(start: 1, items: ["地震で大きく揺れる。\n因地震而剧烈摇晃。", "心が揺れる。\n内心动摇。"]),
+        .heading(level: 4, text: "词源"),
+      ],
+      "Markdown entry structure parsing failed",
       failures: &failures
     )
     check(
@@ -1158,6 +1322,16 @@ enum SelfTestRunner {
         failures: &failures
       )
 
+      let first = AIConnection(name: "First account", configuration: ProviderConfiguration())
+      let second = AIConnection(name: "Second account", configuration: ProviderConfiguration())
+      try store.migrateCredentials(to: [first])
+      try store.setAPIKey("second-account", for: second.id)
+      check(store.apiKey(for: first.id) == secret && store.apiKey(for: second.id) == "second-account",
+        "same-provider connections must isolate credentials", failures: &failures)
+      try store.migrateCredentials(to: [first])
+      check(store.apiKey(for: second.id) == "second-account" && store.apiKey(for: .openAI) == secret,
+        "connection migration must be idempotent and retain legacy credentials", failures: &failures)
+
       let fileURL = directory.appendingPathComponent("credentials.json")
       let raw = (try? Data(contentsOf: fileURL)) ?? Data()
       let permissions =
@@ -1199,6 +1373,25 @@ enum SelfTestRunner {
     } catch {
       failures.append("credential store threw: \(error)")
     }
+
+    do {
+      let legacyAction = try JSONDecoder().decode(TranslationAction.self, from: Data("{\"id\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Old\",\"rolePrompt\":\"\",\"commandPrompt\":\"${text}\",\"outputMarkdown\":false}".utf8))
+      check(legacyAction.route == nil && legacyAction.routingVersion == nil,
+        "legacy actions must decode without routing metadata", failures: &failures)
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent("phraselens-corrupt-\(UUID())")
+      defer { try? FileManager.default.removeItem(at: directory) }
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      let file = directory.appendingPathComponent("credentials.json")
+      let corrupt = Data("unreadable credential file".utf8)
+      try corrupt.write(to: file)
+      do {
+        try CredentialStore(directory: directory).migrateCredentials(to: [AIConnection(name: "Account", configuration: ProviderConfiguration())])
+        failures.append("migration accepted an unreadable credential file")
+      } catch {
+        let preserved = try Data(contentsOf: file)
+        check(preserved == corrupt, "migration must preserve unreadable credential files", failures: &failures)
+      }
+    } catch { failures.append("connection backward decoding test threw: \(error)") }
 
     // Catalogs are cached per thing that can serve a different list.
     let openAIKeyed = ModelCatalogStore.key(
@@ -1754,6 +1947,86 @@ enum SelfTestRunner {
       check(loc("translator.characters", 42) == "42 characters in the source text", "loc translator.characters in English", failures: &failures)
     }
 
+    failures += resultCommandFailures()
+
+    return failures
+  }
+
+  /// Result commands: per-mode defaults, normalization, and documents
+  /// written before the field existed or by a version that knows more.
+  private static func resultCommandFailures() -> [String] {
+    var failures: [String] = []
+    let polish = TranslationAction.builtIn(for: .polishing)
+    let translate = TranslationAction.builtIn(for: .translate)
+    let definition = TranslationAction.builtIn(for: .definition)
+    check(polish.resultCommands == [.replace, .copy], "Polish should default to Replace, then Copy", failures: &failures)
+    check(translate.resultCommands == [.copy, .replace, .insert], "Translate should default to Copy, Replace, Insert", failures: &failures)
+    check(definition.resultCommands == [.copy], "explaining actions should default to Copy only", failures: &failures)
+    check(TranslationAction.builtIns.allSatisfy { $0.resultCommandIDs == nil },
+      "factory actions must not store their default commands", failures: &failures)
+
+    var edited = polish
+    edited.resultCommands = [.copy, .replace]
+    check(edited.resultCommandIDs == ["copy", "replace"], "a reordered list was not stored", failures: &failures)
+    edited.resultCommands = [.replace, .copy]
+    check(edited.resultCommandIDs == nil && edited == polish,
+      "restoring the defaults should not leave an override behind", failures: &failures)
+    edited.resultCommands = []
+    check(edited.resultCommands == [.replace, .copy], "an empty list should fall back to the defaults", failures: &failures)
+
+    var custom = TranslationAction(name: "Custom", resultCommands: [.insert, .copy])
+    check(custom.resultCommands == [.insert, .copy], "a custom action lost its commands", failures: &failures)
+    // A newer version may know commands this one does not; they are skipped,
+    // not allowed to make the whole action unreadable.
+    custom.resultCommandIDs = ["shortcut", "insert", "insert", "copy"]
+    check(custom.resultCommands == [.insert, .copy], "unknown or repeated commands were not skipped", failures: &failures)
+    do {
+      let decoded = try JSONDecoder().decode(TranslationAction.self, from: JSONEncoder().encode(custom))
+      check(decoded.resultCommands == [.insert, .copy], "a stored list with unknown commands did not decode", failures: &failures)
+      var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(polish)) as! [String: Any]
+      legacy.removeValue(forKey: "resultCommandIDs")
+      let migrated = try JSONDecoder().decode(TranslationAction.self, from: JSONSerialization.data(withJSONObject: legacy))
+      check(migrated == polish, "an action saved before result commands did not decode to its defaults", failures: &failures)
+    } catch {
+      failures.append("result command coding threw: \(error)")
+    }
+
+    // What ends up in the reader's document.
+    check(WriteBackComposer.replacement(for: " Better text. \n", over: "Bad text.\n") == "Better text.\n",
+      "Replace should keep the selection's line break and drop the answer's padding", failures: &failures)
+    check(WriteBackComposer.replacement(for: "b", over: "  a ") == "  b ",
+      "Replace should keep the selection's surrounding spaces", failures: &failures)
+    typealias Insertion = WriteBackComposer.Insertion
+    func insertion(_ selection: String, followedBy next: String?, answer: String = "译文") -> Insertion {
+      WriteBackComposer.insertion(of: answer, after: selection, followedBy: next)
+    }
+    check(insertion("Hello", followedBy: " world") == Insertion(text: " 译文", characterOffset: 0, utf16Offset: 0),
+      "Insert after a word inside a line should sit beside it", failures: &failures)
+    check(insertion("This is a sentence.", followedBy: " The next one.").text == " 译文",
+      "Insert after a sentence inside a paragraph should keep the paragraph flowing", failures: &failures)
+    check(insertion("This is a sentence.", followedBy: "\nGamma") == Insertion(text: "译文\n", characterOffset: 1, utf16Offset: 1),
+      "Insert after a line should go past its break and end with one", failures: &failures)
+    check(insertion("A paragraph\n", followedBy: "Next") == Insertion(text: "译文\n", characterOffset: 0, utf16Offset: 0),
+      "Insert after a selection holding its line break should start right after it", failures: &failures)
+    check(insertion("A paragraph\n\n", followedBy: "Next") == Insertion(text: "译文\n", characterOffset: -1, utf16Offset: -1),
+      "Insert should go after the first of several trailing breaks", failures: &failures)
+    check(insertion("word ", followedBy: "next") == Insertion(text: " 译文", characterOffset: -1, utf16Offset: -1),
+      "Insert should go ahead of a trailing space the selection took", failures: &failures)
+    check(insertion("The last sentence.", followedBy: "").text == "\n译文",
+      "Insert after a sentence at the end of the text should start a new line", failures: &failures)
+    check(insertion("Hello", followedBy: nil).text == " 译文" && insertion("A sentence.", followedBy: nil).text == "\n译文",
+      "Insert with nothing known about what follows should fall back to the word/sentence rule", failures: &failures)
+    check(insertion("word", followedBy: " more", answer: "line one\nline two").text == "\nline one\nline two",
+      "a multi-line answer should start on its own line", failures: &failures)
+
+    // The posted shortcuts follow the reader's layout; on any layout they
+    // must name a real key.
+    MainActor.assumeIsolated {
+      for (character, fallback) in [("c", 8), ("v", 9)] as [(Character, CGKeyCode)] {
+        let code = KeyboardLayoutKeys.keyCode(for: character, fallback: fallback)
+        check(code < 128, "no key code found for ⌘\(character)", failures: &failures)
+      }
+    }
     return failures
   }
 

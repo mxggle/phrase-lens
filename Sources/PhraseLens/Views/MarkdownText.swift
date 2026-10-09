@@ -18,55 +18,90 @@ struct MarkdownText: View {
   }
 
   var body: some View {
-    LazyVStack(alignment: .leading, spacing: 12) {
-      ForEach(Array(MarkdownCache.blocks(for: markdown).enumerated()), id: \.offset) { _, block in
+    let blocks = MarkdownCache.blocks(for: markdown)
+    LazyVStack(alignment: .leading, spacing: 0) {
+      ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
         blockView(block)
+          .padding(.top, index == 0 ? 0 : gap(before: block, after: blocks[index - 1]))
       }
     }
     .textSelection(.enabled)
   }
 
+  // MARK: Rhythm
+
+  /// Space between blocks is what tells a reader which lines belong together.
+  /// One even gap everywhere made a heading sit exactly as close to the
+  /// section it closes as to the one it opens, so an entry read as a single
+  /// run of lines. A heading now takes its room above it and keeps its own
+  /// section tight below.
+  private func gap(before block: MarkdownBlock, after previous: MarkdownBlock) -> CGFloat {
+    if case .heading(let level, _) = block {
+      return (baseFontSize * (level <= 2 ? 1.6 : 1.35)).rounded()
+    }
+    if case .heading = previous {
+      return (baseFontSize * 0.5).rounded()
+    }
+    return (baseFontSize * 0.85).rounded()
+  }
+
+  /// Leading for body text. CJK glyphs fill their em box, so the default
+  /// leading that suits Latin text reads as cramped under them.
+  private var lineSpacing: CGFloat { (baseFontSize * 0.4).rounded() }
+
+  /// Space between list items: more than a line's leading, so each item is
+  /// its own unit, and less than a block gap, so the list still reads as one.
+  private var itemSpacing: CGFloat { (baseFontSize * 0.6).rounded() }
+
   @ViewBuilder
   private func blockView(_ block: MarkdownBlock) -> some View {
     switch block {
     case .heading(let level, let text):
-      inlineText(text)
-        .font(.system(size: headingSize(level), weight: .semibold))
-        .padding(.top, level <= 2 ? 4 : 1)
+      if level >= 4 {
+        // The lowest heading level — and a bold line standing alone, which is
+        // how models usually label the parts of an entry — is a section label
+        // rather than a title: quieter than the content it introduces.
+        inlineText(text)
+          .font(.system(size: max(12, baseFontSize - 1), weight: .semibold))
+          .foregroundStyle(palette.secondaryForeground)
+      } else {
+        inlineText(text)
+          .font(.system(size: headingSize(level), weight: .semibold))
+          .lineSpacing(lineSpacing / 2)
+      }
 
     case .paragraph(let text):
       inlineText(text)
         .font(.system(size: baseFontSize))
-        .lineSpacing(3)
+        .lineSpacing(lineSpacing)
 
     case .unorderedList(let items):
-      VStack(alignment: .leading, spacing: 7) {
+      VStack(alignment: .leading, spacing: itemSpacing) {
         ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-          HStack(alignment: .firstTextBaseline, spacing: 9) {
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("•")
-              .font(.system(size: baseFontSize, weight: .semibold))
-            inlineText(item)
               .font(.system(size: baseFontSize))
-              .frame(maxWidth: .infinity, alignment: .leading)
+              .foregroundStyle(palette.mutedForeground)
+            listItem(item)
           }
         }
       }
-      .padding(.leading, 4)
+      .padding(.leading, 2)
 
     case .orderedList(let start, let items):
-      VStack(alignment: .leading, spacing: 7) {
+      VStack(alignment: .leading, spacing: itemSpacing) {
         ForEach(Array(items.enumerated()), id: \.offset) { offset, item in
-          HStack(alignment: .firstTextBaseline, spacing: 9) {
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("\(start + offset).")
-              .font(.system(size: baseFontSize, weight: .medium, design: .monospaced))
-              .foregroundStyle(.secondary)
-            inlineText(item)
-              .font(.system(size: baseFontSize))
-              .frame(maxWidth: .infinity, alignment: .leading)
+              .font(.system(size: baseFontSize - 1, weight: .medium))
+              .monospacedDigit()
+              .foregroundStyle(palette.mutedForeground)
+              .frame(minWidth: baseFontSize, alignment: .trailing)
+            listItem(item)
           }
         }
       }
-      .padding(.leading, 4)
+      .padding(.leading, 2)
 
     case .quote(let text):
       HStack(spacing: 11) {
@@ -75,6 +110,7 @@ struct MarkdownText: View {
           .frame(width: 3)
         inlineText(text)
           .font(.system(size: baseFontSize))
+          .lineSpacing(lineSpacing)
           .foregroundStyle(palette.mutedForeground)
           .italic()
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -147,15 +183,34 @@ struct MarkdownText: View {
     }
   }
 
+  /// A list item's first line is the item; any lines under it — the
+  /// translation of an example sentence, a note on a sense — are set a step
+  /// quieter, so each example reads as a pair instead of two equal lines.
+  private func listItem(_ item: String) -> some View {
+    let lines = item.components(separatedBy: "\n")
+    return VStack(alignment: .leading, spacing: (baseFontSize * 0.3).rounded()) {
+      inlineText(lines[0])
+        .font(.system(size: baseFontSize))
+        .lineSpacing(lineSpacing)
+      ForEach(Array(lines.dropFirst().enumerated()), id: \.offset) { _, detail in
+        inlineText(detail)
+          .font(.system(size: max(12, baseFontSize - 1)))
+          .lineSpacing(lineSpacing)
+          .foregroundStyle(palette.secondaryForeground)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
   private func inlineText(_ markdown: String) -> Text {
     Text(MarkdownCache.inline(markdown))
   }
 
   private func headingSize(_ level: Int) -> Double {
     switch level {
-    case 1: baseFontSize * 1.55
-    case 2: baseFontSize * 1.35
-    case 3: baseFontSize * 1.18
+    case 1: baseFontSize * 1.45
+    case 2: baseFontSize * 1.25
+    case 3: baseFontSize * 1.1
     default: baseFontSize
     }
   }
@@ -295,21 +350,23 @@ enum MarkdownParser {
       if unorderedItem(line) != nil {
         var items: [String] = []
         while index < lines.count, let item = unorderedItem(lines[index]) {
-          items.append(item)
-          index += 1
+          let body = listItemBody(item, lines: lines, after: index)
+          items.append(body.text)
+          index = body.next
         }
         blocks.append(.unorderedList(items))
         continue
       }
 
       if let first = orderedItem(line) {
-        var items = [first.text]
-        index += 1
+        var items: [String] = []
+        let start = first.number
         while index < lines.count, let item = orderedItem(lines[index]) {
-          items.append(item.text)
-          index += 1
+          let body = listItemBody(item.text, lines: lines, after: index)
+          items.append(body.text)
+          index = body.next
         }
-        blocks.append(.orderedList(start: first.number, items: items))
+        blocks.append(.orderedList(start: start, items: items))
         continue
       }
 
@@ -320,6 +377,15 @@ enum MarkdownParser {
           index += 1
         }
         blocks.append(.quote(quoteLines.joined(separator: "\n")))
+        continue
+      }
+
+      // A bold line on its own is how models label the parts of an entry —
+      // "**Examples**" over the examples — so it is read as the heading it is
+      // standing in for, not as the first line of the text beneath it.
+      if let label = boldLabel(trimmed) {
+        blocks.append(.heading(level: 4, text: label))
+        index += 1
         continue
       }
 
@@ -335,12 +401,78 @@ enum MarkdownParser {
     return blocks
   }
 
+  /// The lines that belong to the list item starting at `index`: lines
+  /// indented under it, including a nested list, and lazy continuation lines
+  /// that start no block of their own. A model writing an example sentence
+  /// with its translation on the next line means one item, and splitting it
+  /// left the translation flush with the margin, detached from its example.
+  /// Continuation lines are joined with newlines; the renderer sets them as
+  /// the item's details.
+  private static func listItemBody(
+    _ first: String, lines: [String], after start: Int
+  ) -> (text: String, next: Int) {
+    let itemIndent = indentation(lines[start])
+    var parts = [first]
+    var index = start + 1
+    while index < lines.count {
+      let line = lines[index]
+      if line.trimmingCharacters(in: .whitespaces).isEmpty {
+        // A blank line ends the item unless what follows is indented under it.
+        var next = index + 1
+        while next < lines.count, lines[next].trimmingCharacters(in: .whitespaces).isEmpty {
+          next += 1
+        }
+        guard next < lines.count, indentation(lines[next]) > itemIndent else { break }
+        index = next
+        continue
+      }
+      if indentation(line) > itemIndent {
+        if let nested = unorderedItem(line) {
+          parts.append(nested)
+        } else if let nested = orderedItem(line) {
+          parts.append("\(nested.number). \(nested.text)")
+        } else {
+          parts.append(line.trimmingCharacters(in: .whitespaces))
+        }
+        index += 1
+        continue
+      }
+      guard !startsBlock(lines, at: index) else { break }
+      parts.append(line.trimmingCharacters(in: .whitespaces))
+      index += 1
+    }
+    return (parts.joined(separator: "\n"), index)
+  }
+
+  private static func indentation(_ line: String) -> Int {
+    line.prefix(while: { $0 == " " || $0 == "\t" }).reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+  }
+
+  /// The text of a line that is nothing but one short bold run, such as
+  /// `**Examples**` or `**例句：**`.
+  private static func boldLabel(_ line: String) -> String? {
+    guard line.count <= 40, line.hasPrefix("**") else { return nil }
+    var inner = line.dropFirst(2)
+    if inner.hasSuffix("**") {
+      inner = inner.dropLast(2)
+    } else if inner.hasSuffix("**:") || inner.hasSuffix("**：") {
+      inner = inner.dropLast(3)
+    } else {
+      return nil
+    }
+    var text = inner.trimmingCharacters(in: .whitespaces)
+    while let last = text.last, last == ":" || last == "：" { text.removeLast() }
+    // A bold numbered line is a sense or a step, not a label over one.
+    guard !text.isEmpty, !text.contains("*"), text.first?.isNumber != true else { return nil }
+    return text
+  }
+
   private static func startsBlock(_ lines: [String], at index: Int) -> Bool {
     let line = lines[index]
     let trimmed = line.trimmingCharacters(in: .whitespaces)
     if trimmed.isEmpty || fenceStart(trimmed) != nil || heading(line) != nil
       || isDivider(trimmed) || unorderedItem(line) != nil || orderedItem(line) != nil
-      || quoteLine(line) != nil
+      || quoteLine(line) != nil || boldLabel(trimmed) != nil
     {
       return true
     }

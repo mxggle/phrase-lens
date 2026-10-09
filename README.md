@@ -52,7 +52,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | Feature | Description |
 | :--- | :--- |
 | 🔍 **Global Selection Lookup** | Select text anywhere in Safari, Xcode, Slack, or any app and trigger a compact pop-up right next to your cursor. |
-| 📖 **Offline Dictionary** | Japanese and English lookup with sourced Chinese definitions, readings, inflected forms, and source/license links. AI explanations are separate. Japanese coverage is limited; see [data coverage](docs/DICTIONARY_DATA.md). |
+| 📖 **Offline Dictionary** | Japanese and English lookup with sourced Chinese definitions, readings, inflected forms, and source/license links, shown by the **Definition** action next to an AI-written definition with examples. Translate returns the translation only. Japanese coverage is limited; see [data coverage](docs/DICTIONARY_DATA.md). |
 | 🖥️ **Full Language Workspace** | Dedicated multi-tab workspace for translation, polishing, summarization, usage and context explanation, synonym comparison, and code analysis. |
 | 💬 **Follow-Up Questions** | Keep asking about a result — examples, nuance, collocations, grammar — with one-tap suggested questions. The thread is saved with the result and reopens with it from History. |
 | 📸 **Vision Screenshot OCR** | Snip any region on your screen to extract, recognize, and translate text instantly via Apple's Vision framework. |
@@ -71,7 +71,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | Action | Shortcut | Required Permission |
 | :--- | :---: | :--- |
 | **Translate Selected Text** *(Compact Pop-up)* | <kbd>⌥</kbd> <kbd>F</kbd> | macOS Accessibility |
-| **Open Full Workspace** | <kbd>⌥</kbd> <kbd>⇧</kbd> <kbd>F</kbd> | None |
+| **Toggle Full Workspace** | <kbd>⌥</kbd> <kbd>⇧</kbd> <kbd>F</kbd> | None |
 | **Screenshot OCR** | <kbd>⌥</kbd> <kbd>S</kbd> | Screen Recording |
 | **Translate & Replace in Focused Field** | <kbd>⌥</kbd> <kbd>W</kbd> | macOS Accessibility |
 | **Ask a Follow-Up** *(in-app)* | <kbd>⌘</kbd> <kbd>L</kbd> | None |
@@ -86,7 +86,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 
 ## 🤖 Supported AI Providers
 
-PhraseLens supports direct streaming connections to major cloud providers, local offline models, and custom endpoints. In Settings, **Refresh** reads the selected provider's current model catalog using your credential. You can also type a model ID that is not listed. The catalog is cached per provider and endpoint, and the app checks for updates after a day. Your selected model does not change automatically.
+PhraseLens supports direct streaming connections to major cloud providers, local offline models, and custom endpoints. In Settings, **Refresh** reads the selected provider's current model catalog using your credential. You can also type a model ID that is not listed. The catalog is cached per connection, endpoint, and credential identity, and the app checks for updates after a day. Your selected model does not change automatically.
 
 | Provider | Model picker source |
 | :--- | :--- |
@@ -151,11 +151,19 @@ cd phrase-lens
 
 ### Quick Run (Development)
 
-Builds the release executable, packages the bundle, signs it with local identity, and launches the app:
+Incrementally builds the current architecture, signs the app with the same local identity, and restarts it:
 
 ```bash
 ./scripts/run.sh
 ```
+
+Keep the command running to rebuild and restart automatically after source changes:
+
+```bash
+./scripts/run.sh --watch
+```
+
+The development command preserves the app bundle identity and does not create a ZIP or DMG or submit a notarization request. It closes running copies from this checkout or `/Applications/PhraseLens.app`, then opens the newly built `dist/PhraseLens.app`. It restarts the process after each successful edit rather than patching Swift code inside a running process. A build error leaves the current app running; fix the source and save again to retry.
 
 > [!TIP]
 > Always run via the packaged `.app` bundle (or `./scripts/run.sh`) rather than the raw SwiftPM binary, as macOS Accessibility and Screen Recording permissions are bound to the signed application bundle identifier.
@@ -222,6 +230,20 @@ PhraseLens is designed with a zero-trust, privacy-first mindset:
 ---
 
 ## 🧩 Custom Prompt Actions
+
+The **Actions** workspace contains your own action collection. Every action, including Translate, can be edited or deleted. New installations start with Translate, Definition, and Polish; existing installations retain their collection.
+
+- Use **+ > New Action** to write your own prompt, or **+ > Add from Templates** to add an individual preset. Installed templates are marked and cannot be added twice.
+- **Restore default actions** adds all missing presets. It preserves existing prompts, model routing, visibility, relative order, and custom actions. Deleted presets return with their factory configuration.
+- After deleting an action, use **Undo Delete** to recover its complete configuration, including edited prompts and its position. Consecutive deletions can be undone during the current app session; quitting clears the undo history.
+- Deleting every action leaves an empty collection with recovery controls in the translator and selection pop-up. No translation runs until an action is added. Deleted presets stay deleted after restarting; future templates are not installed automatically.
+- The writing shortcut requires the Translate preset. If it has been deleted, add it again from the templates menu.
+
+In **Settings > AI Connections**, create named connections with independent credentials, including multiple accounts or OpenAI-compatible gateways. Selecting a connection edits it; **Make global default** explicitly changes the default connection and model. Referenced connections cannot be deleted until their actions and global default are reassigned.
+
+In **Settings > Actions**, choose **Use global default** or pin a connection and model. Switching connections selects that connection's remembered model. Duplicate and prompt reset preserve routing. The writing shortcut uses the Translate action; vocabulary tagging uses the global default; dictionaries remain local. Follow-ups retain the original connection, model, prompts, language, and proxy context, including when restored from history. If the connection is removed or its endpoint, authentication, or credentials change, rerun the original action with an explicitly selected connection. Older history without route metadata needs a new original request before follow-ups.
+
+Migration copies credentials from the app-owned encrypted store into stable connection identities and retains legacy data; it never automatically reads the old Keychain. Legacy action model choices are retained, with the previously active explicit choice migrated to a pinned route.
 
 You can expand PhraseLens by defining custom prompt templates in **Settings > Actions**. Templates support variable interpolation:
 

@@ -51,7 +51,7 @@ enum PromptBuilder {
     // its stored rolePrompt/commandPrompt start out identical to the mode's
     // default template text (`ActionMode.defaultRolePrompt`/
     // `defaultCommandPrompt`), so leaving a field untouched keeps the mode's
-    // dynamic behavior (e.g. Translate's single-word dictionary lookup).
+    // dynamic behavior (e.g. Translate's rewrite of a focused input).
     // Editing a field away from that exact text switches it to plain
     // variable substitution instead.
     guard let factory = TranslationAction.factoryBuiltIn(for: action.id) else {
@@ -156,9 +156,11 @@ enum PromptBuilder {
   /// Most modes are their editable template with the variables filled in, so
   /// the text an author reads in Settings is literally the text that is sent.
   /// The branches below are the cases a static template cannot express:
-  /// Translate's single-word dictionary lookup and its silent variant for
-  /// rewriting a focused input, Explain Usage's isolated selection, and Explain
-  /// in Context's fallback for when no surrounding text was captured.
+  /// Translate's silent variant for rewriting a focused input, Explain Usage's
+  /// isolated selection, and Explain in Context's fallback for when no
+  /// surrounding text was captured. Translate itself never turns into a
+  /// dictionary entry — a word gets a translation like any other text, and
+  /// its definition is the Definition action's job.
   private static func dynamicPrompt(
     for mode: ActionMode,
     text: String,
@@ -182,17 +184,6 @@ enum PromptBuilder {
           system: "You are an expert translator. Return only the rewritten text.",
           user:
             "Translate the following text into \(targetName), preserving tone and formatting:\n\n\(cleanText)"
-        )
-      }
-      if isLikelySingleWord(cleanText) {
-        return TranslationPrompt(
-          system: """
-            You are a professional \(sourceName)-to-\(targetName) dictionary. The source \
-            language supplied by the application is a hard constraint. Include the headword, \
-            pronunciation when known, parts of speech, concise senses, at least three bilingual \
-            examples, and a brief etymology. Use clear Markdown.
-            """,
-          user: "Explain this \(sourceName) word in \(targetName): \(cleanText)"
         )
       }
 
@@ -276,30 +267,15 @@ enum PromptBuilder {
 
   /// Whether the answer this request produces is written in Markdown.
   ///
-  /// The action's "Render the result as Markdown" switch is the authority for
-  /// anything an author wrote. It is not the whole answer for a built-in,
-  /// though: Translate keeps the switch off because a translation is plain
-  /// text, yet a single word takes the dictionary branch above and comes back
-  /// as a Markdown entry. Rendering that literally is what shows a reader raw
-  /// `**` and `###`.
+  /// The action's "Render the result as Markdown" switch is the authority:
+  /// Translate keeps it off because a translation is plain text, whatever its
+  /// length, and Definition keeps it on because a dictionary entry is not.
   static func expectsMarkdown(
     _ action: TranslationAction,
     text: String,
     writing: Bool = false
   ) -> Bool {
-    if action.outputMarkdown { return true }
-    // An edited command prompt is plain substitution, so none of the dynamic
-    // branches — and none of their Markdown — is in play.
-    guard let mode = action.mode,
-      let factory = TranslationAction.factoryBuiltIn(for: action.id),
-      action.commandPrompt == factory.commandPrompt
-    else { return false }
-    switch mode {
-    case .translate:
-      return !writing && isLikelySingleWord(text.trimmingCharacters(in: .whitespacesAndNewlines))
-    default:
-      return false
-    }
+    action.outputMarkdown
   }
 
   /// Captured text with its line breaks and runs of spaces collapsed.
@@ -400,11 +376,12 @@ enum PromptBuilder {
   ///
   /// The two sides opt in on different terms. A source-term reading answers
   /// "what is this word I am looking at", so it follows the same single-word
-  /// rule as the dictionary response it annotates. A translation reading
-  /// answers "how do I say what I just got back", which is as real a question
-  /// for `垂直な` as for a lone noun, so it covers any short phrase. Explain
-  /// in Context replies with prose about the selection rather than handing
-  /// back a term, so only its headword is annotated. Writing mode
+  /// rule as the Definition entry it annotates; Translate returns nothing but
+  /// the translation, so it never gets one. A translation reading answers
+  /// "how do I say what I just got back", which is as real a question for
+  /// `垂直な` as for a lone noun, so it covers any short phrase. Explain in
+  /// Context replies with prose about the selection rather than handing back
+  /// a term, so only its headword is annotated. Writing mode
   /// deliberately stays plain so a learning annotation is never inserted into
   /// another app's editable field.
   private static func applyingPronunciationGuides(
@@ -416,13 +393,17 @@ enum PromptBuilder {
     selectionContext: String?,
     writing: Bool
   ) -> TranslationPrompt {
-    guard !writing, [.translate, .explainContext].contains(mode) else { return prompt }
+    guard !writing, [.translate, .definition, .explainContext].contains(mode) else {
+      return prompt
+    }
 
-    let sourceGuide = isLikelySingleWord(text) ? source.pronunciationGuide : nil
+    let sourceGuide =
+      mode != .translate && isLikelySingleWord(text) ? source.pronunciationGuide : nil
     // Translating into the language the text is already in produces the same
     // word back; one reading of it is enough.
+    let givesTerm = mode == .translate || mode == .definition
     let targetGuide =
-      mode == .translate && target != source && isLikelyShortPhrase(text)
+      givesTerm && target != source && isLikelyShortPhrase(text)
       ? target.pronunciationGuide
       : nil
     guard sourceGuide != nil || targetGuide != nil else { return prompt }
@@ -440,13 +421,13 @@ enum PromptBuilder {
     }
 
     var user = prompt.user
-    // Translate normally does not need the surrounding selection, but a
-    // reading does: it is the evidence that distinguishes Japanese and
+    // Translate and Definition normally do not need the surrounding
+    // selection, but a reading does: it is the evidence that distinguishes Japanese and
     // Chinese polyphones, and — through the sense it pins down — which word
     // the translation itself is. Keep that untrusted material bounded,
     // escaped, and explicitly data-only. Explain in Context already includes
     // the same bounded context in its own delimited block.
-    if mode == .translate {
+    if givesTerm {
       let context = boundedContext(selectionContext ?? "", around: text)
       if hasMeaningfulContext(context, for: text) {
         user += """

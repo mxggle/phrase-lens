@@ -44,7 +44,7 @@ struct DictionaryResultsView: View {
           ? (result.supportsPair ? "未找到 \(DictionaryLanguages.name(result.request.definitionLanguage)) 释义的词条。" : "未安装支持该语言及 \(DictionaryLanguages.name(result.request.definitionLanguage)) 释义的离线词典。")
           : (result.supportsPair ? "No entry with definitions in \(DictionaryLanguages.name(result.request.definitionLanguage)) was found." : "No installed dictionary supports this word language and \(DictionaryLanguages.name(result.request.definitionLanguage)) definitions."))
           .fixedSize(horizontal: false, vertical: true)
-        Text(L10n.isChinese ? "请尝试输入单词原型，或指定语言。您亦可直接查看 AI 翻译。" : "Try the dictionary form or choose the word language. You can also view an AI translation.")
+        Text(L10n.isChinese ? "请尝试输入单词原型，或指定语言。您亦可直接查看 AI 释义。" : "Try the dictionary form or choose the word language. You can also view the AI definition.")
           .font(AppFont.caption).foregroundStyle(palette.mutedForeground)
         translationButton
       }
@@ -56,7 +56,7 @@ struct DictionaryResultsView: View {
   }
 
   private var translationButton: some View {
-    Button(L10n.isChinese ? "查看 AI 翻译" : "View translation", systemImage: "character.bubble") { model.selectResultTab(.translation) }
+    Button(L10n.isChinese ? "查看 AI 释义" : "View AI definition", systemImage: "sparkles") { model.selectResultTab(.translation) }
       .appButton(.secondary, size: .sm)
   }
 
@@ -121,67 +121,27 @@ struct DictionaryResultsView: View {
 
 /// Result navigation is distinct from the action strip: both tabs describe
 /// the same source text and keep their own result when the user switches.
+///
+/// This is the stacked form, a strip of its own above the result. The main
+/// window folds the same pieces into the result pane's header instead and only
+/// falls back to this when the pane is too narrow to hold them on one line.
 struct ResultTabBar<Trailing: View>: View {
   @EnvironmentObject private var model: AppModel
-  @EnvironmentObject private var settingsStore: SettingsStore
-  @State private var showingLanguages = false
   /// Commands on the visible result, at the row's trailing end.
   @ViewBuilder var trailing: Trailing
 
   var body: some View {
     if model.dictionaryAvailable {
       HStack(spacing: AppSpacing.sm) {
-        Picker("Result type", selection: Binding(
-          get: { model.dictionaryVisible ? ResultTab.dictionary : .translation },
-          set: { model.selectResultTab($0) }
-        )) {
-          Text(L10n.isChinese ? "AI 翻译" : "Translation").tag(ResultTab.translation)
-          Text(L10n.isChinese ? "离线词典" : "Dictionary").tag(ResultTab.dictionary)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
-        .help(L10n.isChinese ? "AI 翻译使用大模型实时解析。离线词典提供权威本地释义。" : "Translation uses AI. Dictionary shows sourced offline definitions.")
-
+        ResultTypePicker()
         Spacer(minLength: 0)
-
         if model.dictionaryVisible {
-          Button {
-            showingLanguages.toggle()
-          } label: {
-            HStack(spacing: AppSpacing.xs) {
-              Text("\(DictionaryLanguages.name(model.dictionarySourceOverride)) → \(DictionaryLanguages.name(settingsStore.settings.dictionaryDefinitionLanguage))")
-                .lineLimit(1)
-              Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
-            }
-          }
-          .appButton(.ghost, size: .sm)
-          .accessibilityLabel(L10n.isChinese ? "词典语言" : "Dictionary languages")
-          .help(L10n.isChinese ? "选择词条语言和释义语言" : "Choose the word language and definition language")
-          .popover(isPresented: $showingLanguages, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: AppSpacing.sm) {
-              Text(L10n.isChinese ? "词条语言" : "Word language").font(AppFont.caption)
-              AppSelect(title: L10n.isChinese ? "词条语言" : "Dictionary word language", selection: Binding(
-                get: { model.dictionarySourceOverride }, set: { model.setDictionarySource($0) }),
-                options: model.dictionarySourceOptions, label: DictionaryLanguages.name, size: .sm, symbol: "globe")
-              Text(L10n.isChinese ? "释义语言" : "Definition language").font(AppFont.caption)
-              AppSelect(title: L10n.isChinese ? "释义语言" : "Definition language", selection: $settingsStore.settings.dictionaryDefinitionLanguage,
-                options: model.dictionaryDefinitionOptions, label: DictionaryLanguages.name, size: .sm)
-              Button(L10n.isChinese ? "重新查询" : "Look up again", systemImage: "arrow.clockwise") {
-                model.lookupDictionary()
-                showingLanguages = false
-              }
-              .appButton(.secondary, size: .sm)
-              .disabled(model.isLookingUpDictionary)
-            }
-            .padding(AppSpacing.md)
-          }
+          DictionaryLanguagesButton()
         }
         trailing
       }
       .padding(.horizontal, AppSpacing.md)
       .padding(.vertical, AppSpacing.sm)
-      .onChange(of: model.selectedResultTab) { _, _ in showingLanguages = false }
       Hairline()
     }
   }
@@ -189,4 +149,91 @@ struct ResultTabBar<Trailing: View>: View {
 
 extension ResultTabBar where Trailing == EmptyView {
   init() { self.init { EmptyView() } }
+}
+
+/// Switches the result between the offline dictionary and the AI definition.
+struct ResultTypePicker: View {
+  /// How much of each label to draw. A header that shares its row with the
+  /// language and the result commands steps down to short labels, then to
+  /// glyphs, before it gives up the row. The tooltip names both either way.
+  enum LabelStyle {
+    case full, short, icon
+  }
+
+  var labels: LabelStyle = .full
+
+  @EnvironmentObject private var model: AppModel
+
+  private var dictionaryTitle: String { L10n.isChinese ? "词典释义" : "Dictionary" }
+  private var aiTitle: String { L10n.isChinese ? "AI 释义" : "AI Definition" }
+
+  var body: some View {
+    SegmentedControl(
+      title: L10n.isChinese ? "结果类型" : "Result type",
+      selection: Binding(
+        get: { model.dictionaryVisible ? ResultTab.dictionary : .translation },
+        set: { model.selectResultTab($0) }
+      ),
+      segments: [
+        segment(.dictionary, title: dictionaryTitle, short: L10n.isChinese ? "词典" : "Dictionary", symbol: "character.book.closed"),
+        segment(.translation, title: aiTitle, short: "AI", symbol: "sparkles"),
+      ]
+    )
+    .fixedSize()
+    .help(L10n.isChinese ? "词典释义来自权威离线词典。AI 释义由大模型生成，含释义与例句。" : "Dictionary shows sourced offline definitions. AI Definition is written by the model, with senses and examples.")
+  }
+
+  private func segment(
+    _ tab: ResultTab,
+    title: String,
+    short: String,
+    symbol: String
+  ) -> SegmentedControl<ResultTab>.Segment {
+    switch labels {
+    case .full: .init(value: tab, title: title, accessibilityTitle: title)
+    case .short: .init(value: tab, title: short, accessibilityTitle: title)
+    case .icon: .init(value: tab, title: "", symbol: symbol, accessibilityTitle: title)
+    }
+  }
+}
+
+/// The dictionary's language pair, and the popover that changes it.
+struct DictionaryLanguagesButton: View {
+  @EnvironmentObject private var model: AppModel
+  @EnvironmentObject private var settingsStore: SettingsStore
+  @State private var showingLanguages = false
+
+  var body: some View {
+    Button {
+      showingLanguages.toggle()
+    } label: {
+      HStack(spacing: AppSpacing.xs) {
+        Text("\(DictionaryLanguages.name(model.dictionarySourceOverride)) → \(DictionaryLanguages.name(settingsStore.settings.dictionaryDefinitionLanguage))")
+          .lineLimit(1)
+        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+      }
+    }
+    .appButton(.ghost, size: .sm)
+    .accessibilityLabel(L10n.isChinese ? "词典语言" : "Dictionary languages")
+    .help(L10n.isChinese ? "选择词条语言和释义语言" : "Choose the word language and definition language")
+    .popover(isPresented: $showingLanguages, arrowEdge: .bottom) {
+      VStack(alignment: .leading, spacing: AppSpacing.sm) {
+        Text(L10n.isChinese ? "词条语言" : "Word language").font(AppFont.caption)
+        AppSelect(title: L10n.isChinese ? "词条语言" : "Dictionary word language", selection: Binding(
+          get: { model.dictionarySourceOverride }, set: { model.setDictionarySource($0) }),
+          options: model.dictionarySourceOptions, label: DictionaryLanguages.name, size: .sm, symbol: "globe")
+        Text(L10n.isChinese ? "释义语言" : "Definition language").font(AppFont.caption)
+        AppSelect(title: L10n.isChinese ? "释义语言" : "Definition language", selection: $settingsStore.settings.dictionaryDefinitionLanguage,
+          options: model.dictionaryDefinitionOptions, label: DictionaryLanguages.name, size: .sm)
+        Button(L10n.isChinese ? "重新查询" : "Look up again", systemImage: "arrow.clockwise") {
+          model.lookupDictionary()
+          showingLanguages = false
+        }
+        .appButton(.secondary, size: .sm)
+        .disabled(model.isLookingUpDictionary)
+      }
+      .padding(AppSpacing.md)
+    }
+    .onChange(of: model.selectedResultTab) { _, _ in showingLanguages = false }
+  }
 }

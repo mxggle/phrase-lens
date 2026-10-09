@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Named AI connections with independent credentials, multiple accounts per provider,
+  explicit global defaults, and per-action connection and model routes.
+- Preserve result routing and prompt context for follow-ups and restored history;
+  reject removed or changed connections without silently switching providers.
+- Migrate saved provider configurations and action model choices while retaining
+  legacy data, and isolate model catalogs by connection and credential identity.
+- Split word lookup out of Translate into a new built-in **Definition** action:
+  an offline Dictionary tab plus an AI Definition tab with senses and examples.
+- Per-action **result buttons**: alongside Copy, an action can offer **Replace**
+  (write the answer over the selection) and **Insert** (write it after the
+  selection), and choose which one is the highlighted primary button.
+  Translate offers all three; Polish puts Replace first. The writing buttons
+  appear only when the text was selected in an editable field in another app.
+
+### Changed
+
+- Translate now returns only the translation, single words included — no
+  dictionary entry, examples, or source-word reading.
+- Fold the result pane's Dictionary/AI switch, language, and commands into one
+  header row, and move follow-up suggestions to the end of the answer so the
+  composer is a single row.
+- Give AI results more reading room: section spacing, looser line height,
+  bold-line labels such as **Examples** rendered as section headings, and an
+  example's translation kept under its example in a quieter tone.
+
+### Fixed
+
+- Post ⌘C for selection capture with the key the current keyboard layout
+  assigns to C, instead of the ANSI position, which was ⌘J on Dvorak.
+- Silently skip the writing shortcut when no editable input is focused or the
+  field is empty. Check editability before requesting a translation.
+- Make the main-window global shortcut hide the focused window when pressed
+  again, while still raising a visible window that is behind another app.
+
 ## [0.9.0] — 2026-09-27
 
 ### Added

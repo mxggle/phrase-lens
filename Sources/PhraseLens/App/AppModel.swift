@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import os
 
 enum InputSource: Sendable {
   case manual
@@ -48,6 +49,8 @@ enum OutputRendering: Sendable {
   case undetermined
 }
 
+/// Definition's two result tabs: the AI-written entry and the offline
+/// dictionary. `translation` is the AI tab, named for the request it streams.
 enum ResultTab: String, CaseIterable {
   case translation = "Translation"
   case dictionary = "Dictionary"
@@ -69,6 +72,7 @@ final class AppModel: ObservableObject {
     }
   }
   @Published private(set) var translatorFocusToken = UUID()
+  @Published private(set) var actionsFocusToken = UUID()
   @Published private(set) var dictionaryState: DictionaryLookupState = .idle
   @Published private(set) var selectedResultTab: ResultTab = .dictionary
   private var translationRequested = false
@@ -88,6 +92,9 @@ final class AppModel: ObservableObject {
   /// badge, and gives a reader reporting "it did not pick up the sentence"
   /// something concrete to report.
   @Published private(set) var selectionDiagnostics: SelectionDiagnostics?
+  /// The control the last selection was read from, for the commands that
+  /// write an answer back. Only consulted while the input is that selection.
+  @Published private(set) var insertionTarget: InsertionTarget?
   @Published var inputSource: InputSource = .manual
   @Published var isTranslating = false
   /// The questions asked about the current result, oldest first. The last one
@@ -108,6 +115,17 @@ final class AppModel: ObservableObject {
   /// The filing run the reader started, or nil when none is running.
   @Published private(set) var vocabularyOrganizing: VocabularyOrganizeProgress?
   @Published var customActions: [TranslationAction] = []
+  @Published private(set) var isActionLibraryLoaded = false
+  private struct DeletedAction {
+    var action: TranslationAction
+    var index: Int
+    var wasHidden: Bool
+    var wasDefault: Bool
+    var wasSelected: Bool
+  }
+  @Published private var deletedActions: [DeletedAction] = []
+  var lastDeletedActionName: String? { deletedActions.last?.action.name }
+  var canUndoActionDeletion: Bool { !deletedActions.isEmpty }
   @Published var shortcutErrors: [String] = []
   @Published private(set) var isAccessibilityTrusted = false
   /// The pane whose text is being spoken, or nil when nothing is.
@@ -120,6 +138,7 @@ final class AppModel: ObservableObject {
   private let client = TranslationClient()
   private let tagger = VocabularyTagger()
   private let library: LibraryStore
+  private var actionPersistenceTask: Task<Void, Never>?
   private let accessibility = AccessibilityService()
   private let ocr = OCRService()
   private var translationTask: Task<Void, Never>?
@@ -130,6 +149,7 @@ final class AppModel: ObservableObject {
   /// The history row the current result was filed under, so a thread built on
   /// top of it is saved to that same row instead of to a new one.
   private var currentHistoryID: UUID?
+  private var currentResultRoute: ResultRoute?
   private var selectionCaptureID = UUID()
   private var restoredSourceLanguage: LanguageCode?
   private var cancellables = Set<AnyCancellable>()
@@ -138,6 +158,7 @@ final class AppModel: ObservableObject {
        dictionaryRegistry: DictionaryRegistry? = nil, integrateWithSystem: Bool = true) {
     self.settingsStore = settingsStore
     self.library = library
+    isActionLibraryLoaded = !integrateWithSystem
     self.dictionaryRegistry = dictionaryRegistry
     isAccessibilityTrusted = integrateWithSystem && accessibility.isTrusted()
     selectedActionID =
@@ -157,6 +178,7 @@ final class AppModel: ObservableObject {
     settingsStore.$settings
       .removeDuplicates { previous, current in
         previous.defaultActionID == current.defaultActionID
+          && previous.installedBuiltInActionIDs == current.installedBuiltInActionIDs
           && previous.actionOrder == current.actionOrder
           && previous.hiddenActionIDs == current.hiddenActionIDs
           && previous.builtInActionOverrides == current.builtInActionOverrides
@@ -191,10 +213,9 @@ final class AppModel: ObservableObject {
     )
   }
 
-  var selectedAction: TranslationAction {
+  var selectedAction: TranslationAction? {
     visibleActions.first(where: { $0.id == selectedActionID })
       ?? settingsStore.settings.resolvedDefaultAction(customActions: customActions)
-      ?? TranslationAction.builtIns[0]
   }
 
   /// Whether the result is laid out as Markdown rather than shown literally.
@@ -226,7 +247,7 @@ final class AppModel: ObservableObject {
   /// is no such thing as a missing context, and a badge saying so would be
   /// noise on every capture.
   var selectionContextState: SelectionContextState {
-    guard inputSource == .selection, selectedAction.usesSelectionContext else { return .unused }
+    guard inputSource == .selection, selectedAction?.usesSelectionContext == true else { return .unused }
     return PromptBuilder.hasMeaningfulContext(selectionContext, for: inputText)
       ? .captured
       : .missing
@@ -286,8 +307,10 @@ final class AppModel: ObservableObject {
     translatedSourceOverride = nil
   }
 
+  /// Definition pairs the offline dictionary with an AI-written entry;
+  /// Translate only ever translates, so it never shows the dictionary tab.
   private var supportsDictionaryTabs: Bool {
-    settingsStore.settings.dictionaryEnabled && selectedAction.isBuiltIn && selectedAction.mode == .translate
+    settingsStore.settings.dictionaryEnabled && selectedAction?.isBuiltIn == true && selectedAction?.mode == .definition
   }
 
   var dictionaryAvailable: Bool {
@@ -466,6 +489,7 @@ final class AppModel: ObservableObject {
   var primaryActionTitle: String { dictionaryVisible ? "Look Up" : "Translate" }
 
   func translate() {
+    guard selectedAction != nil else { return }
     if supportsDictionaryTabs, selectedResultTab == .dictionary,
       DictionaryLanguageResolver.canProbeLexicalEntry(inputText) {
       lookupDictionary(probing: !dictionaryAvailable)
@@ -475,6 +499,7 @@ final class AppModel: ObservableObject {
   }
 
   func translateWithAI(preserveDictionary: Bool = false, actionOverride: TranslationAction? = nil) {
+    guard let action = actionOverride ?? selectedAction else { return }
     if !preserveDictionary { resetDictionary() }
     selectedResultTab = .translation
     translationRequested = true
@@ -495,9 +520,6 @@ final class AppModel: ObservableObject {
     translationErrorMessage = nil
     errorMessage = nil
     isTranslating = true
-    statusMessage = L10n.isChinese
-      ? "正在连接 \(settingsStore.settings.provider.provider.rawValue)…"
-      : "Connecting to \(settingsStore.settings.provider.provider.rawValue)…"
 
     let settings = settingsStore.settings
     let resolvedSource = TranslationSourceResolver.resolve(
@@ -509,7 +531,6 @@ final class AppModel: ObservableObject {
     let source = preserveDictionary && dictionarySourceOverride != "auto"
       ? (LanguageCode(rawValue: dictionarySourceOverride) ?? resolvedSource) : resolvedSource
     let target = settings.targetLanguage
-    let action = actionOverride ?? selectedAction
     outputRendering = PromptBuilder.expectsMarkdown(action, text: text) ? .markdown : .plain
     let context = selectionContext
     let prompt = PromptBuilder.build(
@@ -519,7 +540,15 @@ final class AppModel: ObservableObject {
       action: action,
       selectionContext: context
     )
-    let configuration = settings.provider
+    let connection: AIConnection
+    let configuration: ProviderConfiguration
+    do { (connection, configuration) = try settingsStore.resolve(action) }
+    catch { isTranslating = false; errorMessage = error.localizedDescription; return }
+    statusMessage = L10n.isChinese
+      ? "正在连接 \(connection.name)…"
+      : "Connecting to \(connection.name)…"
+    let resultRoute = ResultRoute(connectionID: connection.id, configuration: configuration, credentialRevision: connection.credentialRevision, proxy: settings.proxy, action: action, source: source, target: target, text: text, selectionContext: context)
+    currentResultRoute = resultRoute
     let proxy = settings.proxy
 
     translationTask = Task {
@@ -528,7 +557,7 @@ final class AppModel: ObservableObject {
       // tick is as real as the rest of the answer.
       var streamedText = ""
       do {
-        let (key, accountId) = try await settingsStore.validCredentials()
+        let (key, accountId) = try await settingsStore.validCredentials(for: connection, proxy: proxy)
         streamedText.reserveCapacity(min(max(text.utf8.count, 1_024), 65_536))
         let clock = ContinuousClock()
         var nextUIUpdate = clock.now
@@ -565,7 +594,7 @@ final class AppModel: ObservableObject {
             actionName: action.name,
             provider: configuration.provider,
             model: configuration.model,
-            selectionContext: context
+            selectionContext: context, resultRoute: resultRoute
           )
         )
         if settings.autoSpeakSelection {
@@ -603,7 +632,7 @@ final class AppModel: ObservableObject {
               actionName: action.name,
               provider: configuration.provider,
               model: configuration.model,
-              selectionContext: context
+              selectionContext: context, resultRoute: resultRoute
             )
           )
         }
@@ -689,6 +718,85 @@ final class AppModel: ObservableObject {
     statusMessage = L10n.isChinese ? "已拷贝" : "Copied"
   }
 
+  // MARK: - Result commands
+
+  /// The editable control the current input was selected in, or nil when the
+  /// input was typed, recognized, restored, or read from something that
+  /// cannot be written to.
+  var writableSource: InsertionTarget? {
+    guard inputSource == .selection, let insertionTarget, insertionTarget.isEditable else {
+      return nil
+    }
+    return insertionTarget
+  }
+
+  /// The commands drawn under the current answer, primary first.
+  ///
+  /// The action decides which commands its answer is good for; the source
+  /// decides which of those can run. A selection read from a web page or a
+  /// PDF leaves nothing to write back to, so the writing commands are left
+  /// out rather than drawn disabled, and Copy moves up to primary.
+  var offeredResultCommands: [ResultCommand] {
+    guard !dictionaryVisible else { return [.copy] }
+    let commands = (selectedAction?.resultCommands ?? [.copy])
+      .filter { !$0.writesToSource || writableSource != nil }
+    return commands.isEmpty ? [.copy] : commands
+  }
+
+  var primaryResultCommand: ResultCommand { offeredResultCommands.first ?? .copy }
+
+  func canPerform(_ command: ResultCommand) -> Bool {
+    guard command.writesToSource else { return canCopyResult }
+    // Half an answer is not worth writing into someone's document.
+    return writableSource != nil && !outputText.isEmpty && !isTranslating && !dictionaryVisible
+  }
+
+  func perform(_ command: ResultCommand) {
+    guard canPerform(command) else { return }
+    switch command {
+    case .copy: copyOutput()
+    case .replace: writeBack(.replace)
+    case .insert: writeBack(.after)
+    }
+  }
+
+  private func writeBack(_ placement: InsertionPlacement) {
+    guard let target = writableSource else { return }
+    let text = outputText
+    let appName = target.applicationName ?? (L10n.isChinese ? "原应用" : "the source app")
+    // The pop-up holds key focus while it is open, and the source app needs it
+    // back before it will take a paste. Closing it is also simply what is
+    // wanted: the answer has gone where it was meant to.
+    let fromPanel = SelectionPanelCoordinator.shared.isVisible
+    SelectionPanelCoordinator.shared.close(cancelsTranslation: false)
+    Task {
+      do {
+        let method = try await accessibility.write(text, placement: placement, into: target)
+        // The captured range now holds the answer. A second write would
+        // either fail its check or repeat the insertion, so the commands go.
+        insertionTarget = nil
+        statusMessage = placement == .replace
+          ? (L10n.isChinese ? "已替换 \(appName) 中的文字" : "Replaced in \(appName)")
+          : (L10n.isChinese ? "已插入到 \(appName)" : "Inserted into \(appName)")
+        Self.writeBackLog.info(
+          "write-back placement=\(placement == .replace ? "replace" : "after", privacy: .public) method=\(method == .accessibility ? "accessibility" : "paste", privacy: .public)"
+        )
+      } catch {
+        errorMessage = error.localizedDescription
+        if fromPanel {
+          SelectionPanelCoordinator.shared.show(model: self)
+        } else {
+          WindowCoordinator.showMain()
+        }
+      }
+    }
+  }
+
+  private static let writeBackLog = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "com.phraselens.app",
+    category: "write-back"
+  )
+
   /// Whether this pane is the one currently being read aloud.
   func isSpeaking(_ pane: SpokenPane) -> Bool {
     speech.isSpeaking && speakingPane == pane
@@ -756,7 +864,7 @@ final class AppModel: ObservableObject {
   var followUpSuggestions: [FollowUpSuggestion] {
     guard canAskFollowUp else { return [] }
     let asked = Set(followUps.map(\.question))
-    return FollowUpSuggestion.suggestions(for: inputText, mode: selectedAction.mode)
+    return FollowUpSuggestion.suggestions(for: inputText, mode: selectedAction?.mode)
       .filter { !asked.contains($0.question) }
   }
 
@@ -773,6 +881,27 @@ final class AppModel: ObservableObject {
   ///
   /// The question is appended before the request is made, so the thread shows
   /// what was asked while the answer is still on its way.
+  func prepareFollowUp(_ question: String) throws -> (connection: AIConnection, configuration: ProviderConfiguration, prompt: TranslationPrompt, proxy: ProxySettings) {
+    guard let route = currentResultRoute,
+      let connection = settingsStore.settings.connections.first(where: { $0.id == route.connectionID }),
+      connection.credentialRevision == route.credentialRevision else {
+      throw TranslationError.provider(L10n.isChinese ? "原连接不可用。请明确选择连接并重新运行原动作。" : "The original connection is unavailable. Choose a connection and rerun the original action.")
+    }
+    var expected = connection.configuration
+    expected.catalogIdentity = route.configuration.catalogIdentity
+    expected.model = route.configuration.model
+    guard expected == route.configuration else {
+      throw TranslationError.provider(L10n.isChinese ? "原连接已更改。请重新运行原动作。" : "The original connection changed. Rerun the original action.")
+    }
+    let prompt = PromptBuilder.followUp(
+      question: question,
+      base: PromptBuilder.build(text: route.text, source: route.source, target: route.target, action: route.action, selectionContext: route.selectionContext),
+      answer: outputText, turns: followUps, target: route.target
+    )
+
+    return (connection, route.configuration, prompt, route.proxy)
+  }
+
   func askFollowUp(_ rawQuestion: String) {
     let question = rawQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !question.isEmpty, canAskFollowUp else { return }
@@ -781,27 +910,11 @@ final class AppModel: ObservableObject {
     followUpError = nil
     followUpDraft = ""
 
-    let settings = settingsStore.settings
-    let source = TranslationSourceResolver.resolve(
-      inputText.trimmingCharacters(in: .whitespacesAndNewlines),
-      configuredSource: settings.sourceLanguage,
-      inputSource: inputSource,
-      restoredSource: restoredSourceLanguage
-    )
-    let prompt = PromptBuilder.followUp(
-      question: question,
-      base: PromptBuilder.build(
-        text: inputText,
-        source: source,
-        target: settings.targetLanguage,
-        action: selectedAction,
-        selectionContext: selectionContext
-      ),
-      answer: outputText,
-      turns: followUps,
-      target: settings.targetLanguage
-    )
-
+    let prepared: (connection: AIConnection, configuration: ProviderConfiguration, prompt: TranslationPrompt, proxy: ProxySettings)
+    do { prepared = try prepareFollowUp(question) }
+    catch { followUpError = error.localizedDescription; return }
+    let connection = prepared.connection
+    let prompt = prepared.prompt
     let turn = FollowUpTurn(question: question, answer: "")
     followUps.append(turn)
     isAnsweringFollowUp = true
@@ -809,8 +922,8 @@ final class AppModel: ObservableObject {
 
     followUpRequestID = UUID()
     let activeRequest = followUpRequestID
-    let configuration = settings.provider
-    let proxy = settings.proxy
+    let configuration = prepared.configuration
+    let proxy = prepared.proxy
 
     followUpTask = Task {
       // Held outside the `do` for the same reason the translation stream holds
@@ -818,7 +931,7 @@ final class AppModel: ObservableObject {
       // answer even when the stream then failed.
       var streamedText = ""
       do {
-        let (key, accountId) = try await settingsStore.validCredentials()
+        let (key, accountId) = try await settingsStore.validCredentials(for: connection, proxy: proxy)
         let clock = ContinuousClock()
         var nextUIUpdate = clock.now
         for try await chunk in client.stream(
@@ -875,6 +988,48 @@ final class AppModel: ObservableObject {
       followUpDraft = last.question
     }
   }
+
+  #if DEBUG
+  /// Seeds one answered follow-up, so the thread can be photographed without
+  /// a provider. `followUps` is private to the model, so the seed lives here.
+  func seedPreviewFollowUp(question: String, answer: String) {
+    followUps.append(FollowUpTurn(question: question, answer: answer))
+  }
+
+  /// A preview model does not integrate with the system, which is also what
+  /// normally loads the library. A preview pointed at a library copy asks.
+  func loadPreviewLibrary() {
+    Task { await loadLibrary() }
+  }
+
+  /// Reads a real selection from another application and shows it in the
+  /// pop-up with a canned answer, so Replace and Insert can be driven end to
+  /// end without a provider. The source is brought back to the front first,
+  /// as it is when the reader presses the shortcut over it.
+  func previewCapture(from processIdentifier: pid_t, action: ActionMode, result: String) {
+    Task {
+      NSRunningApplication(processIdentifier: processIdentifier)?.activate(from: .current, options: [])
+      try? await Task.sleep(for: .milliseconds(600))
+      do {
+        let snapshot = try await accessibility.currentSelection(
+          from: processIdentifier,
+          allowCopyFallback: false
+        )
+        inputSource = .selection
+        inputText = snapshot.text
+        insertionTarget = accessibility.insertionTarget(for: processIdentifier, selectedText: snapshot.text)
+        selectedActionID = TranslationAction.builtIn(for: action).id
+        outputText = result
+        outputRendering = .plain
+        selectResultTab(.translation)
+        statusMessage = "Ready"
+        SelectionPanelCoordinator.shared.show(model: self)
+      } catch {
+        print("PREVIEW capture failed: \(error.localizedDescription)")
+      }
+    }
+  }
+  #endif
 
   func removeFollowUp(_ id: UUID) {
     guard let index = followUps.firstIndex(where: { $0.id == id }) else { return }
@@ -938,6 +1093,7 @@ final class AppModel: ObservableObject {
     followUpDraft = ""
     followUpError = nil
     currentHistoryID = nil
+    currentResultRoute = nil
   }
 
   /// Files the thread with the result it belongs to, so reopening that history
@@ -1053,12 +1209,17 @@ final class AppModel: ObservableObject {
     // The thread is reopened against its own history row, so questions asked
     // now are saved back to the same entry.
     followUps = entry.followUps ?? []
+    currentResultRoute = entry.resultRoute
     currentHistoryID = entry.id
     settingsStore.settings.targetLanguage = entry.targetLanguage
     if let action = visibleActions.first(where: { $0.name == entry.actionName }) {
       selectedActionID = action.id
       outputRendering =
-        PromptBuilder.expectsMarkdown(action, text: entry.sourceText) ? .markdown : .plain
+        PromptBuilder.expectsMarkdown(action, text: entry.sourceText)
+        ? .markdown
+        // Before Definition was split out, Translate answered a single word
+        // with a Markdown dictionary entry, and history still holds those.
+        : (action.mode == .translate ? .undetermined : .plain)
     } else {
       // The action that produced this entry is gone, so nothing here states
       // the author's intent — the stored text is all there is to go on.
@@ -1066,7 +1227,7 @@ final class AppModel: ObservableObject {
       outputRendering = .undetermined
     }
     if entry.dictionarySnapshot != nil {
-      selectedActionID = TranslationAction.builtIns[0].id
+      selectedActionID = TranslationAction.builtIn(for: .definition).id
       if !dictionaryAvailable {
         selectedResultTab = .translation
         outputText = entry.translatedText
@@ -1079,6 +1240,11 @@ final class AppModel: ObservableObject {
     if showWindow {
       openTranslator()
     }
+  }
+
+  func openActions() {
+    actionsFocusToken = UUID()
+    WindowCoordinator.showMain()
   }
 
   func openTranslator() {
@@ -1162,7 +1328,7 @@ final class AppModel: ObservableObject {
     let batches = stride(from: 0, to: entries.count, by: VocabularyTagger.batchSize).map {
       Array(entries[$0..<min($0 + VocabularyTagger.batchSize, entries.count)])
     }
-    let configuration = settingsStore.settings.provider
+    guard let (connection, configuration) = try? settingsStore.resolve(TranslationAction(name: "Vocabulary tagging")) else { return }
     let proxy = settingsStore.settings.proxy
     var topics = VocabularyFacets.rankedTopics(of: vocabulary)
 
@@ -1173,7 +1339,7 @@ final class AppModel: ObservableObject {
     let task = Task { [tagger, library, settingsStore] in
       var filed = 0
       do {
-        let (key, accountId) = try await settingsStore.validCredentials()
+        let (key, accountId) = try await settingsStore.validCredentials(for: connection, proxy: proxy)
         for batch in batches {
           try Task.checkCancellation()
           let tags = try await tagger.tag(
@@ -1232,7 +1398,11 @@ final class AppModel: ObservableObject {
   func saveCustomActions(_ actions: [TranslationAction]) {
     customActions = actions
     reconcileActionConfiguration()
-    Task {
+    // Deleting and undoing can enqueue writes back-to-back. Preserve their order
+    // so an older snapshot can never resurrect a later deletion on disk.
+    let previous = actionPersistenceTask
+    actionPersistenceTask = Task {
+      await previous?.value
       do {
         try await library.saveCustomActions(actions)
         statusMessage = L10n.isChinese ? "动作已保存" : "Actions saved"
@@ -1240,6 +1410,10 @@ final class AppModel: ObservableObject {
         errorMessage = error.localizedDescription
       }
     }
+  }
+
+  func flushActionPersistence() async {
+    await actionPersistenceTask?.value
   }
 
   func updateAction(_ action: TranslationAction) {
@@ -1279,9 +1453,64 @@ final class AppModel: ObservableObject {
     reconcileActionSelection()
   }
 
-  func resetActionConfiguration() {
-    settingsStore.settings.resetActionPresentation()
-    reconcileActionSelection(preferDefault: true)
+  func addActionTemplates(_ ids: [UUID]) {
+    guard isActionLibraryLoaded else { return }
+    let missing = Set(ids).subtracting(settingsStore.settings.installedBuiltInActionIDs)
+    settingsStore.settings.addActionTemplates(ids, customActions: customActions)
+    // Re-adding a template is an explicit choice of the factory version.
+    deletedActions.removeAll { missing.contains($0.action.id) }
+    reconcileActionSelection()
+  }
+
+  func restoreMissingDefaultActions() {
+    addActionTemplates(TranslationAction.defaultOrder)
+  }
+
+  func deleteAction(_ id: UUID) {
+    guard isActionLibraryLoaded,
+      let index = orderedActions.firstIndex(where: { $0.id == id }) else { return }
+    let action = orderedActions[index]
+    let settings = settingsStore.settings
+    deletedActions.append(DeletedAction(action: action, index: index,
+      wasHidden: settings.hiddenActionIDs.contains(id),
+      wasDefault: settings.defaultActionID == id, wasSelected: selectedActionID == id))
+    if selectedActionID == id {
+      stopTranslation()
+      resetDictionary()
+    }
+    var updated = settings
+    updated.installedBuiltInActionIDs.remove(id)
+    updated.builtInActionOverrides.removeAll { $0.id == id }
+    updated.actionOrder.removeAll { $0 == id }
+    updated.hiddenActionIDs.remove(id)
+    customActions.removeAll { $0.id == id }
+    settingsStore.settings = updated
+    if !action.isBuiltIn { saveCustomActions(customActions) }
+    reconcileActionSelection()
+  }
+
+  /// Restores only the deleted item, so edits to other actions remain intact.
+  func undoActionDeletion() {
+    guard isActionLibraryLoaded, let deleted = deletedActions.popLast() else { return }
+    let action = deleted.action
+    var updated = settingsStore.settings
+    var order = orderedActions.map(\.id).filter { $0 != action.id }
+    order.insert(action.id, at: min(deleted.index, order.count))
+    updated.actionOrder = order
+    if action.isBuiltIn {
+      updated.installedBuiltInActionIDs.insert(action.id)
+      updated.setBuiltInOverride(action)
+    } else {
+      customActions.removeAll { $0.id == action.id }
+      customActions.append(action)
+    }
+    if deleted.wasHidden { updated.hiddenActionIDs.insert(action.id) }
+    else { updated.hiddenActionIDs.remove(action.id) }
+    if deleted.wasDefault { updated.defaultActionID = action.id }
+    settingsStore.settings = updated
+    if !action.isBuiltIn { saveCustomActions(customActions) }
+    if deleted.wasSelected { selectedActionID = action.id }
+    reconcileActionSelection()
   }
 
   func setDefaultAction(_ id: UUID) {
@@ -1415,7 +1644,7 @@ final class AppModel: ObservableObject {
   func handleHotKey(_ action: HotKeyAction, sourceProcessIdentifier: pid_t? = nil) {
     switch action {
     case .showWindow:
-      WindowCoordinator.showMain()
+      WindowCoordinator.toggleMain()
     case .translateSelection:
       captureSelectionAndTranslate(
         compact: settingsStore.settings.useCompactSelectionPreview,
@@ -1440,6 +1669,7 @@ final class AppModel: ObservableObject {
     outputRendering = .plain
     selectionContext = nil
     selectionDiagnostics = nil
+    insertionTarget = nil
     inputSource = .selection
     restoredSourceLanguage = nil
     resetFollowUps()
@@ -1466,6 +1696,10 @@ final class AppModel: ObservableObject {
         inputText = snapshot.text
         selectionContext = snapshot.surroundingText
         selectionDiagnostics = snapshot.diagnostics
+        insertionTarget = accessibility.insertionTarget(
+          for: sourceApplication,
+          selectedText: snapshot.text
+        )
         statusMessage = L10n.isChinese ? "就绪" : "Ready"
         selectDefaultAction()
         if compact {
@@ -1530,12 +1764,18 @@ final class AppModel: ObservableObject {
   }
 
   func translateFocusedInput() {
+    guard settingsStore.settings.resolvedBuiltInActions.contains(where: { $0.mode == .translate }) else {
+      errorMessage = L10n.isChinese
+        ? "请先在动作配置中从预置模板添加“翻译”，再使用写作翻译。"
+        : "Add Translate from the action templates before using writing translation."
+      return
+    }
     Task {
       do {
         let original = try accessibility.currentEditableText()
         let settings = settingsStore.settings
         let source = LanguageDetector.detect(original)
-        let action = TranslationAction.builtIns.first(where: { $0.mode == .translate })!
+        guard let action = settings.resolvedBuiltInActions.first(where: { $0.mode == .translate }) else { return }
         let prompt = PromptBuilder.build(
           text: original,
           source: source,
@@ -1543,11 +1783,12 @@ final class AppModel: ObservableObject {
           action: action,
           writing: true
         )
-        let (key, accountId) = try await settingsStore.validCredentials()
+        let (connection, configuration) = try settingsStore.resolve(action)
+        let (key, accountId) = try await settingsStore.validCredentials(for: connection, proxy: settings.proxy)
         var replacement = ""
         for try await chunk in client.stream(
           prompt: prompt,
-          configuration: settings.provider,
+          configuration: configuration,
           apiKey: key,
           accountId: accountId,
           proxy: settings.proxy
@@ -1556,6 +1797,10 @@ final class AppModel: ObservableObject {
         }
         guard !replacement.isEmpty else { throw TranslationError.invalidResponse }
         try accessibility.replaceCurrentEditableText(with: replacement)
+      } catch let error as TranslationError where error.isUnavailableFocusedInput {
+        // Missing, empty, and read-only fields are normal shortcut no-ops.
+        // Preserve the current result and leave the user's app in front.
+        return
       } catch {
         errorMessage = error.localizedDescription
         WindowCoordinator.showMain()
@@ -1618,14 +1863,17 @@ final class AppModel: ObservableObject {
       async let loadedHistory = library.history()
       async let loadedVocabulary = library.vocabulary()
       async let loadedActions = library.customActions()
-      history = try await loadedHistory
-      vocabulary = try await loadedVocabulary
       customActions = try await loadedActions
+      for index in customActions.indices { settingsStore.migrateAction(&customActions[index]) }
+      try await library.saveCustomActions(customActions)
+      isActionLibraryLoaded = true
       reconcileActionConfiguration()
       // A saved default may refer to a custom action, which is unavailable
       // until the library finishes loading. Apply it now instead of leaving
       // the temporary built-in fallback selected for the rest of the session.
       reconcileActionSelection(preferDefault: true)
+      history = try await loadedHistory
+      vocabulary = try await loadedVocabulary
     } catch {
       errorMessage = L10n.isChinese
         ? "无法载入本地资料库：\(error.localizedDescription)"
@@ -1651,6 +1899,7 @@ final class AppModel: ObservableObject {
   }
 
   private func reconcileActionSelection(preferDefault: Bool = false) {
+    guard isActionLibraryLoaded else { return }
     if visibleActions.isEmpty, let firstAvailable = orderedActions.first {
       settingsStore.settings.hiddenActionIDs.remove(firstAvailable.id)
     }
@@ -1706,6 +1955,25 @@ enum WindowCoordinator {
       guard let window = mainWindow() else { return }
       raiseMainWindow(window)
     }
+  }
+
+  /// Shows the main window unless it already has focus, in which case the
+  /// shortcut puts it away and hands focus back to the previous application.
+  /// A visible window behind another app is raised instead of hidden.
+  static func toggleMain() {
+    if let window = mainWindow(), shouldHideMainWindow(
+      isVisible: window.isVisible,
+      isKeyWindow: window.isKeyWindow
+    ) {
+      window.orderOut(nil)
+      NSApp.deactivate()
+      return
+    }
+    showMain()
+  }
+
+  nonisolated static func shouldHideMainWindow(isVisible: Bool, isKeyWindow: Bool) -> Bool {
+    isVisible && isKeyWindow
   }
 
   /// Brings a main window forward. It is raised above everything first because

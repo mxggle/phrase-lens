@@ -1,6 +1,21 @@
 #!/bin/zsh
 set -euo pipefail
 
+LOCAL_BUILD=0
+SKIP_BUILD=0
+if [[ "${1:-}" == "--local" ]]; then
+    LOCAL_BUILD=1
+    shift
+    if [[ "${1:-}" == "--skip-build" ]]; then
+        SKIP_BUILD=1
+        shift
+    fi
+fi
+if (( $# != 0 )); then
+    print -u2 "Usage: ${0:t} [--local [--skip-build]]"
+    exit 2
+fi
+
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
 source "${SCRIPT_DIR}/toolchain-env.sh"
@@ -15,11 +30,17 @@ APP_PATH="${OUTPUT_DIR}/${PRODUCT_NAME}.app"
 EXECUTABLE_PATH="${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
 
 cd "${PROJECT_DIR}"
-# Build both supported macOS architectures. This keeps the download compatible
-# with Apple Silicon and Intel Macs, as advertised on the product site.
-for target in arm64-apple-macosx14.0 x86_64-apple-macosx14.0; do
-    swift build --disable-sandbox -c release --triple "${target}" -Xswiftc -Osize -Xswiftc -warnings-as-errors
-done
+if (( LOCAL_BUILD )); then
+    if (( ! SKIP_BUILD )); then
+        swift build --disable-sandbox -Xswiftc -warnings-as-errors
+    fi
+    LOCAL_BUILD_DIR="$(swift build --show-bin-path)"
+else
+    # Distribution builds include both supported macOS architectures.
+    for target in arm64-apple-macosx14.0 x86_64-apple-macosx14.0; do
+        swift build --disable-sandbox -c release --triple "${target}" -Xswiftc -Osize -Xswiftc -warnings-as-errors
+    done
+fi
 
 EXPECTED_PATH="${PROJECT_DIR}/dist/${PRODUCT_NAME}.app"
 if [[ "${APP_PATH}" != "${EXPECTED_PATH}" ]]; then
@@ -30,17 +51,23 @@ fi
 mkdir -p "${OUTPUT_DIR}"
 rm -rf "${APP_PATH}"
 mkdir -p "${APP_PATH}/Contents/MacOS" "${APP_PATH}/Contents/Resources"
-xcrun lipo -create \
-    "${ARM64_BUILD_DIR}/${EXECUTABLE_NAME}" \
-    "${X86_64_BUILD_DIR}/${EXECUTABLE_NAME}" \
-    -output "${EXECUTABLE_PATH}"
-ARCHS="$(xcrun lipo -archs "${EXECUTABLE_PATH}")"
-if [[ "${ARCHS}" != *arm64* || "${ARCHS}" != *x86_64* ]]; then
-    print -u2 "Expected a universal arm64+x86_64 executable, got: ${ARCHS}"
-    exit 1
+if (( LOCAL_BUILD )); then
+    cp "${LOCAL_BUILD_DIR}/${EXECUTABLE_NAME}" "${EXECUTABLE_PATH}"
+    RESOURCE_BUILD_DIR="${LOCAL_BUILD_DIR}"
+else
+    xcrun lipo -create \
+        "${ARM64_BUILD_DIR}/${EXECUTABLE_NAME}" \
+        "${X86_64_BUILD_DIR}/${EXECUTABLE_NAME}" \
+        -output "${EXECUTABLE_PATH}"
+    ARCHS="$(xcrun lipo -archs "${EXECUTABLE_PATH}")"
+    if [[ "${ARCHS}" != *arm64* || "${ARCHS}" != *x86_64* ]]; then
+        print -u2 "Expected a universal arm64+x86_64 executable, got: ${ARCHS}"
+        exit 1
+    fi
+    RESOURCE_BUILD_DIR="${ARM64_BUILD_DIR}"
 fi
 # The dictionary loader uses the signed application's resources directory.
-cp -R "${ARM64_BUILD_DIR}/PhraseLens_PhraseLens.bundle" "${APP_PATH}/Contents/Resources/PhraseLens_PhraseLens.bundle"
+cp -R "${RESOURCE_BUILD_DIR}/PhraseLens_PhraseLens.bundle" "${APP_PATH}/Contents/Resources/PhraseLens_PhraseLens.bundle"
 # Copy localization resource bundles to top-level Resources for macOS native bundle resolution
 for lproj in en.lproj zh-Hans.lproj; do
     if [[ -d "${PROJECT_DIR}/Sources/PhraseLens/Resources/${lproj}" ]]; then
@@ -49,7 +76,9 @@ for lproj in en.lproj zh-Hans.lproj; do
 done
 # Keep SwiftPM's release binary unstripped for local crash symbolication, but
 # remove local symbols from the distributable copy before it is signed.
-/usr/bin/strip -x "${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
+if (( ! LOCAL_BUILD )); then
+    /usr/bin/strip -x "${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
+fi
 cp "${PROJECT_DIR}/packaging/Info.plist" "${APP_PATH}/Contents/Info.plist"
 PLIST_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${APP_PATH}/Contents/Info.plist")"
 if [[ "${PLIST_IDENTIFIER}" != "${PRODUCT_IDENTIFIER}" ]]; then
@@ -119,6 +148,11 @@ SIGNED_IDENTIFIER="$(codesign --display --verbose=4 "${APP_PATH}" 2>&1 | sed -n 
 if [[ "${SIGNED_IDENTIFIER}" != "${PRODUCT_IDENTIFIER}" ]]; then
     print -u2 "Unexpected signed identifier: ${SIGNED_IDENTIFIER}"
     exit 1
+fi
+
+if (( LOCAL_BUILD )); then
+    print "Local app: ${APP_PATH}"
+    exit 0
 fi
 
 ZIP_PATH="${OUTPUT_DIR}/${PRODUCT_NAME}.zip"

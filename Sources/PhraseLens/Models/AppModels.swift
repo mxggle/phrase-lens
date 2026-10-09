@@ -120,6 +120,7 @@ enum LanguageCode: String, Codable, CaseIterable, Identifiable, Sendable {
 
 enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
   case translate
+  case definition
   case polishing
   case summarize
   case analyze
@@ -134,6 +135,7 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     if L10n.isChinese {
       switch self {
       case .translate: return "翻译"
+      case .definition: return "释义"
       case .polishing: return "润色"
       case .summarize: return "摘要"
       case .analyze: return "深度解析"
@@ -145,6 +147,7 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     }
     switch self {
     case .translate: return "Translate"
+    case .definition: return "Definition"
     case .polishing: return "Polish"
     case .summarize: return "Summarize"
     case .analyze: return "Analyze"
@@ -158,6 +161,7 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
   var symbol: String {
     switch self {
     case .translate: "character.bubble"
+    case .definition: "character.book.closed"
     case .polishing: "wand.and.stars"
     case .summarize: "text.redaction"
     case .analyze: "chart.bar.doc.horizontal"
@@ -196,12 +200,24 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
   /// The editable starting text shown for this action's system prompt. This
   /// is the literal template `PromptBuilder` uses whenever the field is left
   /// untouched, so leaving it unedited keeps the mode's dynamic behavior
-  /// (e.g. Translate's single-word dictionary lookup); editing it away from
-  /// this exact text switches that field to plain variable substitution.
+  /// (e.g. Translate's silent variant for rewriting a focused input); editing
+  /// it away from this exact text switches that field to plain variable
+  /// substitution.
   var defaultRolePrompt: String {
     switch self {
     case .translate:
-      "You are an expert translation engine. Translate faithfully and do not add commentary."
+      """
+      You are an expert translation engine. Translate faithfully and return only the \
+      translation: no explanations, definitions, examples, alternatives, notes, or commentary, \
+      even when the text is a single word. \(Self.untrustedTextRule)
+      """
+    case .definition:
+      """
+      You are a professional ${sourceLang}-to-${targetLang} dictionary. The source language \
+      supplied by the application is a hard constraint. Include the headword, pronunciation \
+      when known, parts of speech, concise senses, at least three bilingual examples, and a \
+      brief etymology. Use clear Markdown. \(Self.untrustedTextRule)
+      """
     case .polishing:
       """
       You are a meticulous editor working in the language of the text itself. Return only the \
@@ -265,6 +281,8 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     switch self {
     case .translate:
       "Translate from ${sourceLang} to ${targetLang}:\n\n${text}"
+    case .definition:
+      "Explain this ${sourceLang} word or expression in ${targetLang}: ${text}"
     case .polishing:
       """
       Rewrite the text below so a native reader would call it natural, clear, and correct.
@@ -414,6 +432,76 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
   }
 }
 
+/// What a reader can do with a finished answer besides read it.
+///
+/// An action lists the commands its answer is good for, and the first one
+/// that applies is drawn as the footer's primary button. Copy works anywhere;
+/// the two writing commands need a selection that was read from an editable
+/// control in another application, and step aside everywhere else.
+enum ResultCommand: String, Codable, CaseIterable, Identifiable, Sendable {
+  /// Put the answer on the clipboard.
+  case copy
+  /// Write the answer over the selection it was made from.
+  case replace
+  /// Write the answer after the selection, keeping the original.
+  case insert
+
+  var id: String { rawValue }
+
+  var title: String {
+    switch self {
+    case .copy: L10n.isChinese ? "拷贝" : "Copy"
+    case .replace: L10n.isChinese ? "替换" : "Replace"
+    case .insert: L10n.isChinese ? "插入" : "Insert"
+    }
+  }
+
+  var symbol: String {
+    switch self {
+    case .copy: "doc.on.doc"
+    case .replace: "character.cursor.ibeam"
+    case .insert: "text.append"
+    }
+  }
+
+  /// Whether the command writes into another application.
+  var writesToSource: Bool { self != .copy }
+
+  /// The Translation menu's name for a writing command, which has no button
+  /// beside it to say what it acts on.
+  func menuTitle(sourceApplication: String?) -> String {
+    let app = sourceApplication ?? (L10n.isChinese ? "原应用" : "Source App")
+    switch self {
+    case .copy: return L10n.isChinese ? "拷贝结果" : "Copy Result"
+    case .replace: return L10n.isChinese ? "替换 \(app) 中的选中文字" : "Replace Selection in \(app)"
+    case .insert: return L10n.isChinese ? "插入到 \(app) 中的选中文字之后" : "Insert After Selection in \(app)"
+    }
+  }
+
+  func help(sourceApplication: String?) -> String {
+    let app = sourceApplication ?? (L10n.isChinese ? "原应用" : "the source app")
+    switch self {
+    case .copy:
+      return L10n.isChinese ? "拷贝 (⇧⌘C)" : "Copy (⇧⌘C)"
+    case .replace:
+      return L10n.isChinese ? "用结果替换 \(app) 中的选中文字" : "Replace the selection in \(app) with the result"
+    case .insert:
+      return L10n.isChinese ? "在 \(app) 中选中文字之后插入结果" : "Insert the result after the selection in \(app)"
+    }
+  }
+
+  /// Translate and Polish answer with nothing but rewritten text, which is
+  /// what a writing command can put back. The explaining actions answer in
+  /// Markdown about the text, so pasting that over it is rarely wanted.
+  static func defaults(for mode: ActionMode?) -> [ResultCommand] {
+    switch mode {
+    case .translate: [.copy, .replace, .insert]
+    case .polishing: [.replace, .copy]
+    default: [.copy]
+    }
+  }
+}
+
 struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
   var id: UUID
   var name: String
@@ -421,6 +509,60 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
   var rolePrompt: String
   var commandPrompt: String
   var outputMarkdown: Bool
+  /// The commands offered under this action's answer, primary first, or nil
+  /// for the mode's defaults. Kept as raw values so a library written by a
+  /// newer version that knows more commands still opens in this one.
+  var resultCommandIDs: [String]?
+  /// Optional for compatibility with actions saved before model selection.
+  /// Each provider, endpoint, and authentication mode keeps its own choice.
+  var modelOverrides: [String: String]?
+  var route: ActionRoute?
+  var routingVersion: Int?
+
+  private static func modelKey(for configuration: ProviderConfiguration) -> String {
+    let endpoint = configuration.provider.supportsOAuth && configuration.authMode == .oauthCodex
+      ? "oauth" : configuration.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    return "\(configuration.provider.rawValue)|\(configuration.authMode.rawValue)|\(endpoint)"
+  }
+
+  func modelOverride(for configuration: ProviderConfiguration) -> String? {
+    guard let model = modelOverrides?[Self.modelKey(for: configuration)]?
+      .trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else { return nil }
+    return model
+  }
+
+  mutating func setModelOverride(_ model: String?, for configuration: ProviderConfiguration) {
+    let key = Self.modelKey(for: configuration)
+    let value = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    var overrides = modelOverrides ?? [:]
+    overrides[key] = value.isEmpty ? nil : value
+    modelOverrides = overrides.isEmpty ? nil : overrides
+  }
+
+  func resolvedConfiguration(from defaultConfiguration: ProviderConfiguration) -> ProviderConfiguration {
+    var configuration = defaultConfiguration
+    if let model = modelOverride(for: configuration) { configuration.model = model }
+    return configuration
+  }
+
+  /// The commands offered under this action's answer, primary first.
+  ///
+  /// Never empty: an action whose list holds nothing this version knows
+  /// falls back to its mode's defaults. Setting the defaults back stores nil,
+  /// so a built-in whose list was put back is not saved as an override.
+  var resultCommands: [ResultCommand] {
+    get {
+      var seen = Set<ResultCommand>()
+      let stored = (resultCommandIDs ?? [])
+        .compactMap(ResultCommand.init(rawValue:))
+        .filter { seen.insert($0).inserted }
+      return stored.isEmpty ? ResultCommand.defaults(for: mode) : stored
+    }
+    set {
+      resultCommandIDs = newValue.isEmpty || newValue == ResultCommand.defaults(for: mode)
+        ? nil : newValue.map(\.rawValue)
+    }
+  }
 
   init(
     id: UUID = UUID(),
@@ -428,7 +570,10 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
     mode: ActionMode? = nil,
     rolePrompt: String = "",
     commandPrompt: String = "",
-    outputMarkdown: Bool = false
+    outputMarkdown: Bool = false,
+    resultCommands: [ResultCommand]? = nil,
+    modelOverrides: [String: String]? = nil,
+    route: ActionRoute? = nil
   ) {
     self.id = id
     self.name = name
@@ -436,6 +581,10 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
     self.rolePrompt = rolePrompt
     self.commandPrompt = commandPrompt
     self.outputMarkdown = outputMarkdown
+    self.modelOverrides = modelOverrides
+    self.route = route
+    self.routingVersion = 1
+    if let resultCommands { self.resultCommands = resultCommands }
   }
 
   static let builtIns: [TranslationAction] = ActionMode.allCases.map { mode in
@@ -446,13 +595,18 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
       rolePrompt: mode.defaultRolePrompt,
       commandPrompt: mode.defaultCommandPrompt,
       outputMarkdown: [
-        .summarize, .analyze, .explainUsage, .explainContext, .explainCode, .compareSynonyms,
+        .definition, .summarize, .analyze, .explainUsage, .explainContext, .explainCode, .compareSynonyms,
       ]
         .contains(mode)
     )
   }
 
   static var defaultOrder: [UUID] { builtIns.map(\.id) }
+
+  /// A small starting collection. Other factory actions stay in the template menu.
+  static var starterIDs: [UUID] {
+    [.translate, .definition, .polishing].map { builtIn(for: $0).id }
+  }
 
   var isBuiltIn: Bool {
     Self.factoryBuiltIn(for: id) != nil
@@ -490,7 +644,12 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
     case .explainContext: "00000000-0000-4000-8000-000000000005"
     case .explainCode: "00000000-0000-4000-8000-000000000006"
     case .compareSynonyms: "00000000-0000-4000-8000-000000000007"
+    case .definition: "00000000-0000-4000-8000-000000000009"
     }
+  }
+
+  static func builtIn(for mode: ActionMode) -> TranslationAction {
+    builtIns.first { $0.mode == mode }!
   }
 }
 
@@ -600,7 +759,31 @@ enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
   var usesAPIKey: Bool { self != .ollama }
 }
 
-struct ProviderConfiguration: Codable, Equatable, Sendable {
+struct ActionRoute: Codable, Hashable, Sendable {
+  var connectionID: UUID
+  var model: String
+}
+
+struct AIConnection: Codable, Identifiable, Equatable, Sendable {
+  var id = UUID()
+  var name: String
+  var configuration: ProviderConfiguration
+  var credentialRevision = UUID()
+}
+
+struct ResultRoute: Codable, Hashable, Sendable {
+  var connectionID: UUID
+  var configuration: ProviderConfiguration
+  var credentialRevision: UUID
+  var proxy: ProxySettings
+  var action: TranslationAction
+  var source: LanguageCode
+  var target: LanguageCode
+  var text: String
+  var selectionContext: String?
+}
+
+struct ProviderConfiguration: Codable, Hashable, Sendable {
   var provider: ProviderKind = .openAI
   var authMode: AuthenticationMode = .apiKey
   var endpoint = ProviderKind.openAI.defaultEndpoint
@@ -609,6 +792,7 @@ struct ProviderConfiguration: Codable, Equatable, Sendable {
   var apiVersion = "2024-10-21"
   var extendedThinking = false
   var reasoningEnabled = false
+  var catalogIdentity: String?
 
   init(
     provider: ProviderKind = .openAI,
@@ -638,11 +822,12 @@ struct ProviderConfiguration: Codable, Equatable, Sendable {
     case organization
     case apiVersion
     case extendedThinking
-    case reasoningEnabled
+    case reasoningEnabled, catalogIdentity
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    catalogIdentity = try container.decodeIfPresent(String.self, forKey: .catalogIdentity)
     provider = try container.decodeIfPresent(ProviderKind.self, forKey: .provider) ?? .openAI
     authMode = try container.decodeIfPresent(AuthenticationMode.self, forKey: .authMode) ?? .apiKey
     endpoint =
@@ -747,7 +932,7 @@ struct ShortcutSettings: Codable, Equatable, Sendable {
   var writing = "⌥W"
 }
 
-struct ProxySettings: Codable, Equatable, Sendable {
+struct ProxySettings: Codable, Hashable, Sendable {
   var enabled = false
   var scheme = "http"
   var host = ""
@@ -758,16 +943,21 @@ struct ProxySettings: Codable, Equatable, Sendable {
 
 struct AppSettings: Codable, Equatable, Sendable {
   var provider = ProviderConfiguration()
+  var connections: [AIConnection] = []
+  var defaultConnectionID: UUID?
+  var defaultModel: String?
+  var legacyRoutingConnectionID: UUID?
   var sourceLanguage: LanguageCode = .auto
   var targetLanguage: LanguageCode = .simplifiedChinese
   var dictionaryEnabled = true
   var dictionaryDefinitionLanguage = "zh"
   var favoriteLanguages: [LanguageCode] = [.simplifiedChinese, .japanese, .english]
   var defaultActionID = TranslationAction.builtIns[0].id
-  /// Stable IDs in the order actions should be presented. Custom action IDs may
-  /// be included; newly-created or newly-shipped actions are appended by the
-  /// resolved ordering helpers below.
-  var actionOrder: [UUID] = TranslationAction.defaultOrder
+  /// An explicit collection prevents deleted or newly shipped templates from
+  /// appearing without the user's request. Empty is a valid saved collection.
+  var installedBuiltInActionIDs: Set<UUID> = Set(TranslationAction.starterIDs)
+  /// Presentation order for installed presets and custom actions.
+  var actionOrder: [UUID] = TranslationAction.starterIDs
   var hiddenActionIDs: Set<UUID> = []
   /// User-authored replacements for built-in presentation and prompts. The
   /// stable built-in ID and mode remain authoritative when resolving them.
@@ -800,7 +990,7 @@ struct AppSettings: Codable, Equatable, Sendable {
   init() {}
 
   private enum CodingKeys: String, CodingKey {
-    case provider
+    case provider, connections, defaultConnectionID, defaultModel, legacyRoutingConnectionID
     case sourceLanguage
     case targetLanguage
     case dictionaryEnabled
@@ -808,6 +998,7 @@ struct AppSettings: Codable, Equatable, Sendable {
     case favoriteLanguages
     case defaultActionID
     case actionOrder
+    case installedBuiltInActionIDs
     case hiddenActionIDs
     case builtInActionOverrides
     case autoTranslate
@@ -835,6 +1026,10 @@ struct AppSettings: Codable, Equatable, Sendable {
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     provider = try container.decodeIfPresent(ProviderConfiguration.self, forKey: .provider) ?? .init()
+    connections = try container.decodeIfPresent([AIConnection].self, forKey: .connections) ?? []
+    defaultConnectionID = try container.decodeIfPresent(UUID.self, forKey: .defaultConnectionID)
+    legacyRoutingConnectionID = try container.decodeIfPresent(UUID.self, forKey: .legacyRoutingConnectionID)
+    defaultModel = try container.decodeIfPresent(String.self, forKey: .defaultModel)
     sourceLanguage = try container.decodeIfPresent(LanguageCode.self, forKey: .sourceLanguage) ?? .auto
     targetLanguage =
       try container.decodeIfPresent(LanguageCode.self, forKey: .targetLanguage)
@@ -847,6 +1042,11 @@ struct AppSettings: Codable, Equatable, Sendable {
     defaultActionID =
       try container.decodeIfPresent(UUID.self, forKey: .defaultActionID)
       ?? TranslationAction.builtIns[0].id
+    // Documents predating removable presets had the full factory collection.
+    // Persist this explicit set so future releases cannot add templates to it.
+    installedBuiltInActionIDs =
+      try container.decodeIfPresent(Set<UUID>.self, forKey: .installedBuiltInActionIDs)
+      ?? Set(TranslationAction.defaultOrder)
     actionOrder =
       try container.decodeIfPresent([UUID].self, forKey: .actionOrder)
       ?? TranslationAction.defaultOrder
@@ -907,7 +1107,9 @@ struct AppSettings: Codable, Equatable, Sendable {
       },
       uniquingKeysWith: { _, latest in latest }
     )
-    return TranslationAction.builtIns.map { overrides[$0.id] ?? $0 }
+    return TranslationAction.builtIns
+      .filter { installedBuiltInActionIDs.contains($0.id) }
+      .map { overrides[$0.id] ?? $0 }
   }
 
   func orderedActions(customActions: [TranslationAction], includingHidden: Bool = true)
@@ -915,13 +1117,31 @@ struct AppSettings: Codable, Equatable, Sendable {
   {
     let available = resolvedBuiltInActions + customActions
     let byID = Dictionary(available.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-    var seen = Set<UUID>()
-    var result = actionOrder.compactMap { id -> TranslationAction? in
-      guard seen.insert(id).inserted else { return nil }
-      return byID[id]
-    }
-    result.append(contentsOf: available.filter { seen.insert($0.id).inserted })
+    let result = Self.completedActionOrder(actionOrder, available: available.map(\.id))
+      .compactMap { byID[$0] }
     return includingHidden ? result : result.filter { !hiddenActionIDs.contains($0.id) }
+  }
+
+  /// `order` restricted to `available`, with every available ID it lacks
+  /// added. A built-in shipped after the order was saved (Definition, split
+  /// out of Translate) goes right after the built-in that precedes it, so it
+  /// appears beside its neighbour instead of at the bottom of the list; any
+  /// other missing ID is appended.
+  static func completedActionOrder(_ order: [UUID], available: [UUID]) -> [UUID] {
+    let availableIDs = Set(available)
+    var seen = Set<UUID>()
+    var result = order.filter { availableIDs.contains($0) && seen.insert($0).inserted }
+    let factoryIDs = TranslationAction.defaultOrder
+    for id in available where seen.insert(id).inserted {
+      if let factoryIndex = factoryIDs.firstIndex(of: id), factoryIndex > 0,
+        let anchor = result.firstIndex(of: factoryIDs[factoryIndex - 1])
+      {
+        result.insert(id, at: anchor + 1)
+      } else {
+        result.append(id)
+      }
+    }
+    return result
   }
 
   func resolvedDefaultAction(customActions: [TranslationAction]) -> TranslationAction? {
@@ -941,7 +1161,13 @@ struct AppSettings: Codable, Equatable, Sendable {
   }
 
   mutating func resetBuiltInAction(_ id: UUID) {
+    guard let existing = builtInActionOverrides.first(where: { $0.id == id }),
+      var restored = TranslationAction.factoryBuiltIn(for: id) else { return }
+    restored.route = existing.route
+    restored.modelOverrides = existing.modelOverrides
+    restored.routingVersion = existing.routingVersion
     builtInActionOverrides.removeAll { $0.id == id }
+    builtInActionOverrides.append(restored)
   }
 
   /// Changes the default and its visibility as one value mutation. Settings
@@ -953,12 +1179,35 @@ struct AppSettings: Codable, Equatable, Sendable {
     hiddenActionIDs.remove(id)
   }
 
+  /// Adds only missing templates. Existing prompts, routes, visibility, order,
+  /// and the current default are left intact. Repeating this is a no-op.
+  mutating func addActionTemplates(_ ids: [UUID], customActions: [TranslationAction]) {
+    let existingOrder = orderedActions(customActions: customActions).map(\.id)
+    let missing = ids.filter {
+      TranslationAction.factoryBuiltIn(for: $0) != nil && !installedBuiltInActionIDs.contains($0)
+    }
+    guard !missing.isEmpty else { return }
+    installedBuiltInActionIDs.formUnion(missing)
+    let added = Set(missing)
+    builtInActionOverrides.removeAll { added.contains($0.id) }
+    hiddenActionIDs.subtract(added)
+    actionOrder = Self.completedActionOrder(existingOrder + missing,
+      available: resolvedBuiltInActions.map(\.id) + customActions.map(\.id))
+    if let fallback = resolvedDefaultAction(customActions: customActions) {
+      defaultActionID = fallback.id
+    }
+  }
+
   mutating func resetActionPresentation() {
+    installedBuiltInActionIDs = Set(TranslationAction.defaultOrder)
     actionOrder = TranslationAction.defaultOrder
     hiddenActionIDs = []
     builtInActionOverrides = []
     defaultActionID = TranslationAction.builtIns[0].id
   }
+
+  private static let legacyTranslateRolePrompt =
+    "You are an expert translation engine. Translate faithfully and do not add commentary."
 
   private mutating func sanitizeActionConfiguration() {
     var seenOrder = Set<UUID>()
@@ -972,6 +1221,12 @@ struct AppSettings: Codable, Equatable, Sendable {
       var sanitized = action
       sanitized.id = factory.id
       sanitized.mode = factory.mode
+      // An override saved for another reason (a route, a model) carries the
+      // role prompt Translate shipped with before Definition was split out.
+      // Left alone it would read as a user edit and stop tracking the default.
+      if factory.mode == .translate, sanitized.rolePrompt == Self.legacyTranslateRolePrompt {
+        sanitized.rolePrompt = factory.rolePrompt
+      }
       return sanitized == factory ? nil : sanitized
     }.reversed()
   }
@@ -994,6 +1249,7 @@ struct HistoryEntry: Codable, Identifiable, Hashable, Sendable {
   /// The follow-up thread the reader built on top of this result. Optional so
   /// that history written before follow-ups existed still decodes.
   var followUps: [FollowUpTurn]?
+  var resultRoute: ResultRoute?
 }
 
 struct VocabularyEntry: Codable, Identifiable, Hashable, Sendable {
@@ -1278,9 +1534,18 @@ enum TranslationError: LocalizedError, Equatable {
   case streamInterrupted(String)
   case noInput
   case selectionUnavailable
+  case focusedInputUnavailable
   case accessibilityPermissionRequired
   case noTextRecognized
   case cancelled
+
+  /// Expected no-op outcomes when the writing shortcut has no usable target.
+  var isUnavailableFocusedInput: Bool {
+    switch self {
+    case .focusedInputUnavailable, .selectionUnavailable, .noInput: true
+    default: false
+    }
+  }
 
   var errorDescription: String? {
     if L10n.isChinese {
@@ -1294,6 +1559,7 @@ enum TranslationError: LocalizedError, Equatable {
       case .network(let reason): return "无法连接至模型服务商：\(reason)"
       case .streamInterrupted(let reason): return "回复在生成完毕前中断：\(reason)"
       case .noInput: return "请先输入或划选文本。"
+      case .focusedInputUnavailable: return "没有可用的可编辑输入框。"
       case .selectionUnavailable: return "未能读取选中文本。请在其他应用中保持文字选中状态，松开快捷键后再按一次 ⌥F。"
       case .accessibilityPermissionRequired: return "划选文本与文字替换功能需要系统“辅助功能”权限。"
       case .noTextRecognized: return "该选区内未识别到文字，请尝试更紧凑地框选文字区域。"
@@ -1311,6 +1577,7 @@ enum TranslationError: LocalizedError, Equatable {
     case .streamInterrupted(let reason):
       return "The reply was cut off before it finished: \(reason)"
     case .noInput: return "Enter or select text first."
+    case .focusedInputUnavailable: return "No editable input field is available."
     case .selectionUnavailable:
       return "Selected text could not be read. Keep it selected in the other app, release the shortcut keys, and press ⌥F again."
     case .accessibilityPermissionRequired:

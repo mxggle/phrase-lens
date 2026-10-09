@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct ActionsView: View {
+  @Environment(\.openSettings) private var openSettings
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
+  @EnvironmentObject private var modelCatalog: ModelCatalogStore
   @Environment(\.palette) private var palette
   @Environment(\.layoutWidth) private var layoutWidth
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,8 +16,6 @@ struct ActionsView: View {
   @State private var splitFraction = 0.32
   /// Compact layouts show one column at a time; this is which one.
   @State private var showsEditorInCompact = false
-  @State private var isConfirmingRemove = false
-  @State private var isConfirmingRestore = false
 
   var body: some View {
     Group {
@@ -40,11 +40,7 @@ struct ActionsView: View {
     .background(palette.background)
     .onAppear {
       draftActions = model.customActions
-      let overrides = Dictionary(
-        settingsStore.settings.builtInActionOverrides.map { ($0.id, $0) },
-        uniquingKeysWith: { _, latest in latest }
-      )
-      draftBuiltIns = TranslationAction.builtIns.map { overrides[$0.id] ?? $0 }
+      draftBuiltIns = settingsStore.settings.resolvedBuiltInActions
       selectedID = selectedID ?? orderedActions.first?.id
     }
     .onDisappear { flushPendingSave() }
@@ -69,43 +65,7 @@ struct ActionsView: View {
       guard overrides != settingsStore.settings.builtInActionOverrides else { return }
       settingsStore.settings.builtInActionOverrides = overrides
     }
-    // Both of these discard prompts the user wrote by hand, and neither can be
-    // taken back, so neither happens on a single click.
-    .confirmationDialog(
-      L10n.isChinese ? "确认删除动作“\(selectedActionName)”？" : "Delete \(selectedActionName)?",
-      isPresented: $isConfirmingRemove,
-      titleVisibility: .visible
-    ) {
-      Button(L10n.isChinese ? "删除动作" : "Delete Action", role: .destructive) { removeSelectedAction() }
-      Button(L10n.isChinese ? "取消" : "Cancel", role: .cancel) {}
-    } message: {
-      Text(L10n.isChinese ? "该动作的角色提示词与执行命令将被一并删除，此操作无法撤销。" : "Its role prompt and command prompt are deleted with it. There is no undo.")
-    }
-    .confirmationDialog(
-      L10n.isChinese ? "恢复所有内置动作？" : "Restore the built-in actions?",
-      isPresented: $isConfirmingRestore,
-      titleVisibility: .visible
-    ) {
-      Button(L10n.isChinese ? "恢复默认设置" : "Restore Defaults", role: .destructive) { restoreAllDefaults() }
-      Button(L10n.isChinese ? "取消" : "Cancel", role: .cancel) {}
-    } message: {
-      Text(
-        L10n.isChinese
-          ? "对内置动作提示词所做的所有修改将被丢弃，动作的显示顺序与隐藏状态也将恢复默认。您自建的自定义动作将得到保留。"
-          : "Every edit you have made to a built-in prompt is discarded, and the actions you hid and the order you arranged them in go back to the defaults. Your own custom actions are kept."
-      )
-    }
-  }
-
-  /// Named in the delete prompt so the dialog says what is about to go.
-  private var selectedActionName: String {
-    if let action = draftActions.first(where: { $0.id == selectedID }) {
-      return action.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.name
-    }
-    if let builtIn = draftBuiltIns.first(where: { $0.id == selectedID }) {
-      return builtIn.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : builtIn.name
-    }
-    return L10n.isChinese ? "此动作" : "this action"
+    .disabled(!model.isActionLibraryLoaded)
   }
 
   // MARK: - Compact
@@ -152,7 +112,14 @@ struct ActionsView: View {
     VStack(spacing: 0) {
       ScrollView {
         VStack(alignment: .leading, spacing: AppSpacing.lg) {
-          group(L10n.isChinese ? "展示顺序与显示设置" : "Display order", actions: orderedActions)
+          if orderedActions.isEmpty {
+            Text(L10n.isChinese ? "还没有动作。添加一个动作，或恢复默认动作。" : "No actions yet. Add an action or restore the defaults.")
+              .font(AppFont.body)
+              .foregroundStyle(palette.mutedForeground)
+              .padding(AppSpacing.md)
+          } else {
+            group(L10n.isChinese ? "我的动作" : "My Actions", actions: orderedActions)
+          }
         }
         .padding(.horizontal, AppSpacing.sm + 2)
         .padding(.vertical, AppSpacing.md)
@@ -161,24 +128,63 @@ struct ActionsView: View {
 
       Hairline()
 
-      HStack(spacing: AppSpacing.xs) {
-        IconButton(
-          title: L10n.isChinese ? "新建动作" : "New action",
-          symbol: "plus"
-        ) {
-          addAction()
+      if model.canUndoActionDeletion {
+        HStack(spacing: AppSpacing.sm) {
+          Text(L10n.isChinese ? "已删除“\(model.lastDeletedActionName ?? "")”" : "Deleted \(model.lastDeletedActionName ?? "")")
+            .font(AppFont.caption)
+            .foregroundStyle(palette.mutedForeground)
+            .lineLimit(1)
+          Spacer(minLength: 0)
+          Button(L10n.isChinese ? "撤销删除" : "Undo Delete") {
+            saveDrafts()
+            model.undoActionDeletion()
+            reloadDrafts(selecting: model.selectedActionID)
+          }
+          .appButton(.ghost, size: .sm)
+          .help(L10n.isChinese ? "恢复完整配置，包括修改过的提示词。退出应用前可撤销。" : "Restore the full configuration, including edited prompts. Available until the app quits.")
         }
+        .padding(.horizontal, AppSpacing.sm + 2)
+        .padding(.vertical, AppSpacing.xs)
+        Hairline()
+      }
+
+      HStack(spacing: AppSpacing.xs) {
+        Menu {
+          Button(L10n.isChinese ? "新建动作" : "New Action") { addAction() }
+          Menu(L10n.isChinese ? "从预置模板添加" : "Add from Templates") {
+            ForEach(TranslationAction.builtIns) { action in
+              let installed = settingsStore.settings.installedBuiltInActionIDs.contains(action.id)
+              Button {
+                saveDrafts()
+                model.addActionTemplates([action.id])
+                reloadDrafts(selecting: action.id)
+                if layoutWidth.isCompact { showsEditorInCompact = true }
+              } label: {
+                Label(action.name, systemImage: installed ? "checkmark" : (action.mode?.symbol ?? "sparkles"))
+              }
+              .disabled(installed)
+            }
+          }
+        } label: {
+          Image(systemName: "plus")
+            .frame(width: AppMetrics.controlHeight, height: AppMetrics.controlHeight)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(L10n.isChinese ? "添加动作" : "Add Action")
+        .accessibilityLabel(L10n.isChinese ? "添加动作" : "Add Action")
         IconButton(
           title: L10n.isChinese ? "删除此动作" : "Delete the selected action",
           symbol: "minus",
-          isDisabled: !draftActions.contains(where: { $0.id == selectedID })
+          isDisabled: !orderedActions.contains(where: { $0.id == selectedID })
         ) {
-          isConfirmingRemove = true
+          removeSelectedAction()
         }
         Spacer(minLength: 0)
-        Button(L10n.isChinese ? "恢复默认动作" : "Restore default actions") { isConfirmingRestore = true }
+        Button(L10n.isChinese ? "恢复默认动作" : "Restore default actions") { restoreAllDefaults() }
           .appButton(.ghost, size: .sm)
-          .help(L10n.isChinese ? "恢复内置动作、显示状态与展示顺序" : "Restore built-in actions, visibility, and display order")
+          .disabled(TranslationAction.defaultOrder.allSatisfy { settingsStore.settings.installedBuiltInActionIDs.contains($0) })
+          .help(L10n.isChinese ? "补回缺失的预置动作，保留现有配置与顺序" : "Add missing presets, keeping existing configuration and order")
       }
       .padding(.horizontal, AppSpacing.sm + 2)
       .frame(height: AppMetrics.paneFooterHeight)
@@ -198,61 +204,41 @@ struct ActionsView: View {
         .padding(.bottom, AppSpacing.xs)
       ForEach(actions) { action in
         let isHidden = isActionHidden(action.id)
-        HStack(spacing: AppSpacing.xs) {
-          Image(systemName: "line.3.horizontal")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(palette.faintForeground)
-            .frame(width: 24, height: 34)
-            .contentShape(Rectangle())
-            .draggable(action.id.uuidString)
-            .help(L10n.isChinese ? "拖拽以调整“\(action.name)”的顺序" : "Drag to reorder \(action.name)")
-            .accessibilityHidden(true)
-          NavRow(
-            title: action.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.name,
-            symbol: action.mode?.symbol ?? "sparkles",
-            isSelected: action.id == selectedID,
-            subtitle: actionSubtitle(for: action),
-            trailing: settingsStore.settings.defaultActionID == action.id
-              ? (L10n.isChinese ? "默认" : "Default")
-              : nil
-          ) {
+        ActionListRow(
+          action: action,
+          isSelected: action.id == selectedID,
+          isHidden: isHidden,
+          isDefault: settingsStore.settings.defaultActionID == action.id,
+          canHide: isHidden || visibleActionCount > 1,
+          onSelect: {
             selectedID = action.id
             if layoutWidth.isCompact {
               withAnimation(AppMotion.state(reduceMotion: reduceMotion)) {
                 showsEditorInCompact = true
               }
             }
-          }
-          IconButton(
-            title: L10n.isChinese
-              ? (isHidden ? "显示动作" : "隐藏动作")
-              : (isHidden ? "Show action" : "Hide action"),
-            symbol: isHidden ? "eye.slash" : "eye",
-            isDisabled: !isHidden && visibleActionCount == 1,
-            isOn: isHidden
-          ) {
-            toggleVisibility(action.id)
-          }
-        }
-        .contentShape(Rectangle())
+          },
+          onToggleVisibility: { toggleVisibility(action.id) }
+        )
         .dropDestination(for: String.self) { values, _ in
           guard let value = values.first, let sourceID = UUID(uuidString: value) else { return false }
           moveAction(sourceID, before: action.id)
           return true
         }
+        .contextMenu {
+          Button(L10n.isChinese ? "删除动作" : "Delete Action", role: .destructive) {
+            selectedID = action.id
+            removeSelectedAction()
+          }
+        }
+        .accessibilityAction(named: L10n.isChinese ? "删除动作" : "Delete Action") {
+          selectedID = action.id
+          removeSelectedAction()
+        }
         .accessibilityAction(named: L10n.isChinese ? "上移" : "Move up") { moveAction(action.id, by: -1) }
         .accessibilityAction(named: L10n.isChinese ? "下移" : "Move down") { moveAction(action.id, by: 1) }
       }
     }
-  }
-
-  private func actionSubtitle(for action: TranslationAction) -> String {
-    if isActionHidden(action.id) {
-      return L10n.isChinese ? "已隐藏" : "Hidden"
-    }
-    return action.isBuiltIn
-      ? (L10n.isChinese ? "内置" : "Built-in")
-      : (L10n.isChinese ? "自定义" : "Custom")
   }
 
   // MARK: - Editor
@@ -265,6 +251,7 @@ struct ActionsView: View {
       .padding(AppSpacing.lg)
       .frame(maxWidth: 720, alignment: .leading)
       .frame(maxWidth: .infinity, alignment: .topLeading)
+      .overlayScrollers()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
@@ -278,13 +265,87 @@ struct ActionsView: View {
     } else {
       EmptyState(
         symbol: "slider.horizontal.3",
-        title: L10n.isChinese ? "未选择动作" : "No action selected",
-        message: L10n.isChinese ? "请在左侧选择一个动作，或添加自定义动作。" : "Choose an action on the left, or add a custom one."
+        title: orderedActions.isEmpty ? (L10n.isChinese ? "还没有动作" : "No actions yet") : (L10n.isChinese ? "未选择动作" : "No action selected"),
+        message: L10n.isChinese ? "新建动作，或恢复默认动作。从“＋”菜单也可以单独添加预置模板。" : "Create an action or restore the defaults. You can also add individual templates from the + menu."
       ) {
-        Button(L10n.isChinese ? "添加自定义动作" : "Add a Custom Action") { addAction() }
-          .appButton(.primary, size: .sm)
+        VStack(spacing: AppSpacing.sm) {
+          Button(L10n.isChinese ? "恢复默认动作" : "Restore Default Actions") { restoreAllDefaults() }
+            .appButton(.primary, size: .sm)
+            .disabled(TranslationAction.defaultOrder.allSatisfy { settingsStore.settings.installedBuiltInActionIDs.contains($0) })
+          Text(L10n.isChinese ? "补回缺失动作，保留现有配置。" : "Add missing actions. Keep existing configuration.")
+            .font(AppFont.caption)
+            .foregroundStyle(palette.mutedForeground)
+          Button(L10n.isChinese ? "新建动作" : "New Action") { addAction() }
+            .appButton(.ghost, size: .sm)
+        }
       }
     }
+  }
+
+  /// Which buttons the answer gets, and which of them is the pill.
+  @ViewBuilder
+  private func resultCommandsEditor(_ action: Binding<TranslationAction>) -> some View {
+    SettingsRow(
+      L10n.isChinese ? "结果按钮" : "Result buttons",
+      detail: resultCommandsDetail(action.wrappedValue)
+    ) {
+      HStack(spacing: AppSpacing.xs) {
+        ForEach(ResultCommand.allCases) { command in
+          Toggle(
+            command.title,
+            isOn: Binding(
+              get: { action.wrappedValue.resultCommands.contains(command) },
+              set: { isOn in
+                var commands = action.wrappedValue.resultCommands
+                commands.removeAll { $0 == command }
+                if isOn { commands.append(command) }
+                // An answer always keeps at least one way out of the panel.
+                guard !commands.isEmpty else { return }
+                action.wrappedValue.resultCommands = commands
+              }
+            )
+          )
+          .toggleStyle(ChipToggleStyle())
+        }
+      }
+    }
+    // With a single button there is nothing to choose between.
+    if action.wrappedValue.resultCommands.count > 1 {
+      Hairline()
+      SettingsRow(
+        L10n.isChinese ? "主按钮" : "Primary button",
+        detail: L10n.isChinese
+          ? "以高亮样式显示。不适用时（例如选中的文字不可编辑），由下一个按钮代替。"
+          : "Drawn highlighted. When it does not apply — the selection cannot be edited, say — the next button takes its place."
+      ) {
+        AppSelect(
+          title: L10n.isChinese ? "主按钮" : "Primary button",
+          selection: Binding(
+            get: { action.wrappedValue.resultCommands.first ?? .copy },
+            set: { primary in
+              let rest = action.wrappedValue.resultCommands.filter { $0 != primary }
+              action.wrappedValue.resultCommands = [primary] + rest
+            }
+          ),
+          options: action.wrappedValue.resultCommands,
+          label: { $0.title },
+          size: .sm
+        )
+      }
+    }
+  }
+
+  private func resultCommandsDetail(_ action: TranslationAction) -> String {
+    var detail = L10n.isChinese
+      ? "显示在结果下方。“替换”与“插入”仅在文字划选自其他应用的可编辑区域时出现。"
+      : "Shown under the answer. Replace and Insert appear only when the text was selected in an editable field in another app."
+    // A Markdown answer is written back as its source text, markers and all.
+    if action.outputMarkdown, action.resultCommands.contains(where: \.writesToSource) {
+      detail += L10n.isChinese
+        ? " 此动作以 Markdown 输出，写回的文字会带有 Markdown 标记。"
+        : " This action answers in Markdown, so what is written back keeps its Markdown markers."
+    }
+    return detail
   }
 
   @ViewBuilder
@@ -302,14 +363,16 @@ struct ActionsView: View {
         .frame(maxWidth: 260)
       }
       Hairline()
-      SettingsRow(L10n.isChinese ? "执行模式" : "Execution mode") {
+      SettingsRow(L10n.isChinese ? "动作来源" : "Action source") {
         Badge(
           text: isBuiltIn
-            ? (L10n.isChinese ? "内置" : "Built-in")
+            ? (L10n.isChinese ? "预置" : "Preset")
             : (L10n.isChinese ? "自定义" : "Custom"),
           variant: .neutral
         )
       }
+      Hairline()
+      actionModelEditor(action)
       Hairline()
       SettingsRow(
         L10n.isChinese ? "以 Markdown 格式渲染结果" : "Render as Markdown",
@@ -322,6 +385,8 @@ struct ActionsView: View {
           .labelsHidden()
           .accessibilityLabel(L10n.isChinese ? "以 Markdown 格式渲染结果" : "Render as Markdown")
       }
+      Hairline()
+      resultCommandsEditor(action)
       Hairline()
       SettingsRow(
         L10n.isChinese ? "在翻译器中显示" : "Show in translator",
@@ -432,14 +497,14 @@ struct ActionsView: View {
 
       if !isBuiltIn {
         Button(L10n.isChinese ? "删除此动作" : "Delete Action") {
-          isConfirmingRemove = true
+          removeSelectedAction()
         }
         .appButton(.destructive, size: .sm)
       }
 
       Text(
         isBuiltIn
-          ? (L10n.isChinese ? "恢复内置提示词与显示选项。" : "Restores the built-in prompt and display options.")
+          ? (L10n.isChinese ? "恢复预置提示词与显示选项，保留模型选择。" : "Restore preset prompts and display options, keeping the model choice.")
           : (L10n.isChinese ? "恢复自定义动作模板。" : "Restores the custom action template.")
       )
       .font(AppFont.caption)
@@ -455,9 +520,9 @@ struct ActionsView: View {
 
   private var orderedActions: [TranslationAction] {
     let actionsByID = Dictionary(uniqueKeysWithValues: allDraftActions.map { ($0.id, $0) })
-    let ordered = settingsStore.settings.actionOrder.compactMap { actionsByID[$0] }
-    let included = Set(ordered.map(\.id))
-    return ordered + allDraftActions.filter { !included.contains($0.id) }
+    return AppSettings.completedActionOrder(
+      settingsStore.settings.actionOrder, available: allDraftActions.map(\.id)
+    ).compactMap { actionsByID[$0] }
   }
 
   private var visibleActionCount: Int {
@@ -497,13 +562,9 @@ struct ActionsView: View {
   }
 
   private func normalizeActionOrder() {
-    let knownIDs = Set(allDraftActions.map(\.id))
-    var seen = Set<UUID>()
-    let saved = settingsStore.settings.actionOrder.filter {
-      knownIDs.contains($0) && seen.insert($0).inserted
-    }
-    let missing = allDraftActions.map(\.id).filter { !seen.contains($0) }
-    settingsStore.settings.actionOrder = saved + missing
+    settingsStore.settings.actionOrder = AppSettings.completedActionOrder(
+      settingsStore.settings.actionOrder, available: allDraftActions.map(\.id)
+    )
   }
 
   private func moveAction(_ sourceID: UUID, before destinationID: UUID) {
@@ -529,27 +590,168 @@ struct ActionsView: View {
     settingsStore.settings.actionOrder = ids
   }
 
+  @ViewBuilder
+  private func actionModelEditor(_ action: Binding<TranslationAction>) -> some View {
+    let resolved = try? settingsStore.resolve(action.wrappedValue)
+    let configuration = resolved?.1 ?? settingsStore.settings.provider
+    let override = action.wrappedValue.route?.model
+    let useDefault = L10n.isChinese ? "使用全局默认" : "Use global default"
+    let defaultConnection = settingsStore.settings.connections.first {
+      $0.id == settingsStore.settings.defaultConnectionID
+    }
+    let defaultSummary = defaultConnection.map {
+      "\($0.name) · \(settingsStore.settings.defaultModel ?? $0.configuration.model)"
+    } ?? (L10n.isChinese ? "尚未设置" : "Not configured")
+    let connectionName = resolved?.0.name ?? (L10n.isChinese ? "连接不可用" : "Connection unavailable")
+    SettingsRow(
+      L10n.isChinese ? "动作模型" : "Action model",
+      detail: L10n.isChinese
+        ? "使用 \(connectionName) · \(configuration.model)。后续提问沿用这组连接和模型。"
+        : "Uses \(connectionName) · \(configuration.model). Follow-up questions keep this connection and model.",
+      stacksControl: true
+    ) {
+      VStack(alignment: .leading, spacing: AppSpacing.sm) {
+        HStack(spacing: AppSpacing.sm) {
+          AppSelect(
+            title: L10n.isChinese ? "模型选择" : "Model choice",
+            selection: Binding(
+              get: { override != nil },
+              set: { usesOverride in
+                let initialModel = configuration.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                  ? configuration.provider.defaultModel : configuration.model
+                action.wrappedValue.route = usesOverride ? resolved.map { ActionRoute(connectionID: $0.0.id, model: initialModel) } : nil
+              }
+            ),
+            options: [false, true],
+            label: { usesOverride in
+              usesOverride
+                ? (L10n.isChinese ? "为此动作选择模型" : "Choose a model for this action")
+                : "\(useDefault) (\(defaultSummary))"
+            },
+            fillsWidth: true
+          )
+          AppMenuButton(title: L10n.isChinese ? "添加连接" : "Add connection", symbol: "plus") {
+            ForEach(ProviderKind.allCases) { provider in
+              Button(provider.rawValue) {
+                let id = settingsStore.addConnection(provider: provider)
+                action.wrappedValue.route = ActionRoute(connectionID: id, model: provider.defaultModel)
+                SettingsNavigation.show(.provider) { openSettings() }
+              }
+            }
+          }
+        }
+        if override != nil {
+          AppSelect(
+            title: L10n.isChinese ? "连接" : "Connection",
+            selection: Binding(
+              get: { action.wrappedValue.route?.connectionID ?? settingsStore.settings.defaultConnectionID },
+              set: { id in
+                if let connection = settingsStore.settings.connections.first(where: { $0.id == id }) {
+                  action.wrappedValue.route = ActionRoute(connectionID: connection.id, model: connection.configuration.model)
+                }
+              }
+            ),
+            options: settingsStore.settings.connections.map { Optional($0.id) },
+            label: { id in
+              settingsStore.settings.connections.first { $0.id == id }?.name
+                ?? (L10n.isChinese ? "连接不可用" : "Connection unavailable")
+            },
+            symbol: "point.3.connected.trianglepath.dotted",
+            fillsWidth: true
+          )
+          HStack(spacing: AppSpacing.sm) {
+            SearchableSelect(
+              title: L10n.isChinese ? "动作模型" : "Action model",
+              selection: Binding(
+                get: { action.wrappedValue.route?.model ?? "" },
+                set: { action.wrappedValue.route?.model = $0 }
+              ),
+              options: actionModels(for: configuration, current: override),
+              placeholder: L10n.tr("sidebar.no_model"),
+              searchPrompt: L10n.tr("settings.provider.search_prompt"),
+              emptyMessage: L10n.isChinese ? "刷新模型目录，或输入模型 ID。" : "Refresh the catalog, or type a model ID.",
+              customValueLabel: { L10n.tr("settings.provider.use_custom_model", $0) }
+            )
+            Button {
+              let store = settingsStore
+              let proxy = store.settings.proxy
+              modelCatalog.refresh(configuration: configuration, proxy: proxy) {
+                guard let connection = resolved?.0 else { throw TranslationError.missingAPIKey }
+                return try await store.validCredentials(for: connection, proxy: proxy).accessToken
+              }
+            } label: {
+              AdaptiveLabel(title: L10n.tr("common.refresh"), symbol: "arrow.clockwise")
+            }
+            .appButton(.outline, size: .sm)
+            .disabled(modelCatalog.isFetching(configuration) || !(resolved.map { settingsStore.hasCredential(for: $0.0) } ?? false) || configuration.provider == .azure)
+          }
+          if let error = modelCatalog.error(for: configuration) {
+            InlineNote(text: error, kind: .error)
+          }
+        }
+      }
+    }
+  }
+
+  private func actionModels(for configuration: ProviderConfiguration, current: String?) -> [String] {
+    var models = modelCatalog.models(for: configuration)
+    if configuration.provider.supportsOAuth && configuration.authMode == .oauthCodex, models.isEmpty {
+      models = CodexBackend.fallbackModels
+    }
+    for model in [current, configuration.model].compactMap({ $0 }) where !model.isEmpty && !models.contains(model) {
+      models.insert(model, at: 0)
+    }
+    return models
+  }
+
   private func restoreAction(_ id: UUID) {
     if let original = TranslationAction.builtIns.first(where: { $0.id == id }),
       let index = draftBuiltIns.firstIndex(where: { $0.id == id })
     {
-      draftBuiltIns[index] = original
+      var restored = original
+      restored.modelOverrides = draftBuiltIns[index].modelOverrides
+      restored.route = draftBuiltIns[index].route
+      draftBuiltIns[index] = restored
     } else if let index = draftActions.firstIndex(where: { $0.id == id }) {
       let name = draftActions[index].name
+      let route = draftActions[index].route
+      let modelOverrides = draftActions[index].modelOverrides
       draftActions[index] = TranslationAction(
         id: id,
         name: name.isEmpty ? (L10n.isChinese ? "自定义动作" : "Custom Action") : name,
         rolePrompt: "You are a helpful language assistant.",
         commandPrompt: "${text}",
-        outputMarkdown: false
+        outputMarkdown: false,
+        modelOverrides: modelOverrides, route: route
       )
     }
     setAction(id, visible: true)
   }
 
   private func restoreAllDefaults() {
-    draftBuiltIns = TranslationAction.builtIns
-    model.resetActionConfiguration()
+    saveDrafts()
+    model.restoreMissingDefaultActions()
+    reloadDrafts()
+  }
+
+  /// Commit current editor text before structural edits, so Undo captures it.
+  private func saveDrafts() {
+    saveTask?.cancel()
+    saveTask = nil
+    if draftActions != model.customActions { model.saveCustomActions(draftActions) }
+    let overrides = draftBuiltIns.filter { TranslationAction.factoryBuiltIn(for: $0.id) != $0 }
+    if overrides != settingsStore.settings.builtInActionOverrides {
+      settingsStore.settings.builtInActionOverrides = overrides
+    }
+  }
+
+  private func reloadDrafts(selecting id: UUID? = nil) {
+    draftActions = model.customActions
+    draftBuiltIns = settingsStore.settings.resolvedBuiltInActions
+    if let id, orderedActions.contains(where: { $0.id == id }) { selectedID = id }
+    else if !orderedActions.contains(where: { $0.id == selectedID }) {
+      selectedID = orderedActions.first?.id
+    }
   }
 
   private func addAction() {
@@ -570,7 +772,7 @@ struct ActionsView: View {
   /// Copies any action — built-in or custom — into a new, independent custom
   /// action seeded with its current prompts. The copy always has `mode ==
   /// nil`, so it no longer inherits a built-in mode's dynamic behavior (e.g.
-  /// Translate's single-word dictionary lookup); its prompts are exactly
+  /// Definition's offline dictionary tab); its prompts are exactly
   /// what was visible in the editor at the moment of duplication.
   private func duplicateAction(_ action: TranslationAction) {
     let base = action.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.name
@@ -578,7 +780,9 @@ struct ActionsView: View {
       name: L10n.isChinese ? "\(base) 副本" : "\(base) Copy",
       rolePrompt: action.rolePrompt,
       commandPrompt: action.commandPrompt,
-      outputMarkdown: action.outputMarkdown
+      outputMarkdown: action.outputMarkdown,
+      resultCommands: action.resultCommands,
+      modelOverrides: action.modelOverrides, route: action.route
     )
     draftActions.append(copy)
     var order = settingsStore.settings.actionOrder
@@ -611,18 +815,10 @@ struct ActionsView: View {
 
   private func removeSelectedAction() {
     guard let selectedID else { return }
-    let index = draftActions.firstIndex { $0.id == selectedID }
-    draftActions.removeAll { $0.id == selectedID }
-    settingsStore.settings.actionOrder.removeAll { $0 == selectedID }
-    settingsStore.settings.hiddenActionIDs.remove(selectedID)
-    if settingsStore.settings.defaultActionID == selectedID {
-      setDefaultAction(orderedActions.first?.id ?? TranslationAction.builtIns[0].id)
-    }
-    self.selectedID =
-      index.flatMap {
-        draftActions.indices.contains($0) ? draftActions[$0].id : draftActions.last?.id
-      }
-      ?? orderedActions.first?.id
+    saveDrafts()
+    model.deleteAction(selectedID)
+    reloadDrafts()
+    if orderedActions.isEmpty { showsEditorInCompact = false }
   }
 
   /// Typing in a prompt should not write to disk on every keystroke, and the
@@ -639,10 +835,140 @@ struct ActionsView: View {
   }
 
   private func flushPendingSave() {
-    guard saveTask != nil else { return }
-    saveTask?.cancel()
-    saveTask = nil
-    guard draftActions != model.customActions else { return }
-    model.saveCustomActions(draftActions)
+    guard model.isActionLibraryLoaded else { return }
+    saveDrafts()
+  }
+}
+
+// MARK: - List row
+
+/// One action in the source list: what it is, whether it is the default, and
+/// whether the translator shows it.
+///
+/// The row is one selectable surface, drag handle included, so the selection
+/// reads as a single object rather than a highlighted label floating between a
+/// grip and an eye. The grip and the visibility switch stay faint until the
+/// pointer is on the row; a hidden action keeps its crossed-out eye in sight,
+/// because that is the state the row exists to show.
+private struct ActionListRow: View {
+  let action: TranslationAction
+  let isSelected: Bool
+  let isHidden: Bool
+  let isDefault: Bool
+  let canHide: Bool
+  let onSelect: () -> Void
+  let onToggleVisibility: () -> Void
+
+  @Environment(\.palette) private var palette
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var isHovering = false
+
+  private var name: String {
+    action.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.name
+  }
+
+  private var kind: String {
+    action.isBuiltIn ? (L10n.isChinese ? "预置" : "Preset") : (L10n.isChinese ? "自定义" : "Custom")
+  }
+
+  var body: some View {
+    HStack(spacing: AppSpacing.sm) {
+      Image(systemName: "line.3.horizontal")
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(palette.faintForeground)
+        .opacity(isHovering ? 1 : 0.35)
+        .frame(width: 14, height: 30)
+        .contentShape(Rectangle())
+        .draggable(action.id.uuidString)
+        .help(L10n.isChinese ? "拖拽以调整“\(name)”的顺序" : "Drag to reorder \(name)")
+        .accessibilityHidden(true)
+
+      Button(action: onSelect) {
+        HStack(spacing: AppSpacing.sm + 2) {
+          Image(systemName: action.mode?.symbol ?? "sparkles")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(isSelected ? palette.foreground : palette.mutedForeground)
+            .frame(width: 16)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(name)
+              .font(AppFont.bodyMedium)
+              .foregroundStyle(isHidden ? palette.mutedForeground : palette.foreground)
+              .lineLimit(1)
+              .truncationMode(.tail)
+            // The default is a property of the action, so it is said on the
+            // action's own line rather than with a badge that takes the width
+            // the name needs.
+            HStack(spacing: AppSpacing.xs) {
+              Text(isHidden ? (L10n.isChinese ? "\(kind) · 已隐藏" : "\(kind) · Hidden") : kind)
+                .foregroundStyle(palette.mutedForeground)
+              if isDefault {
+                Text("·").foregroundStyle(palette.faintForeground)
+                Text(L10n.isChinese ? "默认" : "Default")
+                  .fontWeight(.medium)
+                  .foregroundStyle(palette.accent)
+              }
+            }
+            .font(AppFont.caption)
+            .lineLimit(1)
+          }
+          Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(name)
+      .accessibilityValue(isDefault ? (L10n.isChinese ? "默认动作" : "Default action") : "")
+      .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+
+      IconButton(
+        title: L10n.isChinese
+          ? (isHidden ? "显示动作" : "隐藏动作")
+          : (isHidden ? "Show action" : "Hide action"),
+        symbol: isHidden ? "eye.slash" : "eye",
+        isDisabled: !canHide
+      ) {
+        onToggleVisibility()
+      }
+      .opacity(isHovering || isHidden || isSelected ? 1 : 0)
+    }
+    .padding(.leading, AppSpacing.xs)
+    .padding(.trailing, AppSpacing.xxs)
+    .padding(.vertical, AppSpacing.xs + 1)
+    .background(fill, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+    .contentShape(Rectangle())
+    .onHover { isHovering = $0 }
+    .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isHovering)
+    .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isSelected)
+  }
+
+  private var fill: Color {
+    if isSelected { return palette.accentFill }
+    return isHovering ? palette.muted : .clear
+  }
+}
+
+/// Recovery stays available on translation surfaces even after the last deletion.
+struct NoActionsView: View {
+  @EnvironmentObject private var model: AppModel
+
+  var body: some View {
+    EmptyState(
+      symbol: "slider.horizontal.3",
+      title: L10n.isChinese ? "还没有动作" : "No actions yet",
+      message: L10n.isChinese
+        ? "添加一个动作即可继续。恢复默认动作只会补回缺失项，保留现有配置。"
+        : "Add an action to continue. Restoring defaults only adds missing actions and keeps existing configuration."
+    ) {
+      VStack(spacing: AppSpacing.sm) {
+        Button(L10n.isChinese ? "恢复默认动作" : "Restore Default Actions") {
+          model.restoreMissingDefaultActions()
+        }
+        .appButton(.primary, size: .sm)
+        Button(L10n.isChinese ? "添加动作" : "Add Actions") { model.openActions() }
+          .appButton(.ghost, size: .sm)
+      }
+      .disabled(!model.isActionLibraryLoaded)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }

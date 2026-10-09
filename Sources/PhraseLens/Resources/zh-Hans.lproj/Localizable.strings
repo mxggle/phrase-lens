@@ -112,7 +112,7 @@
 "translator.empty_title" = "暂无翻译";
 "translator.translating" = "正在翻译…";
 "translator.checking_word" = "正在检查词汇…";
-"translator.empty_hint_keyboard" = "按下 ⌘↩ 开始翻译。";
+"translator.empty_hint_keyboard" = "按下 ↩ 开始翻译。";
 "translator.empty_hint_selection" = "在左侧输入文本，或在其他应用中选中文字后按下 ⌥F。";
 "translator.badge.selection" = "划选";
 "translator.badge.screen" = "截屏";
@@ -121,7 +121,7 @@
 "translator.provider_warning" = "连接服务商以使用 AI 翻译。离线词典查询现已就绪。";
 "translator.set_up_provider" = "配置服务商";
 "translator.stop_translating_help" = "停止翻译 (⌘.)";
-"translator.translate_help" = "%@ (⌘↩)";
+"translator.translate_help" = "%@ (↩)";
 
 /* Status Messages */
 "translator.status.ready" = "就绪";
@@ -154,7 +154,7 @@
 "dictionary.save_meaning" = "收藏第 %d 条释义";
 "dictionary.tab_translation" = "AI 翻译";
 "dictionary.tab_dictionary" = "离线词典";
-"dictionary.tab_tooltip" = "AI 翻译提供智能解析，词典展示权威离线释义。";
+"dictionary.tab_tooltip" = "词典释义来自权威离线词典。AI 释义由大模型生成，含释义与例句。";
 "dictionary.copy_entries_sources" = "拷贝词条释义与出处";
 "dictionary.status.entry_saved" = "词条已保存到生词本";
 "dictionary.status.entry_copied" = "已拷贝词条及出处";
@@ -323,6 +323,7 @@
 
 /* Action Modes */
 "action.mode.translate" = "翻译";
+"action.mode.definition" = "释义";
 "action.mode.polishing" = "润色";
 "action.mode.summarize" = "摘要";
 "action.mode.analyze" = "深度解析";
@@ -354,7 +355,7 @@
 "settings.general.languages_detail" = "至少保留一种已启用的语言。默认为中文、英语和日语。";
 "settings.general.dictionary" = "词典选项";
 "settings.general.word_dictionary" = "单词词典";
-"settings.general.word_dictionary_detail" = "查询单词时显示离线释义与“AI 翻译”标签页；长句则仅使用翻译。";
+"settings.general.word_dictionary_detail" = "“释义”动作查询单词时先显示离线词典，并附带“AI 释义”标签页；句子只显示 AI 释义。";
 "settings.general.definitions" = "释义语言";
 "settings.general.definitions_detail" = "中文词条保留原始词典简繁字形；其他语言需要安装对应语言的离线词典包。";
 "settings.general.translation" = "翻译偏好";
@@ -435,8 +436,8 @@
 "settings.shortcuts.caption" = "点按快捷键并按下您想要的组合键。设置立即生效。默认 ⌥F 打开浮窗，⌥⇧F 打开完整窗口。";
 "settings.shortcuts.selection_popup" = "划选翻译浮窗";
 "settings.shortcuts.selection_popup_detail" = "无需打开完整工作区即可翻译选中的文字。";
-"settings.shortcuts.full_window" = "呼出完整窗口";
-"settings.shortcuts.full_window_detail" = "打开包含翻译、历史记录与工具的完整工作区。";
+"settings.shortcuts.full_window" = "切换主窗口";
+"settings.shortcuts.full_window_detail" = "显示或隐藏包含翻译、历史记录与工具的完整工作区。";
 "settings.shortcuts.screenshot_ocr" = "截屏文字识别";
 "settings.shortcuts.screenshot_ocr_detail" = "框选屏幕区域并识别提取其中的文字。";
 "settings.shortcuts.writing" = "原地文本润色替换";

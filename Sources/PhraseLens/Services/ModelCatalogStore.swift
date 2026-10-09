@@ -50,12 +50,12 @@ final class ModelCatalogStore: ObservableObject {
   /// its own catalog).
   nonisolated static func key(for configuration: ProviderConfiguration) -> String {
     if configuration.provider.supportsOAuth && configuration.authMode == .oauthCodex {
-      return "\(configuration.provider.rawValue)|oauth|\(CodexBackend.clientVersion)"
+      return "\(configuration.catalogIdentity ?? "legacy")|\(configuration.provider.rawValue)|oauth|\(CodexBackend.clientVersion)"
     }
     let endpoint = configuration.endpoint
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .lowercased()
-    return "\(configuration.provider.rawValue)|\(endpoint)"
+    return "\(configuration.catalogIdentity ?? "legacy")|\(configuration.provider.rawValue)|\(configuration.authMode.rawValue)|\(endpoint)"
   }
 
   func snapshot(for configuration: ProviderConfiguration) -> ModelCatalogSnapshot? {

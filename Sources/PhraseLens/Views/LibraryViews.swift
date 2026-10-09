@@ -391,11 +391,13 @@ private struct LibraryList<Item: Identifiable, Row: View>: View {
           content
         }
         .padding(AppSpacing.lg)
+        .overlayScrollers()
       } else {
         LazyVStack(spacing: AppSpacing.sm, pinnedViews: pinnedViews) {
           content
         }
         .padding(AppSpacing.lg)
+        .overlayScrollers()
       }
     }
     .scrollIndicators(.automatic)

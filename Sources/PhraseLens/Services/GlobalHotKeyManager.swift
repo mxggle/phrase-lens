@@ -13,7 +13,7 @@ enum HotKeyAction: UInt32, CaseIterable, Sendable {
   var displayName: String {
     switch self {
     case .translateSelection: L10n.isChinese ? "划选翻译浮窗" : "Selection pop-up"
-    case .showWindow: L10n.isChinese ? "完整翻译窗口" : "Full translator window"
+    case .showWindow: L10n.isChinese ? "切换主窗口" : "Toggle main window"
     case .screenshotOCR: L10n.isChinese ? "截屏文字识别" : "Screenshot OCR"
     case .writing: L10n.isChinese ? "翻译当前输入框" : "Translate focused input"
     }

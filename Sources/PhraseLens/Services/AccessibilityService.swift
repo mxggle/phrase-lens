@@ -1,5 +1,6 @@
 @preconcurrency import ApplicationServices
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import os
 
@@ -31,6 +32,42 @@ struct SelectionDiagnostics: Equatable, Sendable {
   /// Whether the search gave up on its own budget rather than running out of
   /// elements. A true here means the answer below may be incomplete.
   var traversalTruncated = false
+}
+
+/// Where a captured selection lives, kept so an answer can be written back
+/// over it or after it.
+///
+/// `AXUIElement` is a CF reference the accessibility API accepts from any
+/// thread, which is what the unchecked conformance vouches for.
+struct InsertionTarget: @unchecked Sendable {
+  let processIdentifier: pid_t
+  let applicationName: String?
+  /// The focused control when the selection was read.
+  let element: AXUIElement?
+  /// The selection inside that control, when the control reports ranges.
+  /// Electron editors and most web views do not, and there the live
+  /// selection is the only record of where the text was.
+  let selectedRange: CFRange?
+  let selectedText: String
+  /// Whether the control said its text can be written. Web pages, PDFs, and
+  /// labels answer no, and there is nothing for Replace or Insert to do.
+  let isEditable: Bool
+  /// Whether the control sits in a web area — a browser page, or an app such
+  /// as VS Code built on one. Its offsets are not trusted for placing a caret.
+  let isWebContent: Bool
+}
+
+enum InsertionPlacement: Sendable {
+  case replace
+  case after
+}
+
+/// How an answer reached the source application.
+enum InsertionMethod: Sendable {
+  /// Written into the control directly; the clipboard was never touched.
+  case accessibility
+  /// Pasted, with the reader's clipboard put back afterwards.
+  case paste
 }
 
 /// Everything one pass over the accessibility tree produced. Sendable so the
@@ -401,7 +438,7 @@ struct AccessibilityService: Sendable {
       let element = focusedElement,
       CFGetTypeID(element) == AXUIElementGetTypeID()
     else {
-      throw TranslationError.provider(L10n.isChinese ? "没有可用的焦点文本控件。" : "No focused text control is available.")
+      throw TranslationError.focusedInputUnavailable
     }
     return unsafeDowncast(element, to: AXUIElement.self)
   }
@@ -546,7 +583,12 @@ struct AccessibilityService: Sendable {
     guard !isWithinSecureTextElement(element) else {
       throw TranslationError.provider(L10n.isChinese ? "不能翻译或替换安全文本字段中的内容。" : "Secure text fields cannot be translated or replaced.")
     }
-    guard let value = stringAttribute(kAXValueAttribute, from: element), !value.isEmpty else {
+    // A readable value can belong to static text or a read-only control. Check
+    // editability before spending a provider request on an unusable target.
+    try requireEditableValue(in: element)
+    guard let value = stringAttribute(kAXValueAttribute, from: element),
+      !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
       throw TranslationError.noInput
     }
     return value
@@ -561,7 +603,7 @@ struct AccessibilityService: Sendable {
       throw TranslationError.provider(L10n.isChinese ? "不能翻译或替换安全文本字段中的内容。" : "Secure text fields cannot be translated or replaced.")
     }
     guard let value = stringAttribute(kAXValueAttribute, from: element) else {
-      throw TranslationError.provider(L10n.isChinese ? "当前获得焦点的控件不可编辑。" : "The focused control is not editable.")
+      throw TranslationError.focusedInputUnavailable
     }
     let range = selectedRange(from: element)
     let nextValue: String
@@ -581,15 +623,7 @@ struct AccessibilityService: Sendable {
       cursorOffset = (replacement as NSString).length
     }
 
-    var settable = DarwinBoolean(false)
-    let settableStatus = AXUIElementIsAttributeSettable(
-      element,
-      kAXValueAttribute as CFString,
-      &settable
-    )
-    guard settableStatus == .success, settable.boolValue else {
-      throw TranslationError.provider(L10n.isChinese ? "当前获得焦点的控件不允许替换文本。" : "The focused control does not allow text replacement.")
-    }
+    try requireEditableValue(in: element)
     let status = AXUIElementSetAttributeValue(
       element,
       kAXValueAttribute as CFString,
@@ -608,6 +642,388 @@ struct AccessibilityService: Sendable {
       )
     }
   }
+
+  private func requireEditableValue(in element: AXUIElement) throws {
+    var settable = DarwinBoolean(false)
+    let settableStatus = AXUIElementIsAttributeSettable(
+      element,
+      kAXValueAttribute as CFString,
+      &settable
+    )
+    guard settableStatus == .success, settable.boolValue else {
+      throw TranslationError.focusedInputUnavailable
+    }
+  }
+
+  // MARK: - Writing back
+
+  /// Records the control a selection was just read from, so a later command
+  /// can write an answer over the selection or after it.
+  ///
+  /// Cheap on purpose — the focused control and a few of its attributes —
+  /// and kept out of the capture traversal, which is built to find text
+  /// rather than the control that would accept it.
+  @MainActor
+  func insertionTarget(for processIdentifier: pid_t?, selectedText: String) -> InsertionTarget? {
+    guard
+      isTrusted(),
+      let processIdentifier = processIdentifier
+        ?? NSWorkspace.shared.frontmostApplication?.processIdentifier,
+      processIdentifier != ProcessInfo.processInfo.processIdentifier
+    else { return nil }
+    let application = prepared(AXUIElementCreateApplication(processIdentifier))
+    guard
+      let element = try? focusedElement(in: application),
+      !isWithinSecureTextElement(element)
+    else { return nil }
+    return InsertionTarget(
+      processIdentifier: processIdentifier,
+      applicationName: NSRunningApplication(processIdentifier: processIdentifier)?.localizedName,
+      element: element,
+      selectedRange: selectedRange(from: element).flatMap { $0.length > 0 ? $0 : nil },
+      selectedText: selectedText,
+      isEditable: isWritable(element),
+      isWebContent: isWithinWebArea(element)
+    )
+  }
+
+  /// Writes `text` over the captured selection, or after it.
+  ///
+  /// Accessibility goes first because it touches nothing but the control: no
+  /// clipboard and no keystrokes. Plenty of controls accept that call and
+  /// ignore it, though, so the value is read back, and only a control that
+  /// did not change falls through to a paste — the one route every
+  /// application understands.
+  @MainActor
+  func write(
+    _ text: String,
+    placement: InsertionPlacement,
+    into target: InsertionTarget
+  ) async throws -> InsertionMethod {
+    guard isTrusted() else { throw TranslationError.accessibilityPermissionRequired }
+    guard
+      target.isEditable,
+      !target.selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { throw TranslationError.focusedInputUnavailable }
+    let appName = target.applicationName ?? (L10n.isChinese ? "原应用" : "the source app")
+    guard
+      let application = NSRunningApplication(processIdentifier: target.processIdentifier),
+      !application.isTerminated
+    else {
+      throw TranslationError.provider(
+        L10n.isChinese ? "\(appName) 已退出。" : "\(appName) is no longer running."
+      )
+    }
+
+    // While the reader clicks, the pop-up or the main window holds key focus.
+    // The source application has to take it back before its control will
+    // accept a paste, and a held modifier would turn ⌘V into something else.
+    await waitForShortcutModifiersToLift()
+    guard await bringToFront(application) else {
+      throw TranslationError.provider(
+        L10n.isChinese ? "无法切换回 \(appName)。" : "Could not bring \(appName) back to the front."
+      )
+    }
+
+    let plan = try writePlan(for: text, placement: placement, target: target)
+    if let element = target.element, let range = plan.range {
+      if plan.payload == plan.replacedText { return .accessibility }
+      if writeThroughAccessibility(plan.payload, over: range, in: element) {
+        return .accessibility
+      }
+    }
+
+    // Put the caret where the answer belongs. A plan with a range is placed
+    // there directly. Without one, the live selection is the reader's own and
+    // a replacement simply pastes over it, while an insertion collapses it to
+    // its end with → and then moves by arrow keys, which every control
+    // resolves against its own text.
+    var caretKeys: [CGKeyCode] = []
+    if let element = target.element, let range = plan.range {
+      select(range, in: element)
+    } else if placement == .after {
+      let step: CGKeyCode = plan.caretOffset > 0 ? 124 : 123  // → or ←
+      caretKeys = [124] + Array(repeating: step, count: abs(plan.caretOffset))
+    }
+    let valueBefore = target.element.flatMap { stringAttribute(kAXValueAttribute, from: $0) }
+    try await paste(
+      plan.payload,
+      to: target.processIdentifier,
+      caretKeys: caretKeys
+    ) {
+      // A control whose value can be read can also say whether the paste
+      // landed. One that cannot is given the benefit of the doubt.
+      guard let element = target.element, let valueBefore else { return true }
+      return stringAttribute(kAXValueAttribute, from: element) != valueBefore
+    }
+    return .paste
+  }
+
+  private static var selectionChanged: TranslationError {
+    .provider(
+      L10n.isChinese
+        ? "选中的文字已经改变，未写入任何内容。"
+        : "The selected text has changed since it was read, so nothing was written."
+    )
+  }
+
+  private struct WritePlan {
+    /// Where to write, in the control's own offsets, or nil to work from the
+    /// live selection instead.
+    var range: CFRange?
+    var payload: String
+    /// What the selection holds now, for skipping a replace that changes
+    /// nothing. Only known when the control reads its range back.
+    var replacedText: String?
+    /// For an insertion placed from the live selection: how many characters
+    /// from the selection's end it goes, negative for back.
+    var caretOffset = 0
+  }
+
+  private func writePlan(
+    for text: String,
+    placement: InsertionPlacement,
+    target: InsertionTarget
+  ) throws -> WritePlan {
+    func matches(_ text: String) -> Bool {
+      SelectionContextMatcher.normalize(text) == SelectionContextMatcher.normalize(target.selectedText)
+    }
+    // Web content is never placed by offset. Chrome counts offsets without
+    // its paragraph breaks and resolves one on a boundary to the start of the
+    // next paragraph, which put a replacement across the break and an
+    // insertion in front of the wrong text. There the live selection decides.
+    //
+    // Everywhere else, what the captured range holds now: the reader may have
+    // kept typing with the pop-up pinned, so write only where the captured
+    // text still is, never over whatever replaced it.
+    let rangeText = target.isWebContent ? nil : target.element.flatMap { element in
+      target.selectedRange.flatMap { range in
+        string(for: range, from: element)
+          ?? stringAttribute(kAXValueAttribute, from: element).map { substring($0, range: range) }
+      }
+    }
+    if let rangeText, !matches(rangeText) { throw Self.selectionChanged }
+
+    // Without a usable range the live selection is what gets written over or
+    // after, so it has to still be the captured one.
+    let usesOffsets = rangeText != nil
+    let liveText = target.element.flatMap { stringAttribute(kAXSelectedTextAttribute, from: $0) }
+    if !usesOffsets, let liveText, !matches(liveText) { throw Self.selectionChanged }
+
+    let selection = rangeText ?? liveText ?? target.selectedText
+    switch placement {
+    case .replace:
+      return WritePlan(
+        range: usesOffsets ? target.selectedRange : nil,
+        payload: WriteBackComposer.replacement(for: text, over: selection),
+        replacedText: rangeText
+      )
+    case .after:
+      let following = target.element.flatMap { element in
+        target.selectedRange.flatMap {
+          textFollowing(selection, near: $0, in: element, isWebContent: target.isWebContent)
+        }
+      }
+      let insertion = WriteBackComposer.insertion(of: text, after: selection, followedBy: following)
+      let range = target.selectedRange.map {
+        CFRange(location: $0.location + $0.length + insertion.utf16Offset, length: 0)
+      }
+      return WritePlan(
+        range: usesOffsets ? range : nil,
+        payload: insertion.text,
+        caretOffset: insertion.characterOffset
+      )
+    }
+  }
+
+  /// The character right after the selection: empty at the very end of the
+  /// text, nil when the control will not say.
+  ///
+  /// Read from the control's value, finding the selected text itself from
+  /// its reported offset onwards, rather than by asking for the range after
+  /// it. Chrome's ranges skip its paragraph breaks, so the character "after"
+  /// a paragraph there is the first letter of the next one, while its value
+  /// has the breaks and runs one offset ahead per paragraph above.
+  ///
+  /// A web editor whose value ends in nothing but line breaks is at its end:
+  /// Safari reports breaks after the last paragraph that no arrow key can
+  /// move past.
+  private func textFollowing(
+    _ selection: String,
+    near range: CFRange,
+    in element: AXUIElement,
+    isWebContent: Bool
+  ) -> String? {
+    guard !selection.isEmpty, let value = stringAttribute(kAXValueAttribute, from: element) else { return nil }
+    let text = value as NSString
+    let start = min(max(range.location, 0), text.length)
+    let found = text.range(of: selection, range: NSRange(location: start, length: text.length - start))
+    guard found.location != NSNotFound else { return nil }
+    let end = found.location + found.length
+    let rest = text.substring(from: end)
+    if rest.isEmpty || (isWebContent && rest.allSatisfy(\.isWhitespace)) { return "" }
+    return text.substring(with: NSRange(location: end, length: 1))
+  }
+
+  private func isWithinWebArea(_ element: AXUIElement) -> Bool {
+    var current: AXUIElement? = element
+    for _ in 0..<Self.maximumParentDepth * 2 {
+      guard let candidate = current else { return false }
+      if stringAttribute(kAXRoleAttribute, from: candidate) == "AXWebArea" { return true }
+      current = parent(of: candidate)
+    }
+    return false
+  }
+
+  private func isWritable(_ element: AXUIElement) -> Bool {
+    [kAXSelectedTextAttribute, kAXValueAttribute].contains { name in
+      var settable = DarwinBoolean(false)
+      return AXUIElementIsAttributeSettable(element, name as CFString, &settable) == .success
+        && settable.boolValue
+    }
+  }
+
+  /// Moves the selection to `range` unless it is already there.
+  ///
+  /// Setting a range the control already holds is not a no-op everywhere:
+  /// Chrome maps the offsets back onto the DOM and, at a paragraph boundary,
+  /// can come back with a selection that also takes the break.
+  @discardableResult
+  private func select(_ range: CFRange, in element: AXUIElement) -> Bool {
+    if let current = selectedRange(from: element),
+      current.location == range.location, current.length == range.length
+    {
+      return true
+    }
+    var range = range
+    guard let value = AXValueCreate(.cfRange, &range) else { return false }
+    return AXUIElementSetAttributeValue(
+      element, kAXSelectedTextRangeAttribute as CFString, value
+    ) == .success
+  }
+
+  private func writeThroughAccessibility(
+    _ payload: String,
+    over range: CFRange,
+    in element: AXUIElement
+  ) -> Bool {
+    var settable = DarwinBoolean(false)
+    guard
+      AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &settable)
+        == .success,
+      settable.boolValue,
+      select(range, in: element)
+    else { return false }
+    let before = stringAttribute(kAXValueAttribute, from: element)
+    guard
+      AXUIElementSetAttributeValue(
+        element, kAXSelectedTextAttribute as CFString, payload as CFString
+      ) == .success
+    else { return false }
+    // Accepting the call is not the same as acting on it.
+    guard before == nil || stringAttribute(kAXValueAttribute, from: element) != before else {
+      return false
+    }
+    select(CFRange(location: range.location + (payload as NSString).length, length: 0), in: element)
+    return true
+  }
+
+  @MainActor
+  private func bringToFront(_ application: NSRunningApplication) async -> Bool {
+    // The pop-up never activates PhraseLens, so the source is usually still
+    // the active application and only needs its key window back, which it
+    // gets when the pop-up closes. The main window did activate PhraseLens,
+    // and activation has to be handed over explicitly since macOS 14.
+    if NSWorkspace.shared.frontmostApplication?.processIdentifier != application.processIdentifier {
+      NSApp.yieldActivation(to: application)
+      application.activate(from: .current, options: [])
+    }
+    for _ in 0..<40 {
+      if NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier {
+        // Being frontmost comes a beat before having a key window again.
+        try? await Task.sleep(for: .milliseconds(80))
+        return true
+      }
+      try? await Task.sleep(for: .milliseconds(25))
+    }
+    return false
+  }
+
+  @MainActor
+  private func paste(
+    _ payload: String,
+    to processIdentifier: pid_t,
+    caretKeys: [CGKeyCode],
+    landed: @MainActor () -> Bool
+  ) async throws {
+    let pasteboard = NSPasteboard.general
+    let savedItems = pasteboardSnapshot()
+    pasteboard.clearContents()
+    let item = NSPasteboardItem()
+    item.setString(payload, forType: .string)
+    // Asks clipboard managers to leave this out of their history: it is a
+    // delivery, and the reader's own clipboard comes back below.
+    item.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+    item.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.AutoGeneratedType"))
+    pasteboard.writeObjects([item])
+    let written = pasteboard.changeCount
+
+    for key in caretKeys {
+      await postKey(key, flags: [], to: processIdentifier)
+    }
+    await postKey(KeyboardLayoutKeys.keyCode(for: "v", fallback: 9), flags: .maskCommand, to: processIdentifier)
+
+    // Applications read a paste asynchronously — Electron and web views well
+    // after the key event — so the clipboard is handed back only once they
+    // have had time to take it, and not at all if something else wrote since.
+    try? await Task.sleep(for: .milliseconds(400))
+    guard landed() else {
+      // Leave the answer on the clipboard: it is the reader's fallback now.
+      throw TranslationError.provider(
+        L10n.isChinese
+          ? "目标应用没有接受粘贴。结果已拷贝，可手动按 ⌘V 粘贴。"
+          : "The app did not accept the paste. The result is on the clipboard — press ⌘V to paste it."
+      )
+    }
+    if pasteboard.changeCount == written {
+      restorePasteboard(savedItems)
+    }
+  }
+
+  @MainActor
+  private func postKey(_ code: CGKeyCode, flags: CGEventFlags, to processIdentifier: pid_t) async {
+    let eventSource = CGEventSource(stateID: .combinedSessionState)
+    guard
+      let keyDown = CGEvent(keyboardEventSource: eventSource, virtualKey: code, keyDown: true),
+      let keyUp = CGEvent(keyboardEventSource: eventSource, virtualKey: code, keyDown: false)
+    else { return }
+    keyDown.flags = flags
+    keyUp.flags = flags
+    postCopyEvent(keyDown, to: processIdentifier)
+    try? await Task.sleep(for: .milliseconds(24))
+    postCopyEvent(keyUp, to: processIdentifier)
+    try? await Task.sleep(for: .milliseconds(24))
+  }
+
+  @MainActor
+  private func pasteboardSnapshot() -> [NSPasteboardItem] {
+    (NSPasteboard.general.pasteboardItems ?? []).map { item in
+      let copy = NSPasteboardItem()
+      for type in item.types {
+        if let data = item.data(forType: type) {
+          copy.setData(data, forType: type)
+        }
+      }
+      return copy
+    }
+  }
+
+  #if DEBUG
+  /// The target control's whole value, for the write-back probe.
+  func debugValue(of target: InsertionTarget) -> String? {
+    target.element.flatMap { stringAttribute(kAXValueAttribute, from: $0) }
+  }
+  #endif
 
   // MARK: - Clipboard anchor
 
@@ -632,20 +1048,7 @@ struct AccessibilityService: Sendable {
     }
 
     let pasteboard = NSPasteboard.general
-    let savedItems: [NSPasteboardItem]
-    if let currentItems = pasteboard.pasteboardItems {
-      savedItems = currentItems.map { item in
-        let copy = NSPasteboardItem()
-        for type in item.types {
-          if let data = item.data(forType: type) {
-            copy.setData(data, forType: type)
-          }
-        }
-        return copy
-      }
-    } else {
-      savedItems = []
-    }
+    let savedItems = pasteboardSnapshot()
 
     let clearedChangeCount = pasteboard.clearContents()
     defer {
@@ -653,9 +1056,10 @@ struct AccessibilityService: Sendable {
     }
 
     let eventSource = CGEventSource(stateID: .combinedSessionState)
+    let copyKey = KeyboardLayoutKeys.keyCode(for: "c", fallback: 8)
     guard
-      let keyDown = CGEvent(keyboardEventSource: eventSource, virtualKey: 8, keyDown: true),
-      let keyUp = CGEvent(keyboardEventSource: eventSource, virtualKey: 8, keyDown: false)
+      let keyDown = CGEvent(keyboardEventSource: eventSource, virtualKey: copyKey, keyDown: true),
+      let keyUp = CGEvent(keyboardEventSource: eventSource, virtualKey: copyKey, keyDown: false)
     else { return nil }
     keyDown.flags = .maskCommand
     keyUp.flags = .maskCommand
@@ -1145,6 +1549,137 @@ struct SelectionEvidence: Equatable, Sendable {
   /// They describe overlapping text — one contains the other. Weaker than a
   /// match, and enough to trust where on screen the selection is.
   var accessibilityOverlaps: Bool
+}
+
+/// The text a write-back puts into the source control. Pure, so the rules
+/// that decide what ends up in the reader's document can be tested without
+/// another application.
+enum WriteBackComposer {
+  static func clean(_ answer: String) -> String {
+    answer.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// Replace: the answer, wearing the whitespace the selection carried. A
+  /// triple-clicked paragraph includes its line break, and a bare answer
+  /// written over it would run the next paragraph into this one.
+  static func replacement(for answer: String, over selection: String) -> String {
+    leadingWhitespace(of: selection) + clean(answer) + trailingWhitespace(of: selection)
+  }
+
+  /// Where Insert writes an answer and what it writes there.
+  struct Insertion: Equatable {
+    var text: String
+    /// How far from the selection's end the answer goes, in characters for
+    /// the arrow keys: negative is back, positive forward.
+    var characterOffset: Int
+    /// The same distance in UTF-16 units, which accessibility offsets count.
+    var utf16Offset: Int
+  }
+
+  /// Insert: the answer after `selection`, given the text that follows it in
+  /// the document — nil when the control cannot say, empty at the very end.
+  ///
+  /// A selection that ends a line gets its answer as the next line, written
+  /// *after* the line break and ending with one of its own. Writing it before
+  /// the break with a leading one instead is what a rich-text editor turns
+  /// into an empty paragraph above the answer. A selection with more text
+  /// after it on the same line keeps that line flowing: the answer goes right
+  /// after the selected words.
+  static func insertion(of answer: String, after selection: String, followedBy next: String?) -> Insertion {
+    let body = clean(answer)
+    let trailing = trailingWhitespace(of: selection)
+    if let newline = trailing.firstIndex(where: \.isNewline) {
+      let beyond = String(trailing[trailing.index(after: newline)...])
+      return Insertion(
+        text: body + "\n",
+        characterOffset: -beyond.count,
+        utf16Offset: -(beyond as NSString).length
+      )
+    }
+    if trailing.isEmpty, let following = next?.first, following.isNewline {
+      return Insertion(
+        text: body + "\n",
+        characterOffset: 1,
+        utf16Offset: (String(following) as NSString).length
+      )
+    }
+    let continuesLine = !trailing.isEmpty || next?.isEmpty == false
+    let separator = continuesLine
+      ? (selection.contains(where: \.isNewline) || body.contains(where: \.isNewline) ? "\n" : " ")
+      : separator(after: selection, answer: body)
+    return Insertion(
+      text: separator + body,
+      characterOffset: -trailing.count,
+      utf16Offset: -(trailing as NSString).length
+    )
+  }
+
+  /// The separator when nothing is known about what follows the selection,
+  /// or the selection ends the text. A word or a phrase gets its answer
+  /// beside it. A sentence, a paragraph, or an answer that runs to several
+  /// lines gets a line of its own, which is what a bilingual draft looks
+  /// like. A selection holding a line break anywhere was made as a block —
+  /// triple-clicked or dragged across lines — and counts as a paragraph.
+  static func separator(after selection: String, answer: String) -> String {
+    let core = selection.trimmingCharacters(in: .whitespacesAndNewlines)
+    let endsSentence = core.last.map { ".!?。！？…".contains($0) } ?? false
+    let isPassage = selection.contains(where: \.isNewline) || answer.contains(where: \.isNewline)
+    return isPassage || endsSentence || core.count > 40 ? "\n" : " "
+  }
+
+  private static func leadingWhitespace(of text: String) -> String {
+    String(text.prefix(while: \.isWhitespace))
+  }
+
+  private static func trailingWhitespace(of text: String) -> String {
+    String(text.reversed().prefix(while: \.isWhitespace).reversed())
+  }
+}
+
+/// Finds the key that types a character in the current keyboard layout, for
+/// the shortcuts posted on the reader's behalf.
+///
+/// Applications match ⌘C and ⌘V by the character the key produces, so the
+/// ANSI key codes alone are ⌘J and ⌘. on Dvorak. The layout is asked with
+/// Command held, which is the state "Dvorak – QWERTY ⌘" switches on. A layout
+/// with no such key — Cyrillic, Greek — keeps the ANSI position, which is
+/// where macOS puts their Command shortcuts.
+@MainActor
+enum KeyboardLayoutKeys {
+  static func keyCode(for character: Character, fallback: CGKeyCode) -> CGKeyCode {
+    guard
+      let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+      let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+    else { return fallback }
+    let data = Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue()
+    guard let bytes = CFDataGetBytePtr(data) else { return fallback }
+    let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
+    let wanted = String(character).lowercased()
+    let commandHeld = UInt32((cmdKey >> 8) & 0xFF)
+    for code in 0..<128 {
+      var deadKeyState: UInt32 = 0
+      var length = 0
+      var characters = [UniChar](repeating: 0, count: 4)
+      let status = UCKeyTranslate(
+        layout,
+        UInt16(code),
+        UInt16(kUCKeyActionDown),
+        commandHeld,
+        UInt32(LMGetKbdType()),
+        OptionBits(kUCKeyTranslateNoDeadKeysMask),
+        &deadKeyState,
+        characters.count,
+        &length,
+        &characters
+      )
+      if status == noErr, length > 0,
+        String(utf16CodeUnits: characters, count: length).lowercased() == wanted
+      {
+        return CGKeyCode(code)
+      }
+    }
+    return fallback
+  }
 }
 
 enum SelectionEvidenceResolver {

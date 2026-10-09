@@ -90,6 +90,8 @@ enum DictionarySelfTestRunner {
       check(absent.supportsPair && absent.matches.isEmpty, "Absent word conflated with unsupported pair")
     } catch { failures.append("Dictionary check threw: \(error)") }
     failures += await appIntegration()
+    failures += await ConnectionSelfTestRunner.run()
+    failures += await ActionsSelfTestRunner.run()
     return failures
   }
 }
@@ -135,6 +137,15 @@ extension DictionarySelfTestRunner {
     let late = DictionaryLateFixtureProvider()
     let model = AppModel(settingsStore: settings, library: library,
       dictionaryRegistry: DictionaryRegistry(providers: [late]), integrateWithSystem: false)
+    // The offline dictionary belongs to Definition; Translate only translates.
+    let definitionID = TranslationAction.builtIn(for: .definition).id
+    model.inputText = "bonjour"
+    model.translate()
+    if model.dictionaryAvailable || model.isLookingUpDictionary || model.selectedResultTab != .translation {
+      failures.append("Translate exposed the offline dictionary")
+    }
+    model.stopTranslation()
+    model.selectedActionID = definitionID
     model.inputText = "old"
     model.inputSource = .selection
     model.setDictionarySource("fr")
@@ -242,7 +253,7 @@ extension DictionarySelfTestRunner {
     if model.dictionaryAvailable || model.isLookingUpDictionary { failures.append("Disabled dictionary exposed lookup") }
     settings.settings.dictionaryEnabled = true
     model.clear()
-    var custom = TranslationAction.builtIns[0]
+    var custom = TranslationAction.builtIn(for: .definition)
     custom.id = UUID()
     model.customActions = [custom]
     model.selectedActionID = custom.id
@@ -255,6 +266,7 @@ extension DictionarySelfTestRunner {
     settings.settings.dictionaryDefinitionLanguage = "zh"
     settings.settings.sourceLanguage = .auto
     let lexical = AppModel(settingsStore: settings, library: LibraryStore(directory: directory), integrateWithSystem: false)
+    lexical.selectedActionID = definitionID
     lexical.inputText = "食べました"
     lexical.translate()
     for _ in 0..<500 {
@@ -291,6 +303,7 @@ extension DictionarySelfTestRunner {
     let pendingProvider = DictionaryLateFixtureProvider()
     let pending = AppModel(settingsStore: settings, library: library,
       dictionaryRegistry: DictionaryRegistry(providers: [pendingProvider]), integrateWithSystem: false)
+    pending.selectedActionID = definitionID
     pending.inputText = "old"
     pending.setDictionarySource("fr")
     while !(await pendingProvider.started) { await Task.yield() }

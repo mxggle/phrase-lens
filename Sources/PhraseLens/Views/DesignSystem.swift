@@ -37,16 +37,23 @@ extension Color {
 /// rather than to a raw color, so a change to the neutral ramp moves the whole
 /// interface at once and Light, Dark, and Increased Contrast stay in step.
 ///
-/// The ramp is deliberately achromatic. Hue is spent only where it carries
-/// meaning: destructive commands, and the three live-state colors.
+/// The ramp is a near-neutral with a faint warm cast, taken from the cream and
+/// charcoal of the app icon. Hue is spent only where it carries meaning: the
+/// brand lime on the one command that runs the view's work, destructive
+/// commands, and the live-state colors.
 struct AppPalette: Equatable, Sendable {
-  /// Window canvas, behind every pane.
+  /// The window frame: sidebar, top bar, and the gutter around the content
+  /// panel. Everything the user works *in* sits on `background` instead.
+  let canvas: Color
+  /// The inset content panel, behind every section's own layout.
   let background: Color
   /// Raised content surface: cards, editors, result panes.
   let surface: Color
   /// A surface sitting on top of another surface — popovers, active tabs.
   let surfaceElevated: Color
-  /// Navigation chrome: sidebar and top bar.
+  /// Bars that belong to a pane inside the content panel. Matches the panel,
+  /// so a pane's header and footer read as part of the pane rather than as
+  /// bands of chrome; hairlines and spacing carry the separation instead.
   let chrome: Color
   /// Low-contrast fill for inline groupings and tracks.
   let muted: Color
@@ -79,6 +86,18 @@ struct AppPalette: Equatable, Sendable {
   let primaryHover: Color
   let primaryForeground: Color
 
+  /// The brand lime. A fill for the single command that runs a view's work —
+  /// Translate, Send — and nothing else, so it always marks where to go next.
+  let brand: Color
+  let brandHover: Color
+  /// Glyphs and text on a `brand` fill.
+  let brandForeground: Color
+  /// The brand hue tuned to read as a glyph or text on `background`: live
+  /// state, the armed tab's mark, links.
+  let accent: Color
+  /// A wash of the brand hue for highlights and selected chips.
+  let accentSoft: Color
+
   let destructive: Color
   let destructiveForeground: Color
   let destructiveFill: Color
@@ -94,56 +113,68 @@ struct AppPalette: Equatable, Sendable {
 
 extension AppPalette {
   static let light = AppPalette(
-    background: Color(hex: 0xF7F7F8),
+    canvas: Color(hex: 0xF2F2EF),
+    background: Color(hex: 0xFFFFFF),
     surface: Color(hex: 0xFFFFFF),
     surfaceElevated: Color(hex: 0xFFFFFF),
-    chrome: Color(hex: 0xFAFAFA),
-    muted: Color(hex: 0xF4F4F5),
-    mutedHover: Color(hex: 0xECECEE),
-    accentFill: Color(hex: 0xE4E4E7),
-    foreground: Color(hex: 0x09090B),
-    secondaryForeground: Color(hex: 0x3F3F46),
-    mutedForeground: Color(hex: 0x71717A),
-    faintForeground: Color(hex: 0x85858E),
-    border: Color(hex: 0xE4E4E7),
-    borderStrong: Color(hex: 0xD4D4D8),
-    ring: Color(hex: 0x09090B, opacity: 0.22),
-    primary: Color(hex: 0x18181B),
-    primaryHover: Color(hex: 0x27272A),
-    primaryForeground: Color(hex: 0xFAFAFA),
+    chrome: Color(hex: 0xFFFFFF),
+    muted: Color(hex: 0xF3F3F0),
+    mutedHover: Color(hex: 0xEAEAE6),
+    accentFill: Color(hex: 0xE6E6E1),
+    foreground: Color(hex: 0x1A1A18),
+    secondaryForeground: Color(hex: 0x3D3D39),
+    mutedForeground: Color(hex: 0x6B6B65),
+    faintForeground: Color(hex: 0x8C8C85),
+    border: Color(hex: 0xE6E6E1),
+    borderStrong: Color(hex: 0xD3D3CD),
+    ring: Color(hex: 0x1A1A18, opacity: 0.13),
+    primary: Color(hex: 0x1F1F1D),
+    primaryHover: Color(hex: 0x353532),
+    primaryForeground: Color(hex: 0xFAFAF7),
+    brand: Color(hex: 0xC6EE36),
+    brandHover: Color(hex: 0xB9E21F),
+    brandForeground: Color(hex: 0x1A1A18),
+    accent: Color(hex: 0x4D7C0F),
+    accentSoft: Color(hex: 0xC6EE36, opacity: 0.22),
     destructive: Color(hex: 0xDC2626),
     destructiveForeground: Color(hex: 0xFEF2F2),
-    destructiveFill: Color(hex: 0xDC2626, opacity: 0.10),
-    success: Color(hex: 0x16A34A),
-    warning: Color(hex: 0xD97706),
-    shadow: Color(hex: 0x09090B, opacity: 0.06),
-    shadowStrong: Color(hex: 0x09090B, opacity: 0.14)
+    destructiveFill: Color(hex: 0xDC2626, opacity: 0.09),
+    success: Color(hex: 0x3F8A12),
+    warning: Color(hex: 0xC2680A),
+    shadow: Color(hex: 0x1A1A18, opacity: 0.05),
+    shadowStrong: Color(hex: 0x1A1A18, opacity: 0.14)
   )
 
   static let dark = AppPalette(
-    background: Color(hex: 0x09090B),
-    surface: Color(hex: 0x131316),
-    surfaceElevated: Color(hex: 0x232329),
-    chrome: Color(hex: 0x0C0C0E),
-    muted: Color(hex: 0x1C1C20),
-    mutedHover: Color(hex: 0x26262B),
-    accentFill: Color(hex: 0x2A2A30),
-    foreground: Color(hex: 0xFAFAFA),
-    secondaryForeground: Color(hex: 0xD4D4D8),
-    mutedForeground: Color(hex: 0x9B9BA3),
-    faintForeground: Color(hex: 0x6B6B73),
-    border: Color(hex: 0x27272B),
-    borderStrong: Color(hex: 0x3A3A41),
-    ring: Color(hex: 0xFAFAFA, opacity: 0.28),
-    primary: Color(hex: 0xFAFAFA),
-    primaryHover: Color(hex: 0xE4E4E7),
-    primaryForeground: Color(hex: 0x09090B),
+    canvas: Color(hex: 0x0D0D0C),
+    background: Color(hex: 0x171716),
+    surface: Color(hex: 0x1C1C1B),
+    surfaceElevated: Color(hex: 0x252523),
+    chrome: Color(hex: 0x171716),
+    muted: Color(hex: 0x232321),
+    mutedHover: Color(hex: 0x2C2C2A),
+    accentFill: Color(hex: 0x30302D),
+    foreground: Color(hex: 0xEDEDE8),
+    secondaryForeground: Color(hex: 0xCBCBC4),
+    mutedForeground: Color(hex: 0x9C9C95),
+    faintForeground: Color(hex: 0x6E6E68),
+    border: Color(hex: 0x2A2A28),
+    borderStrong: Color(hex: 0x3B3B38),
+    ring: Color(hex: 0xEDEDE8, opacity: 0.20),
+    primary: Color(hex: 0xEDEDE8),
+    primaryHover: Color(hex: 0xD7D7D1),
+    primaryForeground: Color(hex: 0x141413),
+    brand: Color(hex: 0xC6EE36),
+    brandHover: Color(hex: 0xD3F562),
+    brandForeground: Color(hex: 0x141413),
+    accent: Color(hex: 0xC6EE36),
+    accentSoft: Color(hex: 0xC6EE36, opacity: 0.12),
     destructive: Color(hex: 0xF87171),
     destructiveForeground: Color(hex: 0x1F0A0A),
-    destructiveFill: Color(hex: 0xF87171, opacity: 0.14),
-    success: Color(hex: 0x4ADE80),
-    warning: Color(hex: 0xFBBF24),
-    shadow: Color(hex: 0x000000, opacity: 0.34),
+    destructiveFill: Color(hex: 0xF87171, opacity: 0.13),
+    success: Color(hex: 0x9BD34A),
+    warning: Color(hex: 0xF5B942),
+    shadow: Color(hex: 0x000000, opacity: 0.30),
     shadowStrong: Color(hex: 0x000000, opacity: 0.55)
   )
 
@@ -151,54 +182,66 @@ extension AppPalette {
   /// ramp. Surfaces stay put, so layout and weight do not shift with the
   /// setting — only legibility does.
   static let lightHighContrast = AppPalette(
-    background: Color(hex: 0xF2F2F3),
+    canvas: Color(hex: 0xE9E9E5),
+    background: Color(hex: 0xFFFFFF),
     surface: Color(hex: 0xFFFFFF),
     surfaceElevated: Color(hex: 0xFFFFFF),
-    chrome: Color(hex: 0xF7F7F8),
-    muted: Color(hex: 0xEDEDEF),
-    mutedHover: Color(hex: 0xE1E1E4),
-    accentFill: Color(hex: 0xD4D4D8),
+    chrome: Color(hex: 0xFFFFFF),
+    muted: Color(hex: 0xECECE8),
+    mutedHover: Color(hex: 0xE0E0DB),
+    accentFill: Color(hex: 0xD3D3CD),
     foreground: Color(hex: 0x000000),
-    secondaryForeground: Color(hex: 0x27272A),
-    mutedForeground: Color(hex: 0x52525B),
-    faintForeground: Color(hex: 0x71717A),
-    border: Color(hex: 0xC4C4CA),
-    borderStrong: Color(hex: 0x9F9FA8),
-    ring: Color(hex: 0x000000, opacity: 0.45),
+    secondaryForeground: Color(hex: 0x262624),
+    mutedForeground: Color(hex: 0x4F4F4A),
+    faintForeground: Color(hex: 0x6E6E68),
+    border: Color(hex: 0xC2C2BB),
+    borderStrong: Color(hex: 0x9C9C94),
+    ring: Color(hex: 0x000000, opacity: 0.35),
     primary: Color(hex: 0x000000),
-    primaryHover: Color(hex: 0x18181B),
+    primaryHover: Color(hex: 0x1F1F1D),
     primaryForeground: Color(hex: 0xFFFFFF),
+    brand: Color(hex: 0xB4E01C),
+    brandHover: Color(hex: 0xA5D00F),
+    brandForeground: Color(hex: 0x000000),
+    accent: Color(hex: 0x3F6212),
+    accentSoft: Color(hex: 0xB4E01C, opacity: 0.30),
     destructive: Color(hex: 0xB91C1C),
     destructiveForeground: Color(hex: 0xFFFFFF),
     destructiveFill: Color(hex: 0xB91C1C, opacity: 0.14),
-    success: Color(hex: 0x15803D),
-    warning: Color(hex: 0xB45309),
-    shadow: Color(hex: 0x09090B, opacity: 0.10),
-    shadowStrong: Color(hex: 0x09090B, opacity: 0.20)
+    success: Color(hex: 0x2F6B0C),
+    warning: Color(hex: 0xA14F06),
+    shadow: Color(hex: 0x000000, opacity: 0.10),
+    shadowStrong: Color(hex: 0x000000, opacity: 0.22)
   )
 
   static let darkHighContrast = AppPalette(
-    background: Color(hex: 0x000000),
-    surface: Color(hex: 0x141417),
-    surfaceElevated: Color(hex: 0x1F1F24),
-    chrome: Color(hex: 0x08080A),
-    muted: Color(hex: 0x1F1F24),
-    mutedHover: Color(hex: 0x2C2C33),
-    accentFill: Color(hex: 0x35353D),
+    canvas: Color(hex: 0x000000),
+    background: Color(hex: 0x141413),
+    surface: Color(hex: 0x1A1A19),
+    surfaceElevated: Color(hex: 0x242422),
+    chrome: Color(hex: 0x141413),
+    muted: Color(hex: 0x252523),
+    mutedHover: Color(hex: 0x31312E),
+    accentFill: Color(hex: 0x3A3A36),
     foreground: Color(hex: 0xFFFFFF),
-    secondaryForeground: Color(hex: 0xE4E4E7),
-    mutedForeground: Color(hex: 0xB4B4BC),
-    faintForeground: Color(hex: 0x8A8A93),
-    border: Color(hex: 0x3C3C44),
-    borderStrong: Color(hex: 0x57575F),
-    ring: Color(hex: 0xFFFFFF, opacity: 0.5),
+    secondaryForeground: Color(hex: 0xE6E6E1),
+    mutedForeground: Color(hex: 0xB8B8B0),
+    faintForeground: Color(hex: 0x8E8E87),
+    border: Color(hex: 0x42423E),
+    borderStrong: Color(hex: 0x5C5C57),
+    ring: Color(hex: 0xFFFFFF, opacity: 0.45),
     primary: Color(hex: 0xFFFFFF),
-    primaryHover: Color(hex: 0xE4E4E7),
+    primaryHover: Color(hex: 0xE6E6E1),
     primaryForeground: Color(hex: 0x000000),
+    brand: Color(hex: 0xD3F562),
+    brandHover: Color(hex: 0xE0F98E),
+    brandForeground: Color(hex: 0x000000),
+    accent: Color(hex: 0xD3F562),
+    accentSoft: Color(hex: 0xD3F562, opacity: 0.18),
     destructive: Color(hex: 0xFCA5A5),
     destructiveForeground: Color(hex: 0x000000),
     destructiveFill: Color(hex: 0xFCA5A5, opacity: 0.18),
-    success: Color(hex: 0x86EFAC),
+    success: Color(hex: 0xB5E67A),
     warning: Color(hex: 0xFCD34D),
     shadow: Color(hex: 0x000000, opacity: 0.5),
     shadowStrong: Color(hex: 0x000000, opacity: 0.7)
@@ -236,8 +279,8 @@ enum AppRadius {
   static let sm: CGFloat = 6
   static let md: CGFloat = 8
   static let lg: CGFloat = 10
-  static let xl: CGFloat = 14
-  static let xxl: CGFloat = 18
+  static let xl: CGFloat = 12
+  static let xxl: CGFloat = 16
   static let pill: CGFloat = 999
 }
 
@@ -245,8 +288,8 @@ enum AppRadius {
 /// `.caption`) because the interface sets its own density, and the system
 /// scale steps too far between adjacent roles at this size.
 enum AppFont {
-  static let display = Font.system(size: 20, weight: .semibold)
-  static let title = Font.system(size: 16, weight: .semibold)
+  static let display = Font.system(size: 22, weight: .semibold)
+  static let title = Font.system(size: 15, weight: .semibold)
   static let heading = Font.system(size: 13, weight: .semibold)
   static let body = Font.system(size: 13)
   static let bodyMedium = Font.system(size: 13, weight: .medium)
@@ -271,15 +314,17 @@ enum AppMetrics {
   /// Height of the window-wide status strip.
   static let statusBarHeight: CGFloat = 28
 
-  /// Vertical space the window's traffic lights need at the top of the sidebar.
-  /// The window has no title bar of its own, so the sidebar owns that gap.
-  static let trafficLightInset: CGFloat = 38
+  /// Gutter between the window frame and the inset content panel.
+  static let panelInset: CGFloat = 8
 
   static let windowMinWidth: CGFloat = 560
   static let windowMinHeight: CGFloat = 460
 
   static let sidebarWidth: CGFloat = 236
-  static let sidebarRailWidth: CGFloat = 64
+  /// Wide enough to hold the traffic lights, so the rail's icons and the
+  /// lights share one centre line instead of the lights spilling into the
+  /// top bar.
+  static let sidebarRailWidth: CGFloat = 76
 
   /// Smallest usable width for one half of the translator split.
   static let paneMinWidth: CGFloat = 260
@@ -402,6 +447,9 @@ struct ThemedContainer<Content: View>: View {
     let palette = AppPalette.resolve(colorScheme, contrast: contrast)
     content
       .environment(\.palette, palette)
+      // Every on/off setting is a switch. A bare `Toggle` would otherwise fall
+      // back to the system checkbox, which belongs to a different ramp.
+      .toggleStyle(AppSwitchStyle())
       .tint(palette.foreground)
       .foregroundStyle(palette.foreground)
       .font(AppFont.body)

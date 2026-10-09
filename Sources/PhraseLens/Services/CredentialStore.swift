@@ -103,6 +103,42 @@ final class CredentialStore: @unchecked Sendable {
     }
   }
 
+  func apiKey(for connectionID: UUID) -> String {
+    lock.lock(); defer { lock.unlock() }
+    return loadedPayload().apiKeys[connectionID.uuidString] ?? ""
+  }
+
+  func oauthCredentials(for connectionID: UUID) -> OAuthCredentials? {
+    lock.lock(); defer { lock.unlock() }
+    return loadedPayload().oauth[connectionID.uuidString]
+  }
+
+  func setAPIKey(_ value: String, for connectionID: UUID) throws {
+    try mutate { $0.apiKeys[connectionID.uuidString] = value.trimmingCharacters(in: .whitespacesAndNewlines) }
+  }
+
+  func setOAuthCredentials(_ value: OAuthCredentials?, for connectionID: UUID) throws {
+    try mutate { $0.oauth[connectionID.uuidString] = value }
+  }
+
+  /// Copies only the app-owned store; the legacy Keychain is never read here.
+  func migrateCredentials(for provider: ProviderKind, to connectionID: UUID) throws {
+    try migrateCredentials(to: [AIConnection(id: connectionID, name: provider.rawValue, configuration: ProviderConfiguration(provider: provider))])
+  }
+
+  func migrateCredentials(to connections: [AIConnection]) throws {
+    lock.lock(); defer { lock.unlock() }
+    var source = try read()
+    for connection in connections {
+      let id = connection.id.uuidString
+      let provider = connection.configuration.provider.rawValue
+      if source.apiKeys[id] == nil { source.apiKeys[id] = source.apiKeys[provider] }
+      if source.oauth[id] == nil { source.oauth[id] = source.oauth[provider] }
+    }
+    try write(source)
+    payload = source
+  }
+
   // MARK: - Legacy Keychain migration
 
   enum LegacyImport {
@@ -195,7 +231,7 @@ final class CredentialStore: @unchecked Sendable {
   private func read() throws -> Payload {
     guard FileManager.default.fileExists(atPath: fileURL.path) else { return Payload() }
     let envelope = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: fileURL))
-    guard envelope.version == Self.currentVersion else { return Payload() }
+    guard envelope.version == Self.currentVersion else { throw CredentialStoreError.unsupportedVersion }
     let box = try AES.GCM.SealedBox(combined: envelope.sealed)
     let opened = try AES.GCM.open(box, using: encryptionKey(salt: envelope.salt))
     return try JSONDecoder.credentials.decode(Payload.self, from: opened)
@@ -264,9 +300,11 @@ final class CredentialStore: @unchecked Sendable {
 
 enum CredentialStoreError: LocalizedError {
   case sealFailed
+  case unsupportedVersion
 
   var errorDescription: String? {
     switch self {
+    case .unsupportedVersion: L10n.isChinese ? "凭据文件版本不受支持，原文件已保留。" : "The credential file version is unsupported; the original file was preserved."
     case .sealFailed: L10n.isChinese ? "无法加密凭据文件。" : "The credential file could not be encrypted."
     }
   }

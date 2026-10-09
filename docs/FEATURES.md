@@ -14,6 +14,7 @@ This file maps the original desktop behaviors to their native implementation.
 | Selection pop-up | Compact translation panel near the selected text, with its own compact action tab strip and a pin that keeps it open when you click elsewhere |
 | Screenshot OCR | Interactive `screencapture` region plus Vision recognition |
 | Writing replacement | Accessibility read, streaming translation, and focused-control replacement |
+| Result buttons | Per-action Copy, Replace, and Insert with a chosen primary button; Replace and Insert write back to the selection's own app through Accessibility or a verified paste — [design](result-commands.md) |
 | TTS | `AVSpeechSynthesizer` with source-text autoplay, manual source and result playback in each pane's own language, and cancellation |
 | Pronunciation readings | `PronunciationGuide` per language, applied by `PromptBuilder` to the looked-up term and to short translations |
 | History | Atomic JSON storage, search, restore, favorites, delete |

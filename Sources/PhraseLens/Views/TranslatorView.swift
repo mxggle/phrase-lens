@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct TranslatorView: View {
@@ -31,45 +32,43 @@ struct TranslatorView: View {
   }
 
   var body: some View {
-    VStack(spacing: AppSpacing.md) {
-      if !settingsStore.hasBasicProviderConfiguration {
-        HStack(spacing: AppSpacing.sm) {
-          Image(systemName: "exclamationmark.circle")
-            .foregroundStyle(palette.warning)
-          Text(L10n.isChinese ? "连接服务商以使用 AI 翻译。离线词典现已就绪。" : "Connect a provider to use AI translation. Offline dictionary lookup is available now.")
-            .font(AppFont.caption)
-            .foregroundStyle(palette.secondaryForeground)
-            .frame(maxWidth: .infinity, alignment: .leading)
-          Button(L10n.isChinese ? "配置服务商" : "Set up provider") {
-            SettingsNavigation.show(.provider) { openSettings() }
+    VStack(spacing: 0) {
+      if model.visibleActions.isEmpty {
+        NoActionsView()
+      } else {
+        if let action = model.selectedAction, !settingsStore.isConfigured(action) {
+          HStack(spacing: AppSpacing.sm) {
+            Image(systemName: "exclamationmark.circle.fill")
+              .font(.system(size: 12))
+              .foregroundStyle(palette.warning)
+            Text(L10n.isChinese ? "连接服务商以使用 AI 翻译。离线词典现已就绪。" : "Connect a provider to use AI translation. Offline dictionary lookup is available now.")
+              .font(AppFont.caption)
+              .foregroundStyle(palette.secondaryForeground)
+              .frame(maxWidth: .infinity, alignment: .leading)
+            Button(L10n.isChinese ? "配置服务商" : "Set up provider") {
+              SettingsNavigation.show(.provider) { openSettings() }
+            }
+            .appButton(.outline, size: .xs)
           }
-          .appButton(.outline, size: .sm)
+          .padding(.horizontal, AppSpacing.lg)
+          .padding(.vertical, AppSpacing.sm)
+          .background(palette.warning.opacity(0.07))
+          Hairline()
         }
-        .padding(.horizontal, AppSpacing.md)
-        .padding(.vertical, AppSpacing.sm)
-        .cardSurface(palette)
-      }
-      ResizableSplit(
-        fraction: $splitFraction,
-        leadingMin: AppMetrics.paneMinWidth,
-        trailingMin: AppMetrics.paneMinWidth,
-        // The split sits inside the section's horizontal padding, so its own
-        // breakpoint has to be narrower by that much for the panes to stack at
-        // the same window width that turns the section compact.
-        stacksBelow: AppBreakpoints.regular - 2 * AppSpacing.lg
-      ) {
-        sourcePane
-          .padding(.trailing, layoutWidth.isCompact ? 0 : AppSpacing.xs)
-          .padding(.bottom, layoutWidth.isCompact ? AppSpacing.xs : 0)
-      } trailing: {
-        resultPane
-          .padding(.leading, layoutWidth.isCompact ? 0 : AppSpacing.xs)
-          .padding(.top, layoutWidth.isCompact ? AppSpacing.xs : 0)
+        // The two panes share the content panel and one hairline between them,
+        // the way a sheet of paper is folded rather than two cards laid side by
+        // side: the source and its translation are one piece of work.
+        ResizableSplit(
+          fraction: $splitFraction,
+          leadingMin: AppMetrics.paneMinWidth,
+          trailingMin: AppMetrics.paneMinWidth
+        ) {
+          sourcePane
+        } trailing: {
+          resultPane
+        }
       }
     }
-    .padding(.horizontal, AppSpacing.lg)
-    .padding(.top, AppSpacing.md)
-    .padding(.bottom, AppSpacing.md)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(palette.background)
     .onChange(of: model.selectedResultTab) { _, _ in
@@ -122,7 +121,7 @@ struct TranslatorView: View {
           selection: $settingsStore.settings.sourceLanguage,
           options: model.visibleSourceLanguages,
           label: { $0.shortDisplayName },
-          symbol: "globe"
+          isGhost: true
         )
         swapButton
       } trailing: {
@@ -161,7 +160,8 @@ struct TranslatorView: View {
         Text("\(model.inputText.count)")
           .font(AppFont.caption)
           .monospacedDigit()
-          .foregroundStyle(palette.mutedForeground)
+          .foregroundStyle(palette.faintForeground)
+          .padding(.trailing, AppSpacing.xs)
           .accessibilityLabel(L10n.isChinese ? "原文共 \(model.inputText.count) 个字符" : "\(model.inputText.count) characters in the source text")
 
         // The run command sits at the foot of the text it runs on, where the
@@ -191,10 +191,25 @@ struct TranslatorView: View {
         .scrollContentBackground(.hidden)
         .textEditorOverlayScrollers()
         .focused($inputFocused)
+        .onKeyPress(keys: [.return], phases: .down) { press in
+          guard press.modifiers.isEmpty else { return .ignored }
+          // Let the input method confirm its marked text or candidate first.
+          guard (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true else {
+            return .ignored
+          }
+          if model.isTranslating {
+            model.stopTranslation()
+          } else if !model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            model.translate()
+          }
+          return .handled
+        }
         .padding(.horizontal, AppMetrics.readingInset - 5)
         .padding(.vertical, AppMetrics.readingInset - 8)
 
-      if model.inputText.isEmpty {
+      // During IME composition the editor shows marked text before its binding
+      // changes. Hiding the hint on focus keeps it from covering those glyphs.
+      if model.inputText.isEmpty && !inputFocused {
         Text(L10n.isChinese ? "在此输入或粘贴文本…" : "Type or paste text here.")
           .font(.system(size: settingsStore.settings.fontSize))
           .foregroundStyle(palette.mutedForeground)
@@ -211,47 +226,94 @@ struct TranslatorView: View {
 
   private var resultPane: some View {
     PaneContainer {
-      ResultTabBar {
-        if model.dictionaryVisible {
-          IconButton(title: didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝词条释义与出处" : "Copy dictionary entries with sources"), symbol: didCopy ? "checkmark" : "doc.on.doc", isDisabled: !model.canCopyResult) {
-            copyOutput()
-          }
-        }
-      }
-      // In dictionary mode the tab row already carries the language pair and
-      // the copy command, so a second strip saying "Offline" would only push
-      // the entries down.
-      if !model.dictionaryVisible {
-        PaneHeader(label: L10n.isChinese ? "译文与结果" : "Result") {
-          AppSelect(
-            title: L10n.isChinese ? "目标语言" : "Target language",
-            selection: $settingsStore.settings.targetLanguage,
-            options: model.visibleTargetLanguages,
-            label: { $0.shortDisplayName }
-          )
-          if model.isTranslating {
-            Spinner()
-              .transition(.opacity)
-          }
-        } trailing: {
-          resultCommands
-        }
-      }
+      resultHeader
 
       resultBody
 
       // The composer belongs to the result, not to the window: it appears
       // once there is an answer to ask about and goes away with it.
       //
-      // It is also the pane's only bottom strip. Collect and Copy used to sit
-      // in a command bar beneath it, which put three stacked rows of chrome —
-      // chips, field, buttons — under every answer. They are commands *on* the
-      // result, so they read just as well from the pane's own strip, and the
-      // question keeps the foot of the pane to itself.
+      // It is also the pane's only bottom strip, and it is one row high.
+      // Collect and Copy live in the header, and the suggested questions sit
+      // at the end of the answer, where a reader arrives once they have read
+      // it — so the foot of the pane never stacks rows of chrome under the
+      // text it is meant to leave room for.
       if !model.dictionaryVisible && !model.outputText.isEmpty {
         FollowUpComposer()
           .transition(.opacity)
       }
+    }
+  }
+
+  /// One strip for the whole result: which result it is, the language it is
+  /// in, and the commands on it. It used to be two — the Dictionary/AI switch
+  /// above a language-and-commands strip — which spent a second band of
+  /// chrome on a row that was mostly empty. The switch shortens its labels,
+  /// then draws glyphs, before the strip gives up and stacks.
+  @ViewBuilder
+  private var resultHeader: some View {
+    if model.dictionaryAvailable {
+      ViewThatFits(in: .horizontal) {
+        combinedResultHeader(tabLabels: .full)
+        combinedResultHeader(tabLabels: .short)
+        combinedResultHeader(tabLabels: .icon)
+        VStack(spacing: 0) {
+          ResultTabBar {
+            if model.dictionaryVisible { dictionaryCopyButton }
+          }
+          if !model.dictionaryVisible {
+            PaneHeader(label: L10n.isChinese ? "译文与结果" : "Result") {
+              resultLanguageControls
+            } trailing: {
+              resultCommands
+            }
+          }
+        }
+      }
+    } else {
+      PaneHeader(label: L10n.isChinese ? "译文与结果" : "Result") {
+        resultLanguageControls
+      } trailing: {
+        resultCommands
+      }
+    }
+  }
+
+  private func combinedResultHeader(tabLabels: ResultTypePicker.LabelStyle) -> some View {
+    PaneHeader(label: L10n.isChinese ? "译文与结果" : "Result") {
+      ResultTypePicker(labels: tabLabels)
+      if model.dictionaryVisible {
+        DictionaryLanguagesButton()
+      } else {
+        resultLanguageControls
+      }
+    } trailing: {
+      if model.dictionaryVisible {
+        dictionaryCopyButton
+      } else {
+        resultCommands
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var resultLanguageControls: some View {
+    AppSelect(
+      title: L10n.isChinese ? "目标语言" : "Target language",
+      selection: $settingsStore.settings.targetLanguage,
+      options: model.visibleTargetLanguages,
+      label: { $0.shortDisplayName },
+      isGhost: true
+    )
+    if model.isTranslating {
+      Spinner(size: 12, isLive: true)
+        .transition(.opacity)
+    }
+  }
+
+  private var dictionaryCopyButton: some View {
+    IconButton(title: didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝词条释义与出处" : "Copy dictionary entries with sources"), symbol: didCopy ? "checkmark" : "doc.on.doc", isDisabled: !model.canCopyResult) {
+      copyOutput()
     }
   }
 
@@ -285,6 +347,18 @@ struct TranslatorView: View {
       }
       .accessibilityLabel(L10n.isChinese ? "朗读译文" : "Speak translation")
 
+      // Replace and Insert, when the action offers them and the input was
+      // selected in an editable field elsewhere. Copy keeps its own place.
+      ForEach(model.offeredResultCommands.filter(\.writesToSource)) { command in
+        IconButton(
+          title: command.help(sourceApplication: model.writableSource?.applicationName),
+          symbol: command.symbol,
+          isDisabled: !model.canPerform(command)
+        ) {
+          model.perform(command)
+        }
+      }
+
       IconButton(
         title: didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝译文 (⇧⌘C)" : "Copy the translation (⇧⌘C)"),
         symbol: didCopy ? "checkmark" : "doc.on.doc",
@@ -306,7 +380,7 @@ struct TranslatorView: View {
         title: model.isTranslating ? (L10n.isChinese ? "正在翻译…" : "Translating…") : model.isLookingUpDictionary ? (L10n.isChinese ? "正在查词…" : "Checking word…") : (L10n.isChinese ? "暂无翻译内容" : "No translation yet"),
         message: model.inputText.isEmpty
           ? (L10n.isChinese ? "在左侧输入文本，或在其他应用中划选文字后按下 ⌥F。" : "Enter text on the left, or press ⌥F while text is selected in another app.")
-          : (L10n.isChinese ? "按下 ⌘↩ 开始翻译。" : "Press ⌘↩ to translate.")
+          : (L10n.isChinese ? "按下 ↩ 开始翻译。" : "Press Enter to translate.")
       )
       .transition(.opacity)
     } else {
@@ -330,6 +404,7 @@ struct TranslatorView: View {
           }
 
           FollowUpThread()
+          FollowUpSuggestionList()
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(AppMetrics.readingInset)
@@ -350,7 +425,7 @@ struct TranslatorView: View {
     if !idle || model.isTranslating {
       HStack(spacing: AppSpacing.xs + 2) {
         StatusDot(
-          color: model.isTranslating ? palette.foreground : palette.faintForeground,
+          color: model.isTranslating ? palette.accent : palette.faintForeground,
           isActive: model.isTranslating
         )
         Text(model.statusMessage)
@@ -379,10 +454,9 @@ struct TranslatorView: View {
 
 // MARK: - Pane chrome
 
-/// A content pane: one card holding a header, a body, and a command footer.
-///
-/// The card is the unit of content in this interface. Nothing floats on the
-/// canvas directly, so every region has an edge and the eye can find it.
+/// A content pane: a header, a body, and a command footer, laid directly on
+/// the content panel. The panel already gives the work an edge; a card per
+/// pane inside it only added a second frame around the same text.
 struct PaneContainer<Content: View>: View {
   @ViewBuilder var content: Content
 
@@ -393,7 +467,7 @@ struct PaneContainer<Content: View>: View {
       content
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .cardSurface(palette)
+    .background(palette.background)
   }
 }
 
@@ -413,39 +487,41 @@ struct PaneHeader<Leading: View, Trailing: View>: View {
   @Environment(\.palette) private var palette
 
   var body: some View {
-    VStack(spacing: 0) {
-      HStack(spacing: AppSpacing.xs + 2) {
-        leading
-        Spacer(minLength: AppSpacing.sm)
-        trailing
-      }
-      .padding(.horizontal, AppSpacing.sm + 2)
-      .frame(height: AppMetrics.paneHeaderHeight)
-      .background(palette.chrome)
-      Hairline()
+    HStack(spacing: AppSpacing.xs + 2) {
+      leading
+      Spacer(minLength: AppSpacing.sm)
+      trailing
     }
+    // A ghost select pads its label by 9pt, so this inset lands the language
+    // name on the same left edge as the text in the pane's body.
+    .padding(.leading, AppMetrics.readingInset - (AppSpacing.sm + 1))
+    .padding(.trailing, AppSpacing.sm + 2)
+    .frame(height: AppMetrics.paneHeaderHeight)
+    .background(palette.chrome)
     .accessibilityElement(children: .contain)
     .accessibilityLabel(label)
   }
 }
 
-/// A pane's command strip, on a muted fill so it separates from the content
-/// above it without a heavy rule.
+/// A pane's command strip. It carries no rule of its own: the commands sit
+/// at the foot of the text they act on, the way a composer's toolbar does.
 struct PaneFooter<Content: View>: View {
   @ViewBuilder var content: Content
 
   @Environment(\.palette) private var palette
 
   var body: some View {
-    VStack(spacing: 0) {
-      Hairline()
-      HStack(spacing: AppSpacing.xs) {
-        content
-      }
-      .padding(.horizontal, AppSpacing.sm + 2)
-      .frame(height: AppMetrics.paneFooterHeight)
-      .background(palette.chrome)
+    HStack(spacing: AppSpacing.xs) {
+      content
     }
+    .padding(.horizontal, AppSpacing.sm + 2)
+    .frame(height: AppMetrics.paneFooterHeight)
+    // The result pane's composer is a 40pt box 12pt off the panel's floor, so
+    // this strip shares its centre line: the run command and the send command
+    // read as one row across the fold.
+    .padding(.top, AppSpacing.sm)
+    .padding(.bottom, AppSpacing.md)
+    .background(palette.chrome)
   }
 }
 
@@ -469,38 +545,42 @@ private struct TranslateButton: View {
   }
 
   var body: some View {
-    Button {
-      if model.isTranslating {
-        model.stopTranslation()
-      } else {
-        model.translate()
-      }
-    } label: {
-      HStack(spacing: AppSpacing.xs + 2) {
+    HStack(spacing: AppSpacing.sm) {
+      Button {
         if model.isTranslating {
-          Image(systemName: "stop.fill")
-            .font(.system(size: 10, weight: .semibold))
+          model.stopTranslation()
+        } else {
+          model.translate()
         }
-        if !layoutWidth.isCompact || !model.isTranslating {
-          Text(title)
+      } label: {
+        HStack(spacing: AppSpacing.xs + 2) {
+          if model.isTranslating {
+            Image(systemName: "stop.fill")
+              .font(.system(size: 9, weight: .bold))
+          }
+          if !layoutWidth.isCompact || !model.isTranslating {
+            Text(title)
+              .font(AppFont.label.weight(.semibold))
+          }
+          if !model.isTranslating, !layoutWidth.isCompact {
+            // The key that runs it, inside the command rather than in a
+            // keycap beside it: one object to find, not two.
+            Image(systemName: "return")
+              .font(.system(size: 9.5, weight: .bold))
+              .opacity(0.55)
+              .accessibilityHidden(true)
+          }
         }
-        // The shortcut is printed on the button, so it is learned by using
-        // the button rather than by hovering it.
-        if !model.isTranslating, !layoutWidth.isCompact {
-          Text("⌘↩")
-            .font(AppFont.caption)
-            .opacity(0.6)
-        }
+        .padding(.horizontal, AppSpacing.xs)
       }
+      .appButton(model.isTranslating ? .secondary : .brand, size: .sm, capsule: true)
+      .disabled(!model.isTranslating && (isInputEmpty || model.selectedAction == nil))
+      .help(
+        model.isTranslating
+          ? (L10n.isChinese ? "停止翻译 (⌘.)" : "Stop translating (⌘.)")
+          : "\(title) (↩)"
+      )
+      .accessibilityLabel(title)
     }
-    .appButton(.primary, size: .sm)
-    .keyboardShortcut(.return, modifiers: [.command])
-    .disabled(!model.isTranslating && isInputEmpty)
-    .help(
-      model.isTranslating
-        ? (L10n.isChinese ? "停止翻译 (⌘.)" : "Stop translating (⌘.)")
-        : "\(title) (⌘↩)"
-    )
-    .accessibilityLabel(title)
   }
 }

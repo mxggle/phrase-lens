@@ -85,6 +85,7 @@ struct SetupGuideView: View {
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
           Text(L10n.isChinese ? "欢迎配置 PhraseLens" : "Set up PhraseLens")
             .font(AppFont.display)
+            .titleTracking()
             .foregroundStyle(palette.foreground)
           Text(L10n.isChinese ? "5 个轻松步骤，开启第一次翻译体验" : "Five small steps to your first translation")
             .font(AppFont.caption)
@@ -98,40 +99,8 @@ struct SetupGuideView: View {
         .appButton(.ghost, size: .sm)
       }
 
-      HStack(spacing: AppSpacing.xs) {
-        ForEach(0..<tabNames.count, id: \.self) { index in
-          Button {
-            guard index <= unlockedStep else { return }
-            step = index
-          } label: {
-            HStack(spacing: AppSpacing.xs) {
-              Text("\(index + 1)")
-                .font(AppFont.captionMedium)
-              Text(tabNames[index])
-                .font(AppFont.captionMedium)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            }
-            .foregroundStyle(step == index ? palette.foreground : palette.secondaryForeground)
-            .frame(maxWidth: .infinity)
-            .frame(height: 32)
-            .background(step == index ? palette.accentFill : palette.surface,
-                        in: RoundedRectangle(cornerRadius: AppRadius.md))
-            .overlay {
-              RoundedRectangle(cornerRadius: AppRadius.md)
-                .strokeBorder(step == index ? palette.borderStrong : palette.border)
-            }
-          }
-          .buttonStyle(.plain)
-          .disabled(index > unlockedStep)
-          .accessibilityLabel(
-            L10n.isChinese
-              ? "第 \(index + 1) 步：\(tabNames[index])"
-              : "Step \(index + 1): \(tabNames[index])"
-          )
-          .accessibilityAddTraits(step == index ? .isSelected : [])
-        }
-      }
+      stepper
+        .padding(.vertical, AppSpacing.sm)
 
       Group {
         switch step {
@@ -152,26 +121,28 @@ struct SetupGuideView: View {
         Spacer(minLength: AppSpacing.xs)
         if step > 0 {
           Button(L10n.isChinese ? "上一步" : "Back") { step -= 1 }
-            .appButton(.outline, size: .sm)
+            .appButton(.outline, size: .sm, capsule: true)
         }
         if step < tabNames.count - 1 {
           Button(L10n.isChinese ? "下一步：\(tabNames[step + 1])" : "Next: \(tabNames[step + 1])") { goNext() }
-            .appButton(.primary, size: .sm)
+            .appButton(.brand, size: .sm, capsule: true)
             .disabled(!canGoNext)
         } else {
           Button(L10n.isChinese ? "开始使用" : "Get started") {
             settingsStore.dismissSetupGuide()
             showTranslator()
           }
-          .appButton(.primary, size: .sm)
+          .appButton(.brand, size: .sm, capsule: true)
         }
       }
     }
     .frame(maxWidth: 620, maxHeight: .infinity, alignment: .topLeading)
     .padding(.horizontal, AppSpacing.lg)
-    .padding(.vertical, AppSpacing.md)
+    .padding(.top, AppSpacing.xl)
+    .padding(.bottom, AppSpacing.lg)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .onAppear {
+      if let id = settingsStore.settings.defaultConnectionID { settingsStore.selectConnection(id) }
       model.refreshAccessibilityPermission()
       apiKeyDraft = settingsStore.apiKey
       if choice == nil, settingsStore.hasProviderCredential {
@@ -250,39 +221,92 @@ struct SetupGuideView: View {
         ? "ChatGPT 账号与 OpenAI 平台 API Key 采用不同的登录授权方式。"
         : "ChatGPT accounts and OpenAI Platform API keys use different sign-in methods."
     ) {
-      SettingsBlock {
-        VStack(alignment: .leading, spacing: AppSpacing.xs) {
-          ForEach(ConnectionChoice.allCases) { option in
-            Button { choose(option) } label: {
-              HStack(alignment: .center, spacing: AppSpacing.sm) {
-                Image(systemName: choice == option ? "largecircle.fill.circle" : "circle")
-                  .frame(width: 16)
-                VStack(alignment: .leading, spacing: 1) {
-                  Text(option.title).font(AppFont.bodyMedium)
-                  Text(option.explanation)
-                    .font(AppFont.caption)
-                    .foregroundStyle(palette.mutedForeground)
-                    .lineLimit(2)
-                }
-                Spacer(minLength: 0)
-              }
-              .foregroundStyle(palette.foreground)
-              .padding(.horizontal, AppSpacing.sm)
-              .padding(.vertical, AppSpacing.xs + 2)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .background(choice == option ? palette.accentFill : palette.surface,
-                          in: RoundedRectangle(cornerRadius: AppRadius.md))
-              .overlay {
-                RoundedRectangle(cornerRadius: AppRadius.md)
-                  .strokeBorder(choice == option ? palette.borderStrong : palette.border)
-              }
+      ForEach(Array(ConnectionChoice.allCases.enumerated()), id: \.element.id) { index, option in
+        if index > 0 { Hairline() }
+        Button { choose(option) } label: {
+          HStack(alignment: .center, spacing: AppSpacing.md) {
+            RadioMark(isOn: choice == option)
+            VStack(alignment: .leading, spacing: 1) {
+              Text(option.title).font(AppFont.bodyMedium)
+              Text(option.explanation)
+                .font(AppFont.caption)
+                .foregroundStyle(palette.mutedForeground)
+                .lineLimit(2)
             }
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(choice == option ? .isSelected : [])
+            Spacer(minLength: 0)
           }
+          .foregroundStyle(palette.foreground)
+          .padding(.horizontal, AppSpacing.md + 2)
+          .padding(.vertical, AppSpacing.sm + 2)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(choice == option ? palette.muted.opacity(0.6) : .clear)
+          .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(choice == option ? .isSelected : [])
       }
     }
+  }
+
+  // MARK: - Stepper
+
+  /// Where the guide is: numbered marks joined by a rule, done steps checked
+  /// in the brand hue, the current one solid, the rest outlined and locked.
+  private var stepper: some View {
+    HStack(spacing: AppSpacing.sm) {
+      ForEach(0..<tabNames.count, id: \.self) { index in
+        if index > 0 {
+          Rectangle()
+            .fill(index <= unlockedStep ? palette.borderStrong : palette.border)
+            .frame(height: 1)
+            .frame(minWidth: AppSpacing.sm, maxWidth: .infinity)
+        }
+        Button {
+          guard index <= unlockedStep else { return }
+          step = index
+        } label: {
+          HStack(spacing: AppSpacing.xs + 2) {
+            ZStack {
+              Circle()
+                .fill(markFill(index))
+              Circle()
+                .strokeBorder(index > unlockedStep ? palette.borderStrong : .clear, lineWidth: 1)
+              if index < step {
+                Image(systemName: "checkmark")
+                  .font(.system(size: 9, weight: .heavy))
+                  .foregroundStyle(palette.brandForeground)
+              } else {
+                Text("\(index + 1)")
+                  .font(.system(size: 10.5, weight: .semibold))
+                  .monospacedDigit()
+                  .foregroundStyle(index == step ? palette.primaryForeground : palette.mutedForeground)
+              }
+            }
+            .frame(width: 20, height: 20)
+            Text(tabNames[index])
+              .font(index == step ? AppFont.label.weight(.semibold) : AppFont.label)
+              .foregroundStyle(index == step ? palette.foreground : index <= unlockedStep ? palette.secondaryForeground : palette.mutedForeground)
+              .lineLimit(1)
+              .fixedSize()
+          }
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(index > unlockedStep)
+        .accessibilityLabel(
+          L10n.isChinese
+            ? "第 \(index + 1) 步：\(tabNames[index])"
+            : "Step \(index + 1): \(tabNames[index])"
+        )
+        .accessibilityAddTraits(step == index ? .isSelected : [])
+      }
+    }
+  }
+
+  private func markFill(_ index: Int) -> Color {
+    if index < step { return palette.brand }
+    if index == step { return palette.primary }
+    return index <= unlockedStep ? palette.muted : palette.surface
   }
 
   private var connectStep: some View {
@@ -384,6 +408,7 @@ struct SetupGuideView: View {
               guard let selection else { return }
               otherProviderSelection = selection
               settingsStore.selectProvider(selection)
+      if let id = settingsStore.editingConnectionID { settingsStore.makeDefault(id) }
               apiKeyDraft = settingsStore.apiKey
               refreshCatalogIfReady()
             }
@@ -592,6 +617,7 @@ struct SetupGuideView: View {
       otherProviderSelection = nil
       let openAI: ProviderKind = provider.provider == .chatGPT ? .chatGPT : .openAI
       settingsStore.selectProvider(openAI)
+      if let id = settingsStore.editingConnectionID { settingsStore.makeDefault(id) }
       let mode: AuthenticationMode = choice == .chatGPT ? .oauthCodex : .apiKey
       if provider.authMode != mode {
         settingsStore.settings.provider.authMode = mode
@@ -605,6 +631,7 @@ struct SetupGuideView: View {
     case .ollama:
       otherProviderSelection = nil
       settingsStore.selectProvider(.ollama)
+      if let id = settingsStore.editingConnectionID { settingsStore.makeDefault(id) }
     }
     apiKeyDraft = settingsStore.apiKey
     chooseAvailableOAuthModel()
@@ -623,8 +650,11 @@ struct SetupGuideView: View {
     guard settingsStore.hasProviderCredential, provider.provider != .azure else { return }
     let configuration = provider
     let store = settingsStore
-    modelCatalog.refreshIfStale(configuration: configuration, proxy: settingsStore.settings.proxy) {
-      try await store.validToken()
+    let connection = store.settings.connections.first { $0.id == store.editingConnectionID }
+    let proxy = store.settings.proxy
+    modelCatalog.refreshIfStale(configuration: configuration, proxy: proxy) {
+      guard let connection else { throw TranslationError.missingAPIKey }
+      return try await store.validCredentials(for: connection, proxy: proxy).accessToken
     }
   }
 
@@ -632,8 +662,11 @@ struct SetupGuideView: View {
     guard settingsStore.hasProviderCredential, provider.provider != .azure else { return }
     let configuration = provider
     let store = settingsStore
-    modelCatalog.refresh(configuration: configuration, proxy: settingsStore.settings.proxy) {
-      try await store.validToken()
+    let connection = store.settings.connections.first { $0.id == store.editingConnectionID }
+    let proxy = store.settings.proxy
+    modelCatalog.refresh(configuration: configuration, proxy: proxy) {
+      guard let connection else { throw TranslationError.missingAPIKey }
+      return try await store.validCredentials(for: connection, proxy: proxy).accessToken
     }
   }
 
@@ -729,8 +762,8 @@ struct SetupGuideView: View {
       SettingsBlock {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
           Text(L10n.isChinese
-            ? "打开翻译器并点击“翻译”或按下 ⌘↩。返回翻译结果即表明大模型连接成功。"
-            : "Open the translator and press Translate or ⌘↩. A returned result confirms the service responds.")
+            ? "打开翻译器并点击“翻译”或按下 ↩。返回翻译结果即表明大模型连接成功。"
+            : "Open the translator and press Translate or Enter. A returned result confirms the service responds.")
             .font(AppFont.body)
             .foregroundStyle(palette.secondaryForeground)
             .fixedSize(horizontal: false, vertical: true)
@@ -756,5 +789,23 @@ struct SetupGuideView: View {
         }
       }
     }
+  }
+}
+
+/// A radio mark in the app's own ramp: an outlined ring at rest, a ring in the
+/// brand's accent around a solid dot when chosen.
+private struct RadioMark: View {
+  let isOn: Bool
+
+  @Environment(\.palette) private var palette
+
+  var body: some View {
+    ZStack {
+      Circle()
+        .strokeBorder(isOn ? palette.accent : palette.borderStrong, lineWidth: isOn ? 5 : 1.5)
+    }
+    .frame(width: 16, height: 16)
+    .animation(.easeOut(duration: 0.15), value: isOn)
+    .accessibilityHidden(true)
   }
 }

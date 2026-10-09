@@ -2,21 +2,31 @@
 
 The interface is built from one token set and one component library, both owned
 by the app rather than inherited from AppKit's default control appearance. The
-palette is achromatic — a neutral ramp from near-white to near-black — and hue
-is spent only where it carries meaning.
+palette is taken from the app icon — charcoal, cream, and lime: a near-neutral
+ramp with a faint warm cast, and one brand hue spent only where it carries
+meaning.
 
 The vocabulary is deliberately shadcn/ui's: semantic color roles rather than
 literal colors, a shared radius and spacing scale, and the same component set
-(Button variants, Card, Tabs, Select, Switch, Badge, Input, Empty State). None
-of shadcn's code is used or usable here — it is React, Tailwind, and Radix, and
-this is a native SwiftUI app. What carries over is the design language, rebuilt
-as real SwiftUI views so macOS still supplies text input, menus, focus, and
-accessibility.
+(Button variants, Card, Tabs, Select, Switch, Badge, Input, Empty State). The
+AI-specific patterns — the prompt composer, suggestion pills, question bubbles,
+live state in the brand hue — follow Vercel's AI Elements and the ChatGPT and
+Claude desktop apps, and the window shell follows the inset-panel layout of
+Linear and the shadcn `inset` sidebar. None of that code is used or usable here
+— it is React, Tailwind, and Radix, and this is a native SwiftUI app. What
+carries over is the design language, rebuilt as real SwiftUI views so macOS
+still supplies text input, menus, focus, and accessibility.
 
 ## Principles
 
-- Nothing floats on the canvas. Every region of content sits on a card with an
-  edge, so hierarchy is legible without decoration.
+- Frame and work are two materials. The sidebar and top bar sit on `canvas`,
+  the window frame; every section sits in one inset panel on `background`.
+  Inside the panel, panes are separated by a hairline or by spacing, not by a
+  card each — a second frame around the same text is noise.
+- One brand command per view. `brand` (the icon's lime) fills only the command
+  that runs the view's work — Translate, Send, Next — so the eye always knows
+  where to go. `accent` marks live AI state: spinners, the armed tab's glyph,
+  selected chips. Everything else is neutral.
 - Color is semantic. A view asks for `palette.mutedForeground`, never a gray.
   One change to the ramp moves the whole interface, and Light, Dark, and
   Increased Contrast stay in step by construction.
@@ -56,16 +66,20 @@ accessibility.
 
 | Component | Role |
 | --- | --- |
-| `cardSurface(_:)` | The content surface: fill, hairline, radius, shadow. |
+| `insetPanel(_:)` | The window's one content panel, inset from the frame. |
+| `cardSurface(_:)` | A card inside the panel: fill, hairline, radius. Flat unless `elevated`. |
 | `Hairline` | A rule in the palette's border color. `Divider()` uses an AppKit separator that is not on this ramp. |
-| `AppButtonStyle` / `.appButton(_:size:)` | Six variants × six sizes, with a shared hover/press ramp. |
+| `AppButtonStyle` / `.appButton(_:size:capsule:)` | Seven variants (including `.brand`) × six sizes, with a shared hover/press ramp. `capsule` rounds the ends, for chips and the send command. |
+| `AppMenuButton` | A command that opens a menu, in button chrome rather than AppKit's pull-down bezel. |
+| `SegmentedControl` | Switches between views of one thing (Dictionary / AI). Same raised pill as the action strip. |
 | `IconButton` | Icon-only command with matched tooltip and accessibility label. |
 | `AdaptiveLabel` | A command label that drops its title when its bar runs out of room. |
 | `Badge`, `KeyCombo` | State labels and keycaps. |
 | `StatusDot`, `Spinner` | Live state. Both readable under Reduce Motion. |
-| `AppTextField`, `AppTextEditor`, `AppSelect`, `AppSwitchStyle`, `ChipToggleStyle` | Inputs. `AppSelect` wraps `Menu`, so the list itself is a real AppKit menu. |
-| `ActionTabBar` | Segmented switcher; every drawn tab is named, overflow goes behind a More menu, and the armed pill slides between tabs. |
-| `NavRow` | Selectable row, used by both sidebars and the Actions source list. |
+| `AppTextField`, `AppTextEditor`, `AppSelect`, `AppSwitchStyle`, `ChipToggleStyle` | Inputs. `AppSelect` wraps `Menu`, so the list itself is a real AppKit menu; `isGhost` drops its box where it labels a pane. `AppTextField(chromeless:)` lets a container such as the follow-up composer draw the chrome. `ThemedContainer` makes `AppSwitchStyle` the default toggle style. |
+| `FlowLayout` | Wraps chips onto new rows instead of clipping or scrolling them. |
+| `ActionTabBar` | Action switcher on the window frame; every drawn tab is named, overflow goes behind a More menu, and the armed pill — panel material, glyph in `accent` — slides between tabs. |
+| `NavRow` | Selectable row, used by both sidebars and the Actions source list. `raised` draws the selection as a tile of panel material, for rows on the frame. |
 | `SettingsCard` / `SettingsRow` / `SettingsBlock` / `InlineNote` | Settings scaffolding, replacing `Form`'s grouped sections. |
 | `EmptyState` | "Nothing here yet", in four progressively shorter forms. |
 | `ResizableSplit` | Two panes with a draggable divider that stack when too narrow. |
@@ -94,20 +108,33 @@ minimum width must still hold one pane.
 ## Layout
 
 **Main window.** No system title bar. The window uses `fullSizeContentView`, so
-the app's own chrome reaches the top edge and the sidebar reserves
-`AppMetrics.trafficLightInset` for the traffic lights.
+the app's own chrome reaches the top edge. `TrafficLightPositioner` grows the
+transparent title bar to `AppMetrics.navBarHeight` and centres the traffic
+lights in it, so they share a centre line with the section title and the action
+strip; the sidebar gives that row to them (and, expanded, to the collapse
+toggle), and the icon rail is wide enough to contain them.
 
-1. Sidebar: brand, sections grouped under eyebrow headings with live counts, and
-   a provider card that both reports the active model and opens Settings.
-2. Top bar: the section, one line saying what it is for, and the window-level
-   commands for that section.
-3. Content: each section owns its layout inside the detail column.
+1. Sidebar, on `canvas`: brand, sections grouped under eyebrow headings with
+   live counts, and a provider card that both reports the active model and
+   opens Settings. No rule between it and the content: the panel's edge is the
+   division.
+2. Top bar, on `canvas`: the section, one line saying what it is for, and the
+   window-level commands for that section.
+3. Content: one inset panel (`AppMetrics.panelInset` from the frame), in which
+   each section owns its layout.
 
-**Translator.** An action tab strip in the top bar above a resizable split of a
-source card and a result card. The source card's footer carries the run command
-(Translate / Look Up, ⌘↩) and transient status, so the primary command sits at
-the foot of the text it runs on. In dictionary mode the result card has a single
-header row: result type, dictionary languages, and copy.
+**Translator.** An action tab strip in the top bar above a resizable split of
+the source and the result, folded along one hairline inside the panel rather
+than laid out as two cards. Each pane's header is its language, as a ghost
+select aligned with the text below it. The source footer carries the brand run
+command (Translate / Look Up, with ↩ inside the button) and transient status,
+so the primary command sits at the foot of the text it runs on. The result has
+a single header row — result type, language, and the commands on the result —
+whose Dictionary/AI switch shortens its labels, then draws glyphs, before the
+row stacks. Its foot is a prompt-style composer: one rounded box holding the
+question and a round send command that turns brand when there is something to
+send. Questions asked appear as bubbles on the trailing edge; suggested
+questions are pills at the end of the answer.
 
 **Library.** History and Vocabulary share one scaffold — filter bar, then a
 collection of selectable cards. Per-row commands appear on the card under the
@@ -118,8 +145,11 @@ tiles into as many columns as the window holds.
 **Actions.** A source list with an add/remove bar beneath it and a settings-style
 editor beside it. Edits save automatically.
 
-**Settings.** Its own sidebar and scrolling pane of cards, rather than a tab
-bar, because there are six panes and they are not peers of equal weight.
+**Settings.** The same frame and inset panel as the main window — no title bar,
+sidebar on `canvas` — with a scrolling column of cards, rather than a tab bar,
+because there are seven panes and they are not peers of equal weight. AI
+Connections lists saved connections as rows (the edited one checked, the
+default badged) above a card for the one being edited.
 
 **Selection pop-up.** A borderless floating panel reusing the same components at
 compact sizes: header, compact tab strip, the captured text, the result filling
@@ -146,6 +176,12 @@ and fall back to the palette's own surfaces on older systems.
   that no longer exists is resized after layout.
   `WindowCoordinator.revalidateMainWindowLayout` re-applies the frame once at
   launch to force a correct pass.
+- **Traffic-light position.** AppKit offers no API to move the lights. An
+  empty `NSToolbar` would centre them, but its view takes every click in the bar
+  for window dragging — the action tabs stop working. `TrafficLightPositioner`
+  instead resizes the titlebar container and re-centres the buttons after each
+  resize, key change, and full-screen exit, as Electron's
+  `trafficLightPosition` does.
 - **Ambiguous main window.** The main window and the Settings window are both
   plain titled windows of similar size, so `tagMainWindowIfNeeded` matches on
   the scene title first and falls back to width.

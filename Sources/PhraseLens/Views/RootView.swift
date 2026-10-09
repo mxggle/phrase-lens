@@ -90,6 +90,7 @@ struct RootView: View {
   @EnvironmentObject private var settingsStore: SettingsStore
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.openWindow) private var openWindow
+  @Environment(\.openSettings) private var openSettings
 
   @State private var selection: AppSection = .translator
   /// `nil` means "follow the window width". Set once the user picks a side.
@@ -125,8 +126,32 @@ struct RootView: View {
         openWindow(id: WindowCoordinator.mainWindowSceneID)
       }
       if settingsStore.shouldShowSetupGuide { selection = .setup }
+      #if DEBUG
+      // Visual QA: `--preview-section history` opens a section, and
+      // `--preview-settings provider` opens Settings on a pane.
+      let arguments = CommandLine.arguments
+      if let index = arguments.firstIndex(of: "--preview-section"), index + 1 < arguments.count,
+        let section = AppSection(rawValue: arguments[index + 1]) {
+        selection = section
+      }
+      if let index = arguments.firstIndex(of: "--preview-size"), index + 1 < arguments.count {
+        let parts = arguments[index + 1].split(separator: "x").compactMap { Double($0) }
+        if parts.count == 2 {
+          DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            WindowCoordinator.mainWindow()?.setContentSize(NSSize(width: parts[0], height: parts[1]))
+          }
+        }
+      }
+      if let index = arguments.firstIndex(of: "--preview-settings"), index + 1 < arguments.count,
+        let pane = SettingsPane(rawValue: arguments[index + 1]) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+          SettingsNavigation.show(pane) { openSettings() }
+        }
+      }
+      #endif
     }
     .onChange(of: model.translatorFocusToken) { _, _ in selection = .translator }
+    .onChange(of: model.actionsFocusToken) { _, _ in selection = .actions }
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
     .environment(\.locale, settingsStore.resolvedLocale)
     .alert(
@@ -182,19 +207,20 @@ private struct Shell: View {
       )
       .frame(width: mode == .expanded ? AppMetrics.sidebarWidth : AppMetrics.sidebarRailWidth)
 
-      Hairline(axis: .vertical)
-
       detail
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(palette.background)
+    .background(palette.canvas)
     .animation(AppMotion.state(reduceMotion: reduceMotion), value: mode == .expanded)
   }
 
+  /// The top bar sits on the window frame with the sidebar, and the section
+  /// sits in one inset panel below it. Frame and work are told apart by
+  /// material rather than by a grid of hairlines, which is what keeps the
+  /// window reading as one piece.
   private var detail: some View {
     VStack(spacing: 0) {
       NavBar(section: selection)
-      Hairline()
       WidthReader { _, _ in
         switch selection {
         case .setup: SetupGuideView {
@@ -206,6 +232,9 @@ private struct Shell: View {
         case .actions: ActionsView()
         }
       }
+      .insetPanel(palette)
+      .padding(.trailing, AppMetrics.panelInset)
+      .padding(.bottom, AppMetrics.panelInset)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
@@ -225,18 +254,32 @@ private struct SidebarView: View {
   @EnvironmentObject private var settingsStore: SettingsStore
   @Environment(\.palette) private var palette
   @Environment(\.openSettings) private var openSettings
+  @State private var isHoveringProvider = false
 
   private var isCollapsed: Bool { mode == .rail }
 
   var body: some View {
     VStack(spacing: 0) {
-      // The window has no title bar, so this gap is what keeps the traffic
-      // lights from landing on the brand mark.
-      Color.clear.frame(height: AppMetrics.trafficLightInset)
+      // The traffic lights are centred in a bar as tall as the top bar, so
+      // the sidebar gives that row to them — and, expanded, to the collapse
+      // toggle at its far end, where the lights already draw the eye. The
+      // brand starts on the line where the content panel starts.
+      HStack {
+        Spacer(minLength: 0)
+        if !isCollapsed, canToggle {
+          IconButton(
+            title: L10n.isChinese ? "收起边栏" : "Collapse the sidebar",
+            symbol: "sidebar.leading",
+            action: onToggle
+          )
+        }
+      }
+      .padding(.horizontal, AppSpacing.md)
+      .frame(height: AppMetrics.navBarHeight)
 
       brand
-        .padding(.horizontal, isCollapsed ? AppSpacing.sm : AppSpacing.md)
-        .padding(.bottom, AppSpacing.md)
+        .padding(.horizontal, isCollapsed ? AppSpacing.sm : AppSpacing.md + 2)
+        .padding(.bottom, AppSpacing.lg)
 
       ScrollView {
         VStack(alignment: .leading, spacing: AppSpacing.lg) {
@@ -257,7 +300,8 @@ private struct SidebarView: View {
                     symbol: section.symbol,
                     isSelected: selection == section,
                     trailing: badgeText(for: section),
-                    collapsed: isCollapsed
+                    collapsed: isCollapsed,
+                    raised: true
                   ) {
                     selection = section
                   }
@@ -278,7 +322,7 @@ private struct SidebarView: View {
         .padding(.bottom, AppSpacing.sm + 2)
     }
     .frame(maxHeight: .infinity)
-    .background(palette.chrome)
+    .background(palette.canvas)
     .accessibilityElement(children: .contain)
     .accessibilityLabel(L10n.tr("sidebar.sections"))
   }
@@ -299,14 +343,14 @@ private struct SidebarView: View {
             action: onToggle
           )
         } else {
-          AppLogo(size: 26)
+          AppLogo(size: 28)
         }
       } else {
-        AppLogo(size: 26)
+        AppLogo(size: 28)
 
         VStack(alignment: .leading, spacing: 0) {
           Text("PhraseLens")
-            .font(AppFont.bodyMedium)
+            .font(AppFont.heading)
             .foregroundStyle(palette.foreground)
           Text(L10n.isChinese ? "语言学习与翻译工作区" : "Language workspace")
             .font(AppFont.caption)
@@ -314,15 +358,7 @@ private struct SidebarView: View {
         }
         .lineLimit(1)
 
-        Spacer(minLength: AppSpacing.xs)
-
-        if canToggle {
-          IconButton(
-            title: L10n.isChinese ? "收起边栏" : "Collapse the sidebar",
-            symbol: "sidebar.leading",
-            action: onToggle
-          )
-        }
+        Spacer(minLength: 0)
       }
     }
     .frame(height: 34)
@@ -336,7 +372,7 @@ private struct SidebarView: View {
     case .setup: nil
     case .history: model.history.isEmpty ? nil : "\(model.history.count)"
     case .vocabulary: model.vocabulary.isEmpty ? nil : "\(model.vocabulary.count)"
-    case .actions: model.customActions.isEmpty ? nil : "\(model.customActions.count)"
+    case .actions: model.orderedActions.isEmpty ? nil : "\(model.orderedActions.count)"
     case .translator: nil
     }
   }
@@ -344,12 +380,13 @@ private struct SidebarView: View {
   // MARK: Provider
 
   private var isProviderConfigured: Bool {
-    settingsStore.hasBasicProviderConfiguration
+    model.selectedAction.map { settingsStore.isConfigured($0) } ?? false
   }
 
   @ViewBuilder
   private var providerCard: some View {
-    let provider = settingsStore.settings.provider
+    let resolved = model.selectedAction.flatMap { try? settingsStore.resolve($0) }
+    let provider = resolved?.1 ?? settingsStore.settings.provider
 
     Button {
       SettingsNavigation.show(.provider) { openSettings() }
@@ -360,9 +397,9 @@ private struct SidebarView: View {
             .frame(width: AppMetrics.controlHeight, height: AppMetrics.controlHeight)
         } else {
           HStack(spacing: AppSpacing.sm) {
-            StatusDot(color: isProviderConfigured ? palette.success : palette.warning)
+            StatusDot(color: isProviderConfigured ? palette.success : palette.warning, isActive: isProviderConfigured)
             VStack(alignment: .leading, spacing: 1) {
-              Text(provider.provider.rawValue)
+              Text(resolved?.0.name ?? provider.provider.rawValue)
                 .font(AppFont.captionMedium)
                 .foregroundStyle(palette.foreground)
               Text(provider.model.isEmpty ? (L10n.isChinese ? "未选择模型" : "No model selected") : provider.model)
@@ -382,7 +419,8 @@ private struct SidebarView: View {
       }
       .frame(maxWidth: .infinity)
       .background(
-        palette.surface, in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
+        isHoveringProvider ? palette.surfaceElevated : palette.surface.opacity(0.55),
+        in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
       )
       .overlay {
         RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
@@ -391,6 +429,8 @@ private struct SidebarView: View {
       .contentShape(RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
     }
     .buttonStyle(.plain)
+    .onHover { isHoveringProvider = $0 }
+    .animation(.easeOut(duration: 0.12), value: isHoveringProvider)
     .help(
       isProviderConfigured
         ? (L10n.isChinese
@@ -426,6 +466,7 @@ private struct NavBar: View {
       VStack(alignment: .leading, spacing: 1) {
         Text(section.title)
           .font(AppFont.title)
+          .titleTracking()
           .foregroundStyle(palette.foreground)
         if section.showsCaption, !layoutWidth.isCompact {
           Text(section.caption)
@@ -468,10 +509,12 @@ private struct NavBar: View {
         .layoutPriority(2)
       }
     }
+    // In the icon rail the traffic lights run past the rail's edge, so the
+    // title keeps a full step of clearance from them.
     .padding(.horizontal, AppSpacing.lg)
     .frame(height: AppMetrics.navBarHeight)
     .frame(maxWidth: .infinity)
-    .background(palette.chrome)
+    .background(palette.canvas)
     .accessibilityElement(children: .contain)
     .accessibilityLabel(L10n.isChinese ? "\(section.title)工具栏" : "\(section.title) toolbar")
   }

@@ -35,6 +35,8 @@ final class SelectionPanelCoordinator {
 
   private init() {}
 
+  var isVisible: Bool { panel != nil }
+
   func show(model: AppModel) {
     // A replacement pop-up should not cross-fade with the one it replaces:
     // two stacked panels at the same spot read as a flicker, not a transition.
@@ -738,6 +740,8 @@ private struct SelectionPanelBody: View {
     Group {
       if model.isAccessibilityPermissionError {
         accessibilityPermissionMessage
+      } else if model.visibleActions.isEmpty {
+        NoActionsView()
       } else if model.dictionaryVisible {
         DictionaryResultsView()
       } else if model.outputText.isEmpty, model.isTranslating || model.isLookingUpDictionary {
@@ -756,9 +760,9 @@ private struct SelectionPanelBody: View {
           Button(L10n.isChinese ? "翻译" : "Translate") {
             model.translate()
           }
-          .appButton(.primary, size: .sm)
-          .keyboardShortcut(.return, modifiers: [.command])
-          .disabled(model.inputText.isEmpty)
+          .appButton(.brand, size: .sm, capsule: true)
+          .keyboardShortcut(.return, modifiers: [])
+          .disabled(model.inputText.isEmpty || model.selectedAction == nil)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
@@ -943,36 +947,65 @@ private struct SelectionPanelBody: View {
         .accessibilityLabel(L10n.isChinese ? "朗读译文" : "Speak translation")
       }
 
-      Button {
-        model.copyOutput()
-        didCopy = true
-        copyResetTask?.cancel()
-        copyResetTask = Task { @MainActor in
-          try? await Task.sleep(for: .seconds(1.6))
-          guard !Task.isCancelled else { return }
-          didCopy = false
-        }
-      } label: {
-        HStack(spacing: AppSpacing.xs + 1) {
-          Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
-            .font(.system(size: 11, weight: .medium))
-            .contentTransition(.symbolEffect(.replace))
-          Text(didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝" : "Copy"))
+      // The action decides which commands its answer offers, and the source
+      // decides which of those can run. The first is the pill; the rest sit
+      // beside it as icons. None of them takes a shortcut: until the reader
+      // clicks the pop-up, keystrokes still go to the source app, where ⌘↩
+      // usually means Send.
+      ForEach(Array(model.offeredResultCommands.dropFirst())) { command in
+        IconButton(
+          title: commandHelp(command),
+          symbol: command == .copy && didCopy ? "checkmark" : command.symbol,
+          isDisabled: !model.canPerform(command)
+        ) {
+          perform(command)
         }
       }
-      .appButton(.primary, size: .sm)
+
+      let primary = model.primaryResultCommand
+      Button {
+        perform(primary)
+      } label: {
+        HStack(spacing: AppSpacing.xs + 1) {
+          Image(systemName: primary == .copy && didCopy ? "checkmark" : primary.symbol)
+            .font(.system(size: 11, weight: .medium))
+            .contentTransition(.symbolEffect(.replace))
+          Text(primary == .copy && didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : primary.title)
+        }
+      }
+      .appButton(.brand, size: .sm, capsule: true)
       .symbolEffect(.bounce, value: didCopy)
-      .disabled(!model.canCopyResult)
-      .help(
-        model.dictionaryVisible
-          ? (didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝词条释义与出处" : "Copy dictionary entries with sources"))
-          : (didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝 (⇧⌘C)" : "Copy the translation (⇧⌘C)"))
-      )
-      .accessibilityLabel(didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝 (⇧⌘C)" : "Copy the translation (⇧⌘C)"))
+      .disabled(!model.canPerform(primary))
+      .help(commandHelp(primary))
+      .accessibilityLabel(commandHelp(primary))
     }
     .padding(.horizontal, AppSpacing.md)
     .frame(height: AppMetrics.paneFooterHeight + 6)
-    .background(palette.chrome)
+  }
+
+  private func perform(_ command: ResultCommand) {
+    guard command == .copy else {
+      model.perform(command)
+      return
+    }
+    model.copyOutput()
+    didCopy = true
+    copyResetTask?.cancel()
+    copyResetTask = Task { @MainActor in
+      try? await Task.sleep(for: .seconds(1.6))
+      guard !Task.isCancelled else { return }
+      didCopy = false
+    }
+  }
+
+  private func commandHelp(_ command: ResultCommand) -> String {
+    guard command == .copy else {
+      return command.help(sourceApplication: model.writableSource?.applicationName)
+    }
+    if didCopy { return L10n.isChinese ? "已拷贝" : "Copied" }
+    return model.dictionaryVisible
+      ? (L10n.isChinese ? "拷贝词条释义与出处" : "Copy dictionary entries with sources")
+      : (L10n.isChinese ? "拷贝 (⇧⌘C)" : "Copy the translation (⇧⌘C)")
   }
 
   private var isPinned: Bool { settingsStore.settings.selectionPanelPinned }

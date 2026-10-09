@@ -112,7 +112,7 @@
 "translator.empty_title" = "No translation yet";
 "translator.translating" = "Translating…";
 "translator.checking_word" = "Checking word…";
-"translator.empty_hint_keyboard" = "Press ⌘↩ to translate.";
+"translator.empty_hint_keyboard" = "Press Enter to translate.";
 "translator.empty_hint_selection" = "Enter text on the left, or press ⌥F while text is selected in another app.";
 "translator.badge.selection" = "Selection";
 "translator.badge.screen" = "Screen";
@@ -121,7 +121,7 @@
 "translator.provider_warning" = "Connect a provider to use AI translation. Offline dictionary lookup is available now.";
 "translator.set_up_provider" = "Set up provider";
 "translator.stop_translating_help" = "Stop translating (⌘.)";
-"translator.translate_help" = "%@ (⌘↩)";
+"translator.translate_help" = "%@ (↩)";
 
 /* Status Messages */
 "translator.status.ready" = "Ready";
@@ -154,7 +154,7 @@
 "dictionary.save_meaning" = "Save meaning %d";
 "dictionary.tab_translation" = "Translation";
 "dictionary.tab_dictionary" = "Dictionary";
-"dictionary.tab_tooltip" = "Translation uses AI. Dictionary shows sourced offline definitions.";
+"dictionary.tab_tooltip" = "Dictionary shows sourced offline definitions. AI Definition is written by the model, with senses and examples.";
 "dictionary.copy_entries_sources" = "Copy dictionary entries with sources";
 "dictionary.status.entry_saved" = "Dictionary entry saved";
 "dictionary.status.entry_copied" = "Dictionary entry copied with source";
@@ -323,6 +323,7 @@
 
 /* Action Modes */
 "action.mode.translate" = "Translate";
+"action.mode.definition" = "Definition";
 "action.mode.polishing" = "Polish";
 "action.mode.summarize" = "Summarize";
 "action.mode.analyze" = "Analyze";
@@ -354,7 +355,7 @@
 "settings.general.languages_detail" = "At least one language stays enabled. Chinese, Japanese, and English are the defaults.";
 "settings.general.dictionary" = "Dictionary";
 "settings.general.word_dictionary" = "Word dictionary";
-"settings.general.word_dictionary_detail" = "Words open offline definitions with a Translation tab. Sentences use translation only.";
+"settings.general.word_dictionary_detail" = "In Definition, words open offline definitions with an AI Definition tab. Sentences use the AI definition only.";
 "settings.general.definitions" = "Definitions";
 "settings.general.definitions_detail" = "Chinese entries preserve the source's original script. Other languages require a matching dictionary pack.";
 "settings.general.translation" = "Translation";
@@ -435,8 +436,8 @@
 "settings.shortcuts.caption" = "Click a shortcut and press the keys you want. Shortcuts apply immediately. The defaults pair ⌥F for the pop-up with ⌥⇧F for the full window.";
 "settings.shortcuts.selection_popup" = "Selection pop-up";
 "settings.shortcuts.selection_popup_detail" = "Translate selected text without opening the full workspace.";
-"settings.shortcuts.full_window" = "Full translator window";
-"settings.shortcuts.full_window_detail" = "Open the complete translator, history, and tools.";
+"settings.shortcuts.full_window" = "Toggle main window";
+"settings.shortcuts.full_window_detail" = "Show or hide the complete translator, history, and tools.";
 "settings.shortcuts.screenshot_ocr" = "Screenshot OCR";
 "settings.shortcuts.screenshot_ocr_detail" = "Select a screen region and recognize its text.";
 "settings.shortcuts.writing" = "Translate focused input";

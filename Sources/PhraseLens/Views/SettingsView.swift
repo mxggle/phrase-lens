@@ -16,7 +16,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
   var title: String {
     switch self {
     case .general: L10n.isChinese ? "常规" : "General"
-    case .provider: L10n.isChinese ? "模型服务商" : "Provider"
+    case .provider: L10n.isChinese ? "AI 连接" : "AI Connections"
     case .shortcuts: L10n.isChinese ? "快捷键" : "Shortcuts"
     case .speech: L10n.isChinese ? "语音朗读" : "Speech"
     case .network: L10n.isChinese ? "网络代理" : "Network"
@@ -101,18 +101,41 @@ struct SettingsView: View {
 
 /// Reaches the window hosting the Settings scene to disable restoration.
 private struct SettingsWindowConfig: NSViewRepresentable {
-  func makeNSView(context _: Context) -> NSView {
+  final class Coordinator {
+    var trafficLights: TrafficLightPositioner?
+  }
+
+  func makeCoordinator() -> Coordinator { Coordinator() }
+
+  func makeNSView(context: Context) -> NSView {
     let view = NSView(frame: .zero)
-    DispatchQueue.main.async { apply(to: view.window) }
+    DispatchQueue.main.async { apply(to: view.window, coordinator: context.coordinator) }
     return view
   }
 
-  func updateNSView(_ view: NSView, context _: Context) {
-    DispatchQueue.main.async { apply(to: view.window) }
+  func updateNSView(_ view: NSView, context: Context) {
+    DispatchQueue.main.async { apply(to: view.window, coordinator: context.coordinator) }
   }
 
-  private func apply(to window: NSWindow?) {
-    window?.isRestorable = false
+  private func apply(to window: NSWindow?, coordinator: Coordinator) {
+    guard let window else { return }
+    defer {
+      if coordinator.trafficLights?.window !== window {
+        coordinator.trafficLights = TrafficLightPositioner(
+          window: window,
+          barHeight: AppMetrics.navBarHeight
+        )
+      } else {
+        coordinator.trafficLights?.apply()
+      }
+    }
+    window.isRestorable = false
+    // The same frame as the main window: no title bar of its own, so the
+    // sidebar's frame tone reaches the top edge and the traffic lights sit on
+    // it. The sidebar reserves their space.
+    window.titlebarAppearsTransparent = true
+    window.titleVisibility = .hidden
+    window.styleMask.insert(.fullSizeContentView)
   }
 }
 
@@ -129,27 +152,42 @@ private struct SettingsShell: View {
     HStack(spacing: 0) {
       sidebar
         .frame(width: 200)
-      Hairline(axis: .vertical)
-      content
+      VStack(spacing: 0) {
+        header
+        // The panel starts below the title bar rather than under it: a
+        // scroll view under the bar gets the system's scroll-edge band drawn
+        // across its first lines, and the bar's height is the window's drag
+        // region besides.
+        content
+          .insetPanel(palette)
+          .padding(.trailing, AppMetrics.panelInset)
+          .padding(.bottom, AppMetrics.panelInset)
+      }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(palette.background)
+    .background(palette.canvas)
+    .ignoresSafeArea(.container, edges: .top)
   }
 
   private var sidebar: some View {
     VStack(alignment: .leading, spacing: 2) {
+      // The traffic lights' row, as tall as the top bar beside it.
+      Color.clear.frame(height: AppMetrics.navBarHeight)
+
       Text(L10n.isChinese ? "设置" : "Settings")
         .font(AppFont.title)
+        .titleTracking()
         .foregroundStyle(palette.foreground)
+        .frame(height: 34)
         .padding(.horizontal, AppSpacing.sm + 2)
-        .padding(.top, AppSpacing.md)
         .padding(.bottom, AppSpacing.sm)
 
       ForEach(SettingsPane.allCases) { item in
         NavRow(
           title: item.title,
           symbol: item.symbol,
-          isSelected: pane == item
+          isSelected: pane == item,
+          raised: true
         ) {
           pane = item
         }
@@ -160,28 +198,31 @@ private struct SettingsShell: View {
     .padding(.horizontal, AppSpacing.sm)
     .padding(.bottom, AppSpacing.sm)
     .frame(maxHeight: .infinity)
-    .background(palette.chrome)
+    .background(palette.canvas)
     .accessibilityElement(children: .contain)
     .accessibilityLabel(L10n.isChinese ? "设置选项" : "Settings sections")
   }
 
+  /// The pane's name in the top bar, the way the main window names its
+  /// section: on the frame, beside the traffic lights, out of the scroller.
+  private var header: some View {
+    VStack(alignment: .leading, spacing: 1) {
+      Text(pane.title)
+        .font(AppFont.title)
+        .titleTracking()
+        .foregroundStyle(palette.foreground)
+      Text(pane.caption)
+        .font(AppFont.caption)
+        .foregroundStyle(palette.mutedForeground)
+        .lineLimit(1)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, AppSpacing.lg)
+    .frame(height: AppMetrics.navBarHeight)
+  }
+
   private var content: some View {
     VStack(spacing: 0) {
-      VStack(alignment: .leading, spacing: 1) {
-        Text(pane.title)
-          .font(AppFont.display)
-          .foregroundStyle(palette.foreground)
-        Text(pane.caption)
-          .font(AppFont.caption)
-          .foregroundStyle(palette.mutedForeground)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.horizontal, AppSpacing.xl)
-      .padding(.top, AppSpacing.lg)
-      .padding(.bottom, AppSpacing.md)
-
-      Hairline()
-
       WidthReader { _, _ in
         if pane == .setup {
           ScrollView {
@@ -204,8 +245,12 @@ private struct SettingsShell: View {
               case .setup: EmptyView()
               }
             }
-            .padding(AppSpacing.xl)
+            .padding(.horizontal, AppSpacing.xxl)
+            .padding(.top, AppSpacing.xl)
+            .padding(.bottom, AppSpacing.xxl)
+            .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .overlayScrollers()
           }
         }
       }
@@ -274,8 +319,8 @@ private struct GeneralSettingsPane: View {
         SettingsRow(
           L10n.isChinese ? "取词词典" : "Word dictionary",
           detail: L10n.isChinese
-            ? "单词优先调取离线词典并附带 AI 翻译选项；句子直接使用 AI 翻译。"
-            : "Words open offline definitions with a Translation tab. Sentences use translation only."
+            ? "“释义”动作查询单词时先显示离线词典，并附带“AI 释义”标签页；句子只显示 AI 释义。"
+            : "In Definition, words open offline definitions with an AI Definition tab. Sentences use the AI definition only."
         ) {
           Toggle(
             L10n.isChinese ? "取词词典" : "Word dictionary",
@@ -485,10 +530,12 @@ private struct GeneralSettingsPane: View {
 // MARK: - Provider
 
 private struct ProviderSettingsPane: View {
+  @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
   @EnvironmentObject private var modelCatalog: ModelCatalogStore
   @Environment(\.palette) private var palette
 
+  @State private var connectionError: String?
   @State private var apiKeyDraft = ""
   @State private var isConfirmingKeyRemoval = false
   @State private var endpointStatus: (text: String, isValid: Bool)?
@@ -498,19 +545,135 @@ private struct ProviderSettingsPane: View {
       && settingsStore.settings.provider.authMode == .oauthCodex
   }
 
+  private var editingConnectionName: String {
+    let name = settingsStore.settings.connections
+      .first { $0.id == settingsStore.editingConnectionID }?.name ?? ""
+    let fallback = L10n.isChinese ? "连接设置" : "Connection"
+    return name.trimmingCharacters(in: .whitespaces).isEmpty ? fallback : name
+  }
+
+  /// One saved connection. Selecting it opens it in the card below; the
+  /// default is marked rather than selected, because choosing what to edit
+  /// and choosing what answers are separate decisions.
+  private func connectionRow(_ connection: AIConnection) -> some View {
+    let isEditing = connection.id == settingsStore.editingConnectionID
+    let isDefault = connection.id == settingsStore.settings.defaultConnectionID
+    return Button {
+      guard !isEditing else { return }
+      persistAPIKeyDraft()
+      connectionError = nil
+      settingsStore.selectConnection(connection.id)
+    } label: {
+      HStack(spacing: AppSpacing.md) {
+        Image(systemName: "point.3.connected.trianglepath.dotted")
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(isEditing ? palette.foreground : palette.mutedForeground)
+          .frame(width: 28, height: 28)
+          .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+        VStack(alignment: .leading, spacing: 1) {
+          Text(connection.name.isEmpty ? connection.configuration.provider.rawValue : connection.name)
+            .font(AppFont.bodyMedium)
+            .foregroundStyle(palette.foreground)
+            .lineLimit(1)
+          Text("\(connection.configuration.provider.rawValue) · \(connection.configuration.model.isEmpty ? L10n.tr("sidebar.no_model") : connection.configuration.model)")
+            .font(AppFont.caption)
+            .foregroundStyle(palette.mutedForeground)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+        Spacer(minLength: AppSpacing.sm)
+        if isDefault {
+          Badge(text: L10n.isChinese ? "默认" : "Default", variant: .success)
+        }
+        Image(systemName: "checkmark")
+          .font(.system(size: 11, weight: .bold))
+          .foregroundStyle(palette.accent)
+          .opacity(isEditing ? 1 : 0)
+      }
+      .padding(.horizontal, AppSpacing.md + 2)
+      .padding(.vertical, AppSpacing.sm + 1)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(isEditing ? palette.muted.opacity(0.6) : .clear)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(connection.name)
+    .accessibilityValue(isDefault ? (L10n.isChinese ? "全局默认" : "Global default") : "")
+    .accessibilityAddTraits(isEditing ? [.isSelected] : [])
+  }
+
   var body: some View {
     PaneStack {
-      SettingsCard(L10n.isChinese ? "模型服务商" : "AI provider") {
+      SettingsCard(
+        L10n.isChinese ? "已保存的连接" : "Saved Connections",
+        caption: L10n.isChinese
+          ? "可以保存多组连接。动作默认使用全局默认连接，也可以在“动作配置”中单独指定。"
+          : "Save as many connections as you need. Actions use the global default unless you choose one in Actions."
+      ) {
+        ForEach(Array(settingsStore.settings.connections.enumerated()), id: \.element.id) { index, connection in
+          if index > 0 { Hairline() }
+          connectionRow(connection)
+        }
+        Hairline()
+        SettingsBlock {
+          HStack(spacing: AppSpacing.sm) {
+            AppMenuButton(title: L10n.isChinese ? "添加连接" : "Add Connection", symbol: "plus") {
+              ForEach(ProviderKind.allCases) { provider in
+                Button(provider.rawValue) {
+                  persistAPIKeyDraft()
+                  settingsStore.addConnection(provider: provider)
+                }
+              }
+            }
+            Spacer(minLength: 0)
+          }
+        }
+        if let connectionError {
+          SettingsBlock { InlineNote(text: connectionError, kind: .error) }
+        }
+      }
+
+      SettingsCard(
+        editingConnectionName,
+        caption: L10n.isChinese ? "以下设置只作用于这一组连接。" : "These settings apply to this connection only."
+      ) {
+        if let id = settingsStore.editingConnectionID,
+          let index = settingsStore.settings.connections.firstIndex(where: { $0.id == id }) {
+          SettingsRow(L10n.isChinese ? "连接名称" : "Name") {
+            AppTextField(
+              placeholder: L10n.isChinese ? "连接名称" : "Connection name",
+              text: $settingsStore.settings.connections[index].name,
+              size: .sm
+            )
+            .frame(maxWidth: 260)
+          }
+          Hairline()
+          SettingsRow(
+            L10n.isChinese ? "全局默认" : "Global default",
+            detail: settingsStore.settings.defaultConnectionID == id
+              ? (L10n.isChinese ? "未单独指定连接的动作都会使用它。" : "Every action without its own connection uses this one.")
+              : (L10n.isChinese ? "设为默认后，未单独指定连接的动作将改用它。" : "Actions without their own connection switch to this one.")
+          ) {
+            HStack(spacing: AppSpacing.xs) {
+              if settingsStore.settings.defaultConnectionID == id {
+                Badge(text: L10n.isChinese ? "当前默认" : "Default", variant: .success, symbol: "checkmark")
+              } else {
+                Button(L10n.isChinese ? "设为全局默认" : "Make Default") { settingsStore.makeDefault(id) }
+                  .appButton(.outline, size: .sm)
+              }
+              Button(L10n.isChinese ? "删除" : "Delete") {
+                connectionError = settingsStore.deleteConnection(id, actions: model.allActions)
+              }
+              .appButton(.destructiveGhost, size: .sm)
+            }
+          }
+          Hairline()
+        }
+
         SettingsRow(L10n.isChinese ? "服务商" : "Provider") {
-          AppSelect(
-            title: L10n.isChinese ? "服务商" : "Provider",
-            selection: Binding(
-              get: { settingsStore.settings.provider.provider },
-              set: { selectProvider($0) }
-            ),
-            options: ProviderKind.allCases,
-            label: { $0.rawValue }
-          )
+          Text(settingsStore.settings.provider.provider.rawValue)
+            .font(AppFont.bodyMedium)
+            .foregroundStyle(palette.secondaryForeground)
         }
 
         if settingsStore.settings.provider.provider.supportsOAuth {
@@ -764,7 +927,7 @@ private struct ProviderSettingsPane: View {
           SettingsBlock {
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
               HStack(spacing: AppSpacing.sm) {
-                Button(L10n.isChinese ? "测试连接" : "Test Endpoint") { validateEndpoint() }
+                Button(L10n.isChinese ? "检查地址" : "Check address") { validateEndpoint() }
                   .appButton(.outline, size: .sm)
                 if let endpointStatus {
                   InlineNote(
@@ -784,6 +947,11 @@ private struct ProviderSettingsPane: View {
     }
     .onAppear {
       apiKeyDraft = settingsStore.apiKey
+      refreshCatalogIfStale()
+    }
+    .onChange(of: settingsStore.editingConnectionID) { _, _ in
+      apiKeyDraft = settingsStore.apiKey
+      endpointStatus = nil
       refreshCatalogIfStale()
     }
     .onChange(of: settingsStore.apiKey) { _, value in
@@ -908,8 +1076,10 @@ private struct ProviderSettingsPane: View {
     let configuration = settingsStore.settings.provider
     let proxy = settingsStore.settings.proxy
     let store = settingsStore
+    let connection = store.settings.connections.first { $0.id == store.editingConnectionID }
     modelCatalog.refresh(configuration: configuration, proxy: proxy) {
-      try await store.validToken()
+      guard let connection else { throw TranslationError.missingAPIKey }
+      return try await store.validCredentials(for: connection, proxy: proxy).accessToken
     }
   }
 
@@ -918,8 +1088,10 @@ private struct ProviderSettingsPane: View {
     let configuration = settingsStore.settings.provider
     let proxy = settingsStore.settings.proxy
     let store = settingsStore
+    let connection = store.settings.connections.first { $0.id == store.editingConnectionID }
     modelCatalog.refreshIfStale(configuration: configuration, proxy: proxy) {
-      try await store.validToken()
+      guard let connection else { throw TranslationError.missingAPIKey }
+      return try await store.validCredentials(for: connection, proxy: proxy).accessToken
     }
   }
 
@@ -1036,10 +1208,10 @@ private struct ShortcutSettingsPane: View {
         )
         Hairline()
         shortcutRow(
-          L10n.isChinese ? "呼出主窗口" : "Show main window",
+          L10n.isChinese ? "切换主窗口" : "Toggle main window",
           detail: L10n.isChinese
-            ? "打开包含翻译、历史记录与工具的完整工作区。"
-            : "Open the complete translator, history, and tools.",
+            ? "显示或隐藏包含翻译、历史记录与工具的完整工作区。"
+            : "Show or hide the complete translator, history, and tools.",
           value: $settingsStore.settings.shortcuts.showWindow
         )
         Hairline()
@@ -1422,7 +1594,7 @@ private struct PaneStack<Content: View>: View {
   @ViewBuilder var content: Content
 
   var body: some View {
-    VStack(alignment: .leading, spacing: AppSpacing.lg) {
+    VStack(alignment: .leading, spacing: AppSpacing.xl + AppSpacing.xs) {
       content
     }
     .frame(maxWidth: .infinity, alignment: .leading)

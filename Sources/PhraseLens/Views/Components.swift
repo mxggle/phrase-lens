@@ -21,10 +21,27 @@ extension View {
       }
       .clipShape(shape)
       .shadow(
-        color: elevated ? palette.shadowStrong : palette.shadow,
-        radius: elevated ? 18 : 2,
-        y: elevated ? 8 : 1
+        color: elevated ? palette.shadowStrong : .clear,
+        radius: elevated ? 18 : 0,
+        y: elevated ? 8 : 0
       )
+  }
+
+  /// The window's one content panel, inset from the frame so the sidebar and
+  /// top bar read as the frame and everything inside as the work. Sections lay
+  /// out on this directly; they no longer each put their own card on a canvas.
+  func insetPanel(_ palette: AppPalette) -> some View {
+    let shape = RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
+    return background(palette.background, in: shape)
+      .clipShape(shape)
+      .overlay { shape.strokeBorder(palette.border, lineWidth: 1) }
+      .shadow(color: palette.shadow, radius: 1.5, y: 1)
+  }
+
+  /// Tighter tracking for display and title sizes, where the default spacing
+  /// of SF reads loose next to the dense body text.
+  func titleTracking() -> some View {
+    tracking(-0.2)
   }
 
   /// Keyboard focus indicator. A ring outside the control's own border, so it
@@ -32,7 +49,7 @@ extension View {
   func focusRing(_ palette: AppPalette, isFocused: Bool, radius: CGFloat) -> some View {
     overlay {
       RoundedRectangle(cornerRadius: radius + 2, style: .continuous)
-        .strokeBorder(palette.ring, lineWidth: 3)
+        .strokeBorder(palette.ring, lineWidth: 2.5)
         .padding(-2)
         .opacity(isFocused ? 1 : 0)
     }
@@ -89,10 +106,57 @@ struct Hairline: View {
   }
 }
 
+/// Lays its children out left to right and wraps onto a new row when the next
+/// one would not fit, so a set of chips never clips or scrolls sideways.
+struct FlowLayout: Layout {
+  var spacing: CGFloat = AppSpacing.xs + 2
+  var lineSpacing: CGFloat = AppSpacing.xs + 2
+
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    arrange(width: proposal.width ?? .infinity, subviews: subviews).size
+  }
+
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    let layout = arrange(width: bounds.width, subviews: subviews)
+    for (subview, frame) in zip(subviews, layout.frames) {
+      subview.place(
+        at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+        proposal: ProposedViewSize(frame.size)
+      )
+    }
+  }
+
+  private func arrange(width: CGFloat, subviews: Subviews) -> (frames: [CGRect], size: CGSize) {
+    var frames: [CGRect] = []
+    var x: CGFloat = 0
+    var y: CGFloat = 0
+    var rowHeight: CGFloat = 0
+    var widest: CGFloat = 0
+
+    for subview in subviews {
+      var size = subview.sizeThatFits(.unspecified)
+      size.width = min(size.width, width)
+      if x > 0, x + size.width > width {
+        x = 0
+        y += rowHeight + lineSpacing
+        rowHeight = 0
+      }
+      frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+      x += size.width + spacing
+      rowHeight = max(rowHeight, size.height)
+      widest = max(widest, x - spacing)
+    }
+    return (frames, CGSize(width: widest, height: frames.isEmpty ? 0 : y + rowHeight))
+  }
+}
+
 // MARK: - Buttons
 
 enum AppButtonVariant {
-  /// The one command that runs the view's work.
+  /// The brand command: the single action that runs the view's work and
+  /// that the eye should land on next — Translate, Send. One per view.
+  case brand
+  /// A strong, unbranded command.
   case primary
   /// A filled but unaccented command.
   case secondary
@@ -165,13 +229,16 @@ struct AppButtonStyle: ButtonStyle {
   var variant: AppButtonVariant = .secondary
   var size: AppControlSize = .md
   var fullWidth = false
+  /// Fully rounded ends, for chips and for the round send command.
+  var capsule = false
 
   func makeBody(configuration: Configuration) -> some View {
     Chrome(
       configuration: configuration,
       variant: variant,
       size: size,
-      fullWidth: fullWidth
+      fullWidth: fullWidth,
+      capsule: capsule
     )
   }
 
@@ -180,6 +247,7 @@ struct AppButtonStyle: ButtonStyle {
     let variant: AppButtonVariant
     let size: AppControlSize
     let fullWidth: Bool
+    let capsule: Bool
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.palette) private var palette
@@ -202,7 +270,7 @@ struct AppButtonStyle: ButtonStyle {
           }
         }
         .contentShape(shape)
-        .ambientFocusRing(palette, radius: size.radius)
+        .ambientFocusRing(palette, radius: radius)
         .opacity(isEnabled ? 1 : 0.42)
         .scaleEffect(configuration.isPressed && isEnabled ? 0.975 : 1)
         .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isHovering)
@@ -210,8 +278,10 @@ struct AppButtonStyle: ButtonStyle {
         .onHover { isHovering = $0 && isEnabled }
     }
 
+    private var radius: CGFloat { capsule ? size.height / 2 : size.radius }
+
     private var shape: RoundedRectangle {
-      RoundedRectangle(cornerRadius: size.radius, style: .continuous)
+      RoundedRectangle(cornerRadius: radius, style: .continuous)
     }
 
     /// Hover and press are one ramp: press reuses the hover fill so a click
@@ -220,6 +290,7 @@ struct AppButtonStyle: ButtonStyle {
 
     private var background: Color {
       switch variant {
+      case .brand: isActive ? palette.brandHover : palette.brand
       case .primary: isActive ? palette.primaryHover : palette.primary
       case .secondary: isActive ? palette.mutedHover : palette.muted
       case .outline: isActive ? palette.muted : palette.surface
@@ -231,9 +302,12 @@ struct AppButtonStyle: ButtonStyle {
 
     private var foreground: Color {
       switch variant {
+      case .brand: palette.brandForeground
       case .primary: palette.primaryForeground
       case .secondary, .outline: palette.foreground
-      case .ghost: isActive ? palette.foreground : palette.secondaryForeground
+      // Ghost commands sit in bars beside content; at rest they recede to the
+      // label tone so a row of them does not outweigh the text it serves.
+      case .ghost: isActive ? palette.foreground : palette.mutedForeground
       case .destructive: palette.destructiveForeground
       case .destructiveGhost: palette.destructive
       }
@@ -242,7 +316,7 @@ struct AppButtonStyle: ButtonStyle {
     private var border: Color? {
       switch variant {
       case .outline: isActive ? palette.borderStrong : palette.border
-      case .primary, .secondary, .ghost, .destructive, .destructiveGhost: nil
+      case .brand, .primary, .secondary, .ghost, .destructive, .destructiveGhost: nil
       }
     }
   }
@@ -252,9 +326,12 @@ extension View {
   func appButton(
     _ variant: AppButtonVariant = .secondary,
     size: AppControlSize = .md,
-    fullWidth: Bool = false
+    fullWidth: Bool = false,
+    capsule: Bool = false
   ) -> some View {
-    buttonStyle(AppButtonStyle(variant: variant, size: size, fullWidth: fullWidth))
+    buttonStyle(
+      AppButtonStyle(variant: variant, size: size, fullWidth: fullWidth, capsule: capsule)
+    )
   }
 }
 
@@ -423,6 +500,8 @@ struct StatusDot: View {
 struct Spinner: View {
   var size: CGFloat = 14
   var lineWidth: CGFloat = 1.8
+  /// Live AI work spins in the brand hue; other waits stay neutral.
+  var isLive = false
 
   @Environment(\.palette) private var palette
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -431,7 +510,7 @@ struct Spinner: View {
   var body: some View {
     Circle()
       .trim(from: 0, to: 0.72)
-      .stroke(palette.mutedForeground, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+      .stroke(isLive ? palette.accent : palette.mutedForeground, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
       .frame(width: size, height: size)
       .rotationEffect(.degrees(isSpinning ? 360 : 0))
       .animation(
@@ -511,21 +590,15 @@ struct EmptyState<Actions: View>: View {
         Image(systemName: symbol)
           .font(.system(size: 20, weight: .regular))
           .foregroundStyle(palette.mutedForeground)
-          .frame(width: 52, height: 52)
-          .background(
-            palette.muted,
-            in: RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
-          )
-          .overlay {
-            RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
-              .strokeBorder(palette.border, lineWidth: 1)
-          }
+          .frame(width: 48, height: 48)
+          .background(palette.muted, in: Circle())
           .accessibilityHidden(true)
       }
 
       VStack(spacing: AppSpacing.xs) {
         Text(title)
           .font(AppFont.title)
+          .titleTracking()
           .foregroundStyle(palette.foreground)
         if showsMessage {
           Text(message)
@@ -566,12 +639,39 @@ struct AppTextField: View {
   /// whenever a new result replaces the old one — and SwiftUI and AppKit trade
   /// the responder back and forth forever, pegging a core.
   var focusToken: UUID?
+  /// Drops the field's own fill, hairline, and focus ring, for a field that
+  /// sits inside a container drawing that chrome itself — the follow-up
+  /// composer. Focus still belongs to the field, for the reason above.
+  var chromeless = false
+  /// Reports the field's focus to a container that draws the chrome.
+  var onFocusChange: ((Bool) -> Void)?
 
   @Environment(\.palette) private var palette
   @Environment(\.isEnabled) private var isEnabled
   @FocusState private var isFocused: Bool
 
   var body: some View {
+    if chromeless {
+      fieldRow
+        .frame(height: size.height)
+        .opacity(isEnabled ? 1 : 0.5)
+        .onChange(of: focusToken) { _, _ in isFocused = true }
+        .onChange(of: isFocused) { _, focused in onFocusChange?(focused) }
+    } else {
+      fieldRow
+        .padding(.horizontal, AppSpacing.sm + 2)
+        .frame(height: size.height)
+        .background(palette.surface, in: shape)
+        .overlay { shape.strokeBorder(isFocused ? palette.borderStrong : palette.border, lineWidth: 1) }
+        .focusRing(palette, isFocused: isFocused, radius: AppRadius.md)
+        .opacity(isEnabled ? 1 : 0.5)
+        .animation(.easeOut(duration: 0.12), value: isFocused)
+        .onChange(of: focusToken) { _, _ in isFocused = true }
+        .onChange(of: isFocused) { _, focused in onFocusChange?(focused) }
+    }
+  }
+
+  private var fieldRow: some View {
     HStack(spacing: AppSpacing.sm) {
       if let symbol {
         Image(systemName: symbol)
@@ -606,14 +706,6 @@ struct AppTextField: View {
         .accessibilityLabel(L10n.isChinese ? "清除\(placeholder)" : "Clear \(placeholder)")
       }
     }
-    .padding(.horizontal, AppSpacing.sm + 2)
-    .frame(height: size.height)
-    .background(palette.surface, in: shape)
-    .overlay { shape.strokeBorder(isFocused ? palette.borderStrong : palette.border, lineWidth: 1) }
-    .focusRing(palette, isFocused: isFocused, radius: AppRadius.md)
-    .opacity(isEnabled ? 1 : 0.5)
-    .animation(.easeOut(duration: 0.12), value: isFocused)
-    .onChange(of: focusToken) { _, _ in isFocused = true }
   }
 
   private var shape: RoundedRectangle {
@@ -643,7 +735,8 @@ struct AppTextEditor: View {
         .padding(.horizontal, AppSpacing.sm - 1)
         .padding(.vertical, AppSpacing.sm - 2)
 
-      if text.isEmpty, !placeholder.isEmpty {
+      // Marked IME text can be visible while the SwiftUI binding is still empty.
+      if text.isEmpty, !placeholder.isEmpty, !isFocused {
         Text(placeholder)
           .font(.system(size: fontSize, design: monospaced ? .monospaced : .default))
           .foregroundStyle(palette.mutedForeground)
@@ -675,6 +768,10 @@ struct AppSelect<Value: Hashable>: View {
   var size: AppControlSize = .sm
   var symbol: String?
   var fillsWidth = false
+  /// Drops the resting fill and hairline. For a select that labels the pane
+  /// it sits in — the translator's language pickers — where a bordered box
+  /// would read as a form field rather than as the pane's heading.
+  var isGhost = false
 
   @Environment(\.palette) private var palette
   @Environment(\.isEnabled) private var isEnabled
@@ -701,19 +798,21 @@ struct AppSelect<Value: Hashable>: View {
             .foregroundStyle(palette.faintForeground)
         }
         Text(label(selection))
-          .font(size.font)
+          .font(isGhost ? AppFont.bodyMedium : size.font)
           .foregroundStyle(palette.foreground)
           .lineLimit(1)
         if fillsWidth { Spacer(minLength: AppSpacing.xs) }
-        Image(systemName: "chevron.up.chevron.down")
-          .font(.system(size: 8, weight: .semibold))
+        Image(systemName: isGhost ? "chevron.down" : "chevron.up.chevron.down")
+          .font(.system(size: isGhost ? 8.5 : 8, weight: .bold))
           .foregroundStyle(palette.faintForeground)
       }
       .padding(.horizontal, AppSpacing.sm + 1)
       .frame(height: size.height)
       .frame(maxWidth: fillsWidth ? .infinity : nil)
-      .background(isHovering ? palette.muted : palette.surface, in: shape)
-      .overlay { shape.strokeBorder(palette.border, lineWidth: 1) }
+      .background(restingFill, in: shape)
+      .overlay {
+        if !isGhost { shape.strokeBorder(palette.border, lineWidth: 1) }
+      }
       .contentShape(shape)
     }
     // `.borderlessButton` hands the label to an AppKit pull-down cell, which
@@ -734,8 +833,79 @@ struct AppSelect<Value: Hashable>: View {
     .accessibilityValue(label(selection))
   }
 
+  private var restingFill: Color {
+    if isHovering { return palette.muted }
+    return isGhost ? .clear : palette.surface
+  }
+
   private var shape: RoundedRectangle {
     RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+  }
+}
+
+/// A command that opens a menu of choices, drawn in the app's button chrome.
+///
+/// A bare `Menu` takes AppKit's pull-down bezel, which sits on a different gray
+/// ramp and corner radius from every other control here.
+struct AppMenuButton<Items: View>: View {
+  let title: String
+  var symbol: String?
+  var variant: AppButtonVariant = .outline
+  var size: AppControlSize = .sm
+  @ViewBuilder var items: Items
+
+  @Environment(\.palette) private var palette
+  @Environment(\.isEnabled) private var isEnabled
+  @State private var isHovering = false
+
+  var body: some View {
+    Menu {
+      items
+    } label: {
+      HStack(spacing: AppSpacing.xs + 1) {
+        if let symbol {
+          Image(systemName: symbol)
+            .font(.system(size: 10.5, weight: .semibold))
+        }
+        Text(title)
+          .font(size.font)
+          .lineLimit(1)
+        Image(systemName: "chevron.down")
+          .font(.system(size: 8, weight: .bold))
+          .foregroundStyle(palette.faintForeground)
+      }
+      .foregroundStyle(palette.foreground)
+      .padding(.horizontal, size.horizontalPadding)
+      .frame(height: size.height)
+      .background(fill, in: shape)
+      .overlay {
+        if variant == .outline {
+          shape.strokeBorder(isHovering ? palette.borderStrong : palette.border, lineWidth: 1)
+        }
+      }
+      .contentShape(shape)
+    }
+    // See `AppSelect`: `.button` keeps the label as drawn.
+    .menuStyle(.button)
+    .buttonStyle(.plain)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .opacity(isEnabled ? 1 : 0.45)
+    .onHover { isHovering = $0 && isEnabled }
+    .animation(.easeOut(duration: 0.12), value: isHovering)
+    .accessibilityLabel(title)
+  }
+
+  private var fill: Color {
+    switch variant {
+    case .ghost: isHovering ? palette.muted : .clear
+    case .secondary: isHovering ? palette.mutedHover : palette.muted
+    default: isHovering ? palette.muted : palette.surface
+    }
+  }
+
+  private var shape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: size.radius, style: .continuous)
   }
 }
 
@@ -798,23 +968,20 @@ struct ChipToggleStyle: ToggleStyle {
         HStack(spacing: AppSpacing.xs + 1) {
           Image(systemName: configuration.isOn ? "checkmark" : "plus")
             .font(.system(size: 8.5, weight: .bold))
-            .foregroundStyle(
-              configuration.isOn ? palette.primaryForeground : palette.faintForeground
-            )
+            .foregroundStyle(configuration.isOn ? palette.accent : palette.faintForeground)
           configuration.label
             .font(AppFont.label)
             .lineLimit(1)
         }
-        .foregroundStyle(
-          configuration.isOn ? palette.primaryForeground : palette.secondaryForeground
-        )
+        .foregroundStyle(configuration.isOn ? palette.foreground : palette.secondaryForeground)
         .padding(.horizontal, AppSpacing.sm + 1)
         .frame(height: AppMetrics.controlHeightSmall)
         .background(fill, in: Capsule(style: .continuous))
         .overlay {
-          if !configuration.isOn {
-            Capsule(style: .continuous).strokeBorder(palette.border, lineWidth: 1)
-          }
+          Capsule(style: .continuous).strokeBorder(
+            configuration.isOn ? palette.accent.opacity(0.35) : palette.border,
+            lineWidth: 1
+          )
         }
         .contentShape(Capsule(style: .continuous))
         .ambientFocusRing(palette, radius: AppRadius.pill)
@@ -830,7 +997,7 @@ struct ChipToggleStyle: ToggleStyle {
 
     private var fill: Color {
       if configuration.isOn {
-        return palette.primary
+        return palette.accentSoft
       }
       return isHovering ? palette.muted : .clear
     }
@@ -941,9 +1108,7 @@ struct ActionTabBar: View {
         moreMenu(overflow)
       }
     }
-    .padding(3)
     .frame(height: size.height + 6)
-    .background(track)
     .animation(AppMotion.state(reduceMotion: reduceMotion), value: selection)
   }
 
@@ -969,7 +1134,10 @@ struct ActionTabBar: View {
       .frame(height: size.height)
       .contentShape(Rectangle())
     }
-    .menuStyle(.borderlessButton)
+    // `.button` keeps the label's own color; the borderless pull-down cell
+    // repaints it in the system's label color.
+    .menuStyle(.button)
+    .buttonStyle(.plain)
     .menuIndicator(.hidden)
     .fixedSize()
     .help(overflow.map(\.name).joined(separator: " · "))
@@ -1010,9 +1178,7 @@ struct ActionTabBar: View {
       .frame(height: size.height)
       .background { armedPill }
       .contentShape(Rectangle())
-      .padding(3)
       .frame(height: size.height + 6)
-      .background(track)
     }
     .menuStyle(.borderlessButton)
     .menuIndicator(.hidden)
@@ -1021,22 +1187,16 @@ struct ActionTabBar: View {
 
   // MARK: - Parts
 
-  private var track: some View {
-    RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
-      .fill(palette.muted)
-      .overlay {
-        RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
-          .strokeBorder(palette.border, lineWidth: 1)
-      }
-  }
-
-  /// The raised surface under the armed option.
+  /// The raised surface under the armed option. The strip has no track of
+  /// its own: it sits on the window frame, and the armed pill is the same
+  /// material as the content panel below it, so the one lit tab reads as the
+  /// lens the panel is being looked through.
   private var armedPill: some View {
     let shape = RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
     return shape
       .fill(palette.surfaceElevated)
-      .overlay { shape.strokeBorder(palette.borderStrong, lineWidth: 1) }
-      .shadow(color: palette.shadow, radius: 1.5, y: 1)
+      .overlay { shape.strokeBorder(palette.border, lineWidth: 1) }
+      .shadow(color: palette.shadow, radius: 2, y: 1)
   }
 
   private func tab(_ action: TranslationAction, variant: Int) -> some View {
@@ -1046,7 +1206,8 @@ struct ActionTabBar: View {
     } label: {
       HStack(spacing: AppSpacing.xs + 1) {
         Image(systemName: action.mode?.symbol ?? "sparkles")
-          .font(.system(size: size.iconSize, weight: .medium))
+          .font(.system(size: size.iconSize, weight: .semibold))
+          .foregroundStyle(isSelected ? palette.accent : palette.faintForeground)
         Text(action.name)
           .font(size.font)
           .lineLimit(1)
@@ -1073,6 +1234,78 @@ struct ActionTabBar: View {
   }
 }
 
+// MARK: - Segmented control
+
+/// A small segmented control for switching between views of the same thing.
+///
+/// Drawn rather than taken from `Picker(.segmented)`, whose AppKit bezel sits
+/// on its own gray ramp and reads as a foreign control beside the app's own.
+/// A muted track holds one raised pill on the armed option — the same pill the
+/// action strip uses, so both switchers read as one family.
+struct SegmentedControl<Value: Hashable>: View {
+  struct Segment {
+    let value: Value
+    let title: String
+    var symbol: String?
+    /// What VoiceOver and the tooltip say when only the glyph is drawn.
+    var accessibilityTitle: String?
+  }
+
+  let title: String
+  @Binding var selection: Value
+  let segments: [Segment]
+
+  @Environment(\.palette) private var palette
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Namespace private var pill
+
+  var body: some View {
+    HStack(spacing: 2) {
+      ForEach(segments, id: \.value) { segment in
+        let isSelected = segment.value == selection
+        Button {
+          selection = segment.value
+        } label: {
+          HStack(spacing: AppSpacing.xs) {
+            if let symbol = segment.symbol {
+              Image(systemName: symbol)
+                .font(.system(size: 10.5, weight: .semibold))
+            }
+            if !segment.title.isEmpty {
+              Text(segment.title)
+                .font(AppFont.label)
+                .lineLimit(1)
+            }
+          }
+          .foregroundStyle(isSelected ? palette.foreground : palette.mutedForeground)
+          .fixedSize()
+          .padding(.horizontal, AppSpacing.sm + 2)
+          .frame(height: 24)
+          .background {
+            if isSelected {
+              RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
+                .fill(palette.surfaceElevated)
+                .shadow(color: palette.shadowStrong.opacity(0.6), radius: 1.5, y: 0.5)
+                .matchedGeometryEffect(id: "segment", in: pill)
+            }
+          }
+          .contentShape(Rectangle())
+          .ambientFocusRing(palette, radius: AppRadius.sm)
+        }
+        .buttonStyle(.plain)
+        .help(segment.accessibilityTitle ?? segment.title)
+        .accessibilityLabel(segment.accessibilityTitle ?? segment.title)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+      }
+    }
+    .padding(2)
+    .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+    .animation(AppMotion.state(reduceMotion: reduceMotion), value: selection)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(title)
+  }
+}
+
 // MARK: - Rows
 
 /// A selectable row in the sidebar or in a source list.
@@ -1083,6 +1316,10 @@ struct NavRow: View {
   var subtitle: String?
   var trailing: String?
   var collapsed = false
+  /// On the window frame the selected row is drawn as a raised tile in the
+  /// content panel's material, tying the row to the panel it opened. Inside
+  /// the panel, where that material is the background, it is a flat fill.
+  var raised = false
   let action: () -> Void
 
   @Environment(\.palette) private var palette
@@ -1120,9 +1357,16 @@ struct NavRow: View {
         }
       }
       .padding(.horizontal, collapsed ? 0 : AppSpacing.sm + 2)
-      .frame(height: 34)
+      .frame(height: 32)
       .frame(maxWidth: .infinity, alignment: collapsed ? .center : .leading)
       .background(fill, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+      .overlay {
+        if raised, isSelected {
+          RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+            .strokeBorder(palette.border, lineWidth: 1)
+        }
+      }
+      .shadow(color: raised && isSelected ? palette.shadow : .clear, radius: 1.5, y: 1)
       .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
       .ambientFocusRing(palette, radius: AppRadius.md)
     }
@@ -1136,8 +1380,9 @@ struct NavRow: View {
   }
 
   private var fill: Color {
-    if isSelected { return palette.accentFill }
-    return isHovering ? palette.muted : .clear
+    if isSelected { return raised ? palette.surfaceElevated : palette.accentFill }
+    if isHovering { return raised ? palette.mutedHover.opacity(0.7) : palette.muted }
+    return .clear
   }
 }
 
@@ -1405,19 +1650,108 @@ struct ResizableSplit<Leading: View, Trailing: View>: View {
 /// delegate is overwritten before the first frame is drawn. Reaching the
 /// window through the content view runs late enough to survive that.
 struct WindowChrome: NSViewRepresentable {
-  func makeNSView(context _: Context) -> NSView {
+  final class Coordinator {
+    var trafficLights: TrafficLightPositioner?
+  }
+
+  func makeCoordinator() -> Coordinator { Coordinator() }
+
+  func makeNSView(context: Context) -> NSView {
     let view = NSView(frame: .zero)
-    DispatchQueue.main.async { apply(to: view.window) }
+    DispatchQueue.main.async { apply(to: view.window, coordinator: context.coordinator) }
     return view
   }
 
-  func updateNSView(_ view: NSView, context _: Context) {
-    DispatchQueue.main.async { apply(to: view.window) }
+  func updateNSView(_ view: NSView, context: Context) {
+    DispatchQueue.main.async { apply(to: view.window, coordinator: context.coordinator) }
   }
 
-  private func apply(to window: NSWindow?) {
+  private func apply(to window: NSWindow?, coordinator: Coordinator) {
     guard let window else { return }
     WindowCoordinator.adoptMainWindow(window)
+    if coordinator.trafficLights?.window !== window {
+      coordinator.trafficLights = TrafficLightPositioner(
+        window: window,
+        barHeight: AppMetrics.navBarHeight
+      )
+    } else {
+      coordinator.trafficLights?.apply()
+    }
+  }
+}
+
+/// Centres the traffic lights in a title bar as tall as the app's own top bar.
+///
+/// The window has no title bar of its own, so AppKit leaves the lights in a
+/// 32pt strip — ten points above the section title and the action strip that
+/// share their row. An empty `NSToolbar` would centre them, but its view takes
+/// every click in the bar for window dragging, which kills the action tabs
+/// underneath. Growing the transparent title bar instead keeps the clicks
+/// passing through to the content, the way Electron's `trafficLightPosition`
+/// does it.
+///
+/// AppKit lays the buttons out again whenever the title bar does — resizing,
+/// key changes, leaving full screen — so the position is re-applied after each.
+@MainActor
+final class TrafficLightPositioner {
+  private(set) weak var window: NSWindow?
+  private let barHeight: CGFloat
+  // Written once in `init`, read only in `deinit`.
+  nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
+
+  init(window: NSWindow, barHeight: CGFloat) {
+    self.window = window
+    self.barHeight = barHeight
+    let names: [Notification.Name] = [
+      NSWindow.didResizeNotification,
+      NSWindow.didEndLiveResizeNotification,
+      NSWindow.didBecomeKeyNotification,
+      NSWindow.didResignKeyNotification,
+      NSWindow.didExitFullScreenNotification,
+      NSWindow.didChangeBackingPropertiesNotification,
+      NSWindow.didDeminiaturizeNotification,
+    ]
+    observers = names.map { name in
+      NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
+        [weak self] _ in
+        MainActor.assumeIsolated {
+          self?.apply()
+          // The title bar may lay itself out once more after the
+          // notification; catch that pass too.
+          DispatchQueue.main.async { self?.apply() }
+        }
+      }
+    }
+    apply()
+  }
+
+  deinit {
+    observers.forEach(NotificationCenter.default.removeObserver)
+  }
+
+  func apply() {
+    guard let window, !window.styleMask.contains(.fullScreen),
+      let close = window.standardWindowButton(.closeButton),
+      let titlebar = close.superview,
+      let container = titlebar.superview
+    else { return }
+
+    var frame = container.frame
+    let top = window.frame.height - barHeight
+    if frame.height != barHeight || frame.minY != top {
+      frame.size.height = barHeight
+      frame.origin.y = top
+      container.frame = frame
+    }
+
+    let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+    for type in buttons {
+      guard let button = window.standardWindowButton(type) else { continue }
+      let y = ((titlebar.frame.height - button.frame.height) / 2).rounded()
+      if button.frame.minY != y {
+        button.setFrameOrigin(NSPoint(x: button.frame.minX, y: y))
+      }
+    }
   }
 }
 

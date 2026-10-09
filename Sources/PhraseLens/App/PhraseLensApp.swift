@@ -27,6 +27,17 @@ struct PhraseLensApp: App {
       failures.forEach { print("SELF-TEST FAILED: \($0)") }
       Darwin.exit(EXIT_FAILURE)
     }
+    #if DEBUG
+    if CommandLine.arguments.contains("--write-back-probe") {
+      let application = NSApplication.shared
+      application.setActivationPolicy(.accessory)
+      Task { @MainActor in
+        let status = await WriteBackProbe.run(arguments: CommandLine.arguments)
+        Darwin.exit(status)
+      }
+      application.run()
+    }
+    #endif
     let model: AppModel
     #if DEBUG
     if AppUpdater.isUpdateTest,
@@ -38,24 +49,42 @@ struct PhraseLensApp: App {
       settings.dismissSetupGuide()
       model = AppModel(settingsStore: settings, library: LibraryStore(directory: directory), integrateWithSystem: false)
     } else if CommandLine.arguments.contains("--dictionary-preview") {
-      let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PhraseLens-preview-\(UUID())")
-      let defaults = UserDefaults(suiteName: "PhraseLens-preview-\(UUID())")!
-      let settings = SettingsStore(defaults: defaults,
-        credentials: CredentialStore(directory: directory, defaults: defaults), loadStoredCredentials: false)
-      if CommandLine.arguments.contains("--preview-light") { settings.settings.theme = .light }
-      settings.dismissSetupGuide()
-      settings.settings.selectionPanelPinned = true
-      model = AppModel(settingsStore: settings, library: LibraryStore(directory: directory), integrateWithSystem: false)
       let arguments = CommandLine.arguments
       func previewValue(_ flag: String) -> String? {
         guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]
       }
+      // `--preview-library <dir>` reads a copy of a library, so the library
+      // sections can be photographed populated without touching the real one.
+      let directory = previewValue("--preview-library").map { URL(fileURLWithPath: $0, isDirectory: true) }
+        ?? FileManager.default.temporaryDirectory.appendingPathComponent("PhraseLens-preview-\(UUID())")
+      let defaults = UserDefaults(suiteName: "PhraseLens-preview-\(UUID())")!
+      let settings = SettingsStore(defaults: defaults,
+        credentials: CredentialStore(directory: directory, defaults: defaults), loadStoredCredentials: false)
+      if CommandLine.arguments.contains("--preview-light") { settings.settings.theme = .light }
+      if CommandLine.arguments.contains("--preview-dark") { settings.settings.theme = .dark }
+      if CommandLine.arguments.contains("--preview-chinese") { settings.settings.appLanguage = .simplifiedChinese }
+      settings.dismissSetupGuide()
+      settings.settings.selectionPanelPinned = true
+      model = AppModel(settingsStore: settings, library: LibraryStore(directory: directory), integrateWithSystem: false)
+      if previewValue("--preview-library") != nil { model.loadPreviewLibrary() }
+      model.selectedActionID = previewValue("--preview-action") == "translate"
+        ? TranslationAction.builtIn(for: .translate).id
+        : TranslationAction.builtIn(for: .definition).id
       model.inputText = previewValue("--preview-text") ?? "食べました"
-      if let result = previewValue("--preview-result") {
+      if let source = previewValue("--preview-capture-from").flatMap({ pid_t($0) }) {
+        model.previewCapture(
+          from: source,
+          action: previewValue("--preview-action") == "polish" ? .polishing : .translate,
+          result: previewValue("--preview-result") ?? "(preview result)"
+        )
+      } else if let result = previewValue("--preview-result") {
         // Deterministic visual QA without credentials, network or user history.
         model.outputText = result
         model.selectResultTab(.translation)
+        if let question = previewValue("--preview-question") {
+          model.seedPreviewFollowUp(question: question, answer: previewValue("--preview-answer") ?? "")
+        }
       } else {
         model.translate()
       }
@@ -112,7 +141,7 @@ struct PhraseLensApp: App {
       }
       CommandMenu(L10n.isChinese ? "翻译" : "Translation") {
         Button(L10n.isChinese ? "翻译" : "Translate") { model.translate() }
-          .keyboardShortcut(.return, modifiers: [.command])
+          .disabled(model.selectedAction == nil)
         Button(L10n.isChinese ? "停止" : "Stop") { model.stopTranslation() }
           .keyboardShortcut(".", modifiers: [.command])
         Button(L10n.isChinese ? "深入追问" : "Ask a Follow-Up") { model.requestFollowUpFocus() }
@@ -138,6 +167,14 @@ struct PhraseLensApp: App {
         Divider()
         Button(L10n.isChinese ? "拷贝结果" : "Copy Result") { model.copyOutput() }
           .keyboardShortcut("c", modifiers: [.command, .shift])
+        // Listed only for the actions that offer them, and enabled only while
+        // the input is a selection that can still be written back to.
+        ForEach(model.offeredResultCommands.filter(\.writesToSource)) { command in
+          Button(command.menuTitle(sourceApplication: model.writableSource?.applicationName)) {
+            model.perform(command)
+          }
+          .disabled(!model.canPerform(command))
+        }
         Button(L10n.isChinese ? "朗读原文" : "Speak Source") { model.speakInput() }
       }
     }
