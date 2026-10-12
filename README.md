@@ -207,7 +207,7 @@ dist/
 After changes are merged to `main`, run `./scripts/release.sh --dry-run` to inspect
 the next version, then `./scripts/release.sh` to publish. The command chooses a
 SemVer bump from commit messages (`feat` = minor, `!` or `BREAKING CHANGE:` =
-major, other changes = patch), updates the app bundle version, `CHANGELOG.md`,
+major, other changes = patch; `RELEASE_BUMP=patch|minor|major` overrides it), updates the app bundle version, `CHANGELOG.md`,
 and both landing pages, runs the self-tests, builds and signs universal DMG/ZIP
 artifacts, creates checksums, and atomically pushes the release commit and tag.
 It generates a signed Sparkle appcast and stages all assets in a draft GitHub

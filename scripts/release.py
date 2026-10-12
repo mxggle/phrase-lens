@@ -5,6 +5,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import os
 import plistlib
 import re
 import subprocess
@@ -47,6 +48,13 @@ def plan():
         bump = "major"
     elif any(re.match(r"feat(?:\([^)]*\))?:", subject) for subject, _ in commits):
         bump = "minor"
+    # Commits that do not touch the app, such as landing-page features, can
+    # overstate a release; RELEASE_BUMP=patch|minor|major sets it explicitly.
+    override = os.environ.get("RELEASE_BUMP")
+    if override:
+        if override not in ("patch", "minor", "major"):
+            raise SystemExit("RELEASE_BUMP must be patch, minor, or major")
+        bump = override
     major, minor, patch = map(int, version.split("."))
     next_version = {"major": f"{major + 1}.0.0", "minor": f"{major}.{minor + 1}.0",
                     "patch": f"{major}.{minor}.{patch + 1}"}[bump]
