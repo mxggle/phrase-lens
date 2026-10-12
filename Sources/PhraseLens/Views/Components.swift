@@ -1133,9 +1133,6 @@ struct ChipToggleStyle: ToggleStyle {
 /// to learn what it does, which is exactly the work a tab strip exists to
 /// save. The armed action is always one of the visible tabs, so the strip
 /// never hides what is running behind the menu.
-///
-/// With `onMove`, a tab can be dragged onto another to take its place, or
-/// onto More to go to the end of the list.
 struct ActionTabBar: View {
   enum Size {
     /// Window chrome.
@@ -1175,15 +1172,10 @@ struct ActionTabBar: View {
   let actions: [TranslationAction]
   @Binding var selection: UUID
   var size: Size = .regular
-  /// Moves the dragged action into the target's place; a nil target means
-  /// the end of the list. Without it the tabs cannot be dragged.
-  var onMove: ((_ source: UUID, _ target: UUID?) -> Void)?
 
   @Environment(\.palette) private var palette
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Namespace private var pill
-  /// The tab, or More when nil, a dragged tab is hovering over.
-  @State private var dropTarget: UUID??
 
   var body: some View {
     ViewThatFits(in: .horizontal) {
@@ -1207,45 +1199,6 @@ struct ActionTabBar: View {
     selection = id
   }
 
-  /// Makes `content` a place a tab can be dropped. Does nothing without
-  /// `onMove`, so a strip that cannot reorder accepts no drops.
-  @ViewBuilder
-  private func dropZone<Content: View>(_ target: UUID?, @ViewBuilder content: () -> Content) -> some View {
-    if let onMove {
-      content()
-        .background {
-          if dropTarget == .some(target) {
-            RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
-              .fill(palette.mutedHover)
-          }
-        }
-        .dropDestination(for: String.self) { values, _ in
-          guard let value = values.first, let source = UUID(uuidString: value),
-            source != target, actions.contains(where: { $0.id == source })
-          else { return false }
-          onMove(source, target)
-          return true
-        } isTargeted: { isTargeted in
-          if isTargeted {
-            dropTarget = .some(target)
-          } else if dropTarget == .some(target) {
-            dropTarget = nil
-          }
-        }
-    } else {
-      content()
-    }
-  }
-
-  @ViewBuilder
-  private func dragSource<Content: View>(_ id: UUID, @ViewBuilder content: () -> Content) -> some View {
-    if onMove != nil {
-      content().draggable(id.uuidString)
-    } else {
-      content()
-    }
-  }
-
   /// The first `count` actions in display order, with the armed one swapped
   /// into the last slot when it would otherwise fall behind the menu.
   private func visibleActions(count: Int) -> [TranslationAction] {
@@ -1263,16 +1216,10 @@ struct ActionTabBar: View {
     let overflow = actions.filter { action in !visible.contains { $0.id == action.id } }
     return HStack(spacing: 2) {
       ForEach(visible) { action in
-        dropZone(action.id) {
-          dragSource(action.id) {
-            tab(action, variant: visibleCount)
-          }
-        }
+        tab(action, variant: visibleCount)
       }
       if !overflow.isEmpty {
-        dropZone(nil) {
-          moreMenu(overflow)
-        }
+        moreMenu(overflow)
       }
     }
     .frame(height: size.height + 6)
@@ -1875,50 +1822,6 @@ struct WindowDragArea: NSViewRepresentable {
     /// rects or the appearance of the header it sits behind.
     override var isOpaque: Bool { false }
   }
-}
-
-/// Hosts content that sits in the transparent title bar but must not move
-/// the window.
-///
-/// SwiftUI draws into one non-opaque hosting view, and AppKit lets a press on
-/// any such view in the title bar drag the window. Content that takes its
-/// own drags — tabs that can be reordered — would start both at once. This
-/// gives it a hosting view of its own that declines to move the window; the
-/// rest of the bar still does.
-struct WindowStillArea<Content: View>: NSViewRepresentable {
-  let content: Content
-
-  init(@ViewBuilder content: () -> Content) {
-    self.content = content()
-  }
-
-  func makeNSView(context: Context) -> WindowStillHostingView {
-    let view = WindowStillHostingView(rootView: root(context))
-    // Only the ideal size is reported; `sizeThatFits` below narrows it.
-    // Minimum and maximum constraints would pin the bar to its widest layout.
-    view.sizingOptions = [.intrinsicContentSize]
-    return view
-  }
-
-  func updateNSView(_ view: WindowStillHostingView, context: Context) {
-    view.rootView = root(context)
-  }
-
-  /// The widest layout, narrowed to whatever the bar can spare, so content
-  /// that adapts to its width (`ViewThatFits`) still sees the real space.
-  func sizeThatFits(_ proposal: ProposedViewSize, nsView view: WindowStillHostingView, context _: Context) -> CGSize? {
-    let ideal = view.intrinsicContentSize
-    return CGSize(width: min(proposal.width ?? ideal.width, ideal.width), height: ideal.height)
-  }
-
-  /// A separate hosting view starts from a fresh environment.
-  private func root(_ context: Context) -> AnyView {
-    AnyView(content.environment(\.palette, context.environment.palette))
-  }
-}
-
-final class WindowStillHostingView: NSHostingView<AnyView> {
-  override var mouseDownCanMoveWindow: Bool { false }
 }
 
 // MARK: - Panel chrome

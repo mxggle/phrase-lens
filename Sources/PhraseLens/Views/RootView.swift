@@ -533,13 +533,7 @@ private struct NavBarControls: View {
   var body: some View {
     switch section {
     case .translator:
-      // The bar sits in the title bar; dragging a tab reorders it rather
-      // than moving the window.
-      WindowStillArea {
-        ActionTabBar(actions: model.visibleActions, selection: actionSelection) { source, target in
-          model.moveAction(source, onto: target)
-        }
-      }
+      ActionTabBar(actions: model.visibleActions, selection: actionSelection)
     case .setup, .history, .vocabulary, .actions:
       EmptyView()
     }
