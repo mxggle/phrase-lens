@@ -1877,6 +1877,50 @@ struct WindowDragArea: NSViewRepresentable {
   }
 }
 
+/// Hosts content that sits in the transparent title bar but must not move
+/// the window.
+///
+/// SwiftUI draws into one non-opaque hosting view, and AppKit lets a press on
+/// any such view in the title bar drag the window. Content that takes its
+/// own drags — tabs that can be reordered — would start both at once. This
+/// gives it a hosting view of its own that declines to move the window; the
+/// rest of the bar still does.
+struct WindowStillArea<Content: View>: NSViewRepresentable {
+  let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  func makeNSView(context: Context) -> WindowStillHostingView {
+    let view = WindowStillHostingView(rootView: root(context))
+    // Only the ideal size is reported; `sizeThatFits` below narrows it.
+    // Minimum and maximum constraints would pin the bar to its widest layout.
+    view.sizingOptions = [.intrinsicContentSize]
+    return view
+  }
+
+  func updateNSView(_ view: WindowStillHostingView, context: Context) {
+    view.rootView = root(context)
+  }
+
+  /// The widest layout, narrowed to whatever the bar can spare, so content
+  /// that adapts to its width (`ViewThatFits`) still sees the real space.
+  func sizeThatFits(_ proposal: ProposedViewSize, nsView view: WindowStillHostingView, context _: Context) -> CGSize? {
+    let ideal = view.intrinsicContentSize
+    return CGSize(width: min(proposal.width ?? ideal.width, ideal.width), height: ideal.height)
+  }
+
+  /// A separate hosting view starts from a fresh environment.
+  private func root(_ context: Context) -> AnyView {
+    AnyView(content.environment(\.palette, context.environment.palette))
+  }
+}
+
+final class WindowStillHostingView: NSHostingView<AnyView> {
+  override var mouseDownCanMoveWindow: Bool { false }
+}
+
 // MARK: - Panel chrome
 
 extension View {
