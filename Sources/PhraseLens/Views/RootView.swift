@@ -157,7 +157,7 @@ struct RootView: View {
     .alert(
       "PhraseLens",
       isPresented: Binding(
-        get: { model.visibleErrorMessage != nil },
+        get: { model.errorMessage != nil },
         set: { if !$0 { model.errorMessage = nil } }
       )
     ) {
@@ -171,7 +171,7 @@ struct RootView: View {
         Button(L10n.isChinese ? "好" : "OK", role: .cancel) { model.errorMessage = nil }
       }
     } message: {
-      Text(model.visibleErrorMessage ?? "")
+      Text(model.errorMessage ?? "")
     }
   }
 
@@ -543,7 +543,6 @@ private struct NavBarControls: View {
     Binding(
       get: { model.selectedActionID },
       set: { id in
-        model.resetDictionary()
         model.selectedActionID = id
         if settingsStore.settings.autoTranslate, !model.inputText.isEmpty {
           model.translate()

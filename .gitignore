@@ -5,4 +5,3 @@ DerivedData/
 *.xcuserstate
 .DS_Store
 *.iconset
-scripts/dictionary/__pycache__/

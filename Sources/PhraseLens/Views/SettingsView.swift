@@ -315,35 +315,6 @@ private struct GeneralSettingsPane: View {
         }
       }
 
-      SettingsCard(L10n.isChinese ? "离线词典" : "Dictionary") {
-        SettingsRow(
-          L10n.isChinese ? "取词词典" : "Word dictionary",
-          detail: L10n.isChinese
-            ? "“释义”动作查询单词时先显示离线词典，并附带“AI 释义”标签页；句子只显示 AI 释义。"
-            : "In Definition, words open offline definitions with an AI Definition tab. Sentences use the AI definition only."
-        ) {
-          Toggle(
-            L10n.isChinese ? "取词词典" : "Word dictionary",
-            isOn: $settingsStore.settings.dictionaryEnabled
-          )
-          .labelsHidden()
-        }
-        Hairline()
-        SettingsRow(
-          L10n.isChinese ? "词典释义语言" : "Definitions",
-          detail: L10n.isChinese
-            ? "中文词条保留原文语种字形。其他语言需要对应的离线词典包。"
-            : "Chinese entries preserve the source's original script. Other languages require a matching dictionary pack."
-        ) {
-          AppSelect(
-            title: L10n.isChinese ? "词典释义语言" : "Dictionary definition language",
-            selection: $settingsStore.settings.dictionaryDefinitionLanguage,
-            options: model.dictionaryDefinitionOptions,
-            label: DictionaryLanguages.name
-          )
-        }
-      }
-
       SettingsCard(L10n.isChinese ? "翻译与交互" : "Translation") {
         SettingsRow(L10n.isChinese ? "默认动作" : "Default action") {
           AppSelect(

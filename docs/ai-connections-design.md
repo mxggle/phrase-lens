@@ -67,7 +67,7 @@ based solely on provider name. Continuing it requires an explicit selection or
 rerun so the user knows where it will be sent.
 
 The writing shortcut uses the Translate action's route. Background vocabulary
-organization uses the global default. Dictionary lookup remains local.
+organization uses the global default.
 
 ## Model catalogs and connection lifecycle
 

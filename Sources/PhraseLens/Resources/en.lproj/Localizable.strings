@@ -118,7 +118,7 @@
 "translator.badge.screen" = "Screen";
 "translator.badge.history" = "History";
 "translator.offline_badge" = "Offline";
-"translator.provider_warning" = "Connect a provider to use AI translation. Offline dictionary lookup is available now.";
+"translator.provider_warning" = "Connect a provider to use AI translation.";
 "translator.set_up_provider" = "Set up provider";
 "translator.stop_translating_help" = "Stop translating (⌘.)";
 "translator.translate_help" = "%@ (↩)";
@@ -138,30 +138,6 @@
 "translator.status.actions_saved" = "Actions saved";
 "translator.status.saved_to_vocabulary" = "Added to vocabulary";
 "translator.status.removed_from_vocabulary" = "Removed from vocabulary";
-
-/* --- Dictionary Results --- */
-"dictionary.select_to_lookup" = "Select or enter a word to look it up.";
-"dictionary.looking_up" = "Looking up dictionary…";
-"dictionary.try_again" = "Try again";
-"dictionary.possible_languages" = "Possible languages: %@. Use the language menu to choose.";
-"dictionary.no_entry" = "No entry with definitions in %@ was found.";
-"dictionary.no_installed" = "No installed dictionary supports this word language and %@ definitions.";
-"dictionary.suggestions" = "Try the dictionary form or choose the word language. You can also view an AI translation.";
-"dictionary.view_translation" = "View translation";
-"dictionary.speak_headword" = "Speak dictionary headword";
-"dictionary.copy_entry" = "Copy dictionary entry with source";
-"dictionary.save_entry" = "Save dictionary entry";
-"dictionary.save_meaning" = "Save meaning %d";
-"dictionary.tab_translation" = "Translation";
-"dictionary.tab_dictionary" = "Dictionary";
-"dictionary.tab_tooltip" = "Dictionary shows sourced offline definitions. AI Definition is written by the model, with senses and examples.";
-"dictionary.copy_entries_sources" = "Copy dictionary entries with sources";
-"dictionary.status.entry_saved" = "Dictionary entry saved";
-"dictionary.status.entry_copied" = "Dictionary entry copied with source";
-"dictionary.status.no_entry" = "No dictionary entry";
-"dictionary.status.offline" = "Dictionary · Offline";
-"dictionary.status.saved_lookup" = "Dictionary · Saved lookup";
-"dictionary.status.unavailable" = "Dictionary unavailable";
 
 /* --- Follow-up Q&A --- */
 "followup.thread" = "Follow-up questions";
@@ -353,11 +329,6 @@
 "settings.general.default_target_detail" = "The language new translations aim for.";
 "settings.general.languages_in_translator" = "Languages in the translator";
 "settings.general.languages_detail" = "At least one language stays enabled. Chinese, Japanese, and English are the defaults.";
-"settings.general.dictionary" = "Dictionary";
-"settings.general.word_dictionary" = "Word dictionary";
-"settings.general.word_dictionary_detail" = "In Definition, words open offline definitions with an AI Definition tab. Sentences use the AI definition only.";
-"settings.general.definitions" = "Definitions";
-"settings.general.definitions_detail" = "Chinese entries preserve the source's original script. Other languages require a matching dictionary pack.";
 "settings.general.translation" = "Translation";
 "settings.general.default_action" = "Default action";
 "settings.general.auto_translate" = "Translate automatically";

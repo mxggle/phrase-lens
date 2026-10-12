@@ -771,8 +771,8 @@ struct ActionsView: View {
 
   /// Copies any action — built-in or custom — into a new, independent custom
   /// action seeded with its current prompts. The copy always has `mode ==
-  /// nil`, so it no longer inherits a built-in mode's dynamic behavior (e.g.
-  /// Definition's offline dictionary tab); its prompts are exactly
+  /// nil`, so it no longer inherits a built-in mode's dynamic behavior; its
+  /// prompts are exactly
   /// what was visible in the editor at the moment of duplication.
   private func duplicateAction(_ action: TranslationAction) {
     let base = action.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.name

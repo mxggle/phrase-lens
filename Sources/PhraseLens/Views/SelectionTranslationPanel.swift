@@ -156,7 +156,7 @@ final class SelectionPanelCoordinator {
       NotificationCenter.default.removeObserver(moveObserver)
       self.moveObserver = nil
     }
-    if cancelsTranslation, model?.isTranslating == true || model?.isLookingUpDictionary == true {
+    if cancelsTranslation, model?.isTranslating == true {
       model?.stopTranslation()
     }
     model = nil
@@ -550,8 +550,7 @@ private struct SelectionPanelBody: View {
       // takes the Translate button off screen leaves nothing to recover with.
       // The accessibility case keeps the whole area, because its own recovery
       // route is already the only thing worth showing there.
-      ResultTabBar()
-      if !model.isAccessibilityPermissionError, let error = model.visibleErrorMessage {
+      if !model.isAccessibilityPermissionError, let error = model.errorMessage {
         failureNotice(error)
         Hairline()
       }
@@ -560,10 +559,6 @@ private struct SelectionPanelBody: View {
       footer
     }
     .floatingPanelBackground(palette)
-    .onChange(of: model.selectedResultTab) { _, _ in
-      copyResetTask?.cancel()
-      didCopy = false
-    }
     .onChange(of: model.inputText) { _, _ in
       copyResetTask?.cancel()
       didCopy = false
@@ -645,7 +640,6 @@ private struct SelectionPanelBody: View {
       get: { model.selectedActionID },
       set: { id in
         guard id != model.selectedActionID else { return }
-        model.resetDictionary()
         model.selectedActionID = id
         if !model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           model.translate()
@@ -742,13 +736,9 @@ private struct SelectionPanelBody: View {
         accessibilityPermissionMessage
       } else if model.visibleActions.isEmpty {
         NoActionsView()
-      } else if model.dictionaryVisible {
-        DictionaryResultsView()
-      } else if model.outputText.isEmpty, model.isTranslating || model.isLookingUpDictionary {
+      } else if model.outputText.isEmpty, model.isTranslating {
         message(
-          model.isTranslating
-            ? (L10n.isChinese ? "正在翻译…" : "Translating…")
-            : (L10n.isChinese ? "正在查词…" : "Checking word…"),
+          L10n.isChinese ? "正在翻译…" : "Translating…",
           symbol: "ellipsis",
           tint: palette.mutedForeground
         )
@@ -837,7 +827,7 @@ private struct SelectionPanelBody: View {
 
       HStack(spacing: AppSpacing.sm) {
         Button(L10n.tr("panel.retry")) {
-          model.translateWithAI(preserveDictionary: model.dictionaryAvailable)
+          model.translateWithAI()
         }
         .appButton(.secondary, size: .sm)
         .disabled(normalizedInputText.isEmpty)
@@ -874,42 +864,34 @@ private struct SelectionPanelBody: View {
 
   private var footer: some View {
     HStack(spacing: AppSpacing.xs) {
-      if !model.dictionaryVisible {
-        AppSelect(
-          title: L10n.isChinese ? "目标语言" : "Target language",
-          selection: Binding(
-            get: { settingsStore.settings.targetLanguage },
-            set: { language in
-              guard language != settingsStore.settings.targetLanguage else { return }
-              settingsStore.settings.targetLanguage = language
-              if !model.inputText.isEmpty {
-                model.translateWithAI(preserveDictionary: model.dictionaryAvailable)
-              }
+      AppSelect(
+        title: L10n.isChinese ? "目标语言" : "Target language",
+        selection: Binding(
+          get: { settingsStore.settings.targetLanguage },
+          set: { language in
+            guard language != settingsStore.settings.targetLanguage else { return }
+            settingsStore.settings.targetLanguage = language
+            if !model.inputText.isEmpty {
+              model.translateWithAI()
             }
-          ),
-          options: model.visibleTargetLanguages,
-          label: { $0.displayName },
-          size: .sm
-        )
-
-      } else {
-        Label(L10n.isChinese ? "离线词典" : "Offline", systemImage: "book.closed").font(AppFont.caption)
-          .foregroundStyle(palette.mutedForeground)
-      }
+          }
+        ),
+        options: model.visibleTargetLanguages,
+        label: { $0.displayName },
+        size: .sm
+      )
 
       Spacer(minLength: AppSpacing.xs)
 
-      if !model.dictionaryVisible {
-        IconButton(
-          title: isCurrentTextCollected
-            ? (L10n.isChinese ? "从生词本中移除此词" : "Remove from Vocabulary")
-            : (L10n.isChinese ? "保存至生词本" : "Save this word to Vocabulary"),
-          symbol: isCurrentTextCollected ? "bookmark.fill" : "bookmark",
-          isDisabled: !isCurrentTextCollected && !canCollectCurrentText,
-          isOn: isCurrentTextCollected
-        ) {
-          model.toggleCollectCurrentWord()
-        }
+      IconButton(
+        title: isCurrentTextCollected
+          ? (L10n.isChinese ? "从生词本中移除此词" : "Remove from Vocabulary")
+          : (L10n.isChinese ? "保存至生词本" : "Save this word to Vocabulary"),
+        symbol: isCurrentTextCollected ? "bookmark.fill" : "bookmark",
+        isDisabled: !isCurrentTextCollected && !canCollectCurrentText,
+        isOn: isCurrentTextCollected
+      ) {
+        model.toggleCollectCurrentWord()
       }
 
       IconButton(
@@ -929,23 +911,21 @@ private struct SelectionPanelBody: View {
 
       // Next to Copy, on the translation's own side of the footer: both
       // commands act on the answer rather than on the selection.
-      if !model.dictionaryVisible {
-        IconButton(
-          title: model.isSpeaking(.result)
-            ? (L10n.isChinese ? "停止朗读" : "Stop speaking")
-            : (L10n.isChinese ? "朗读译文" : "Speak the translation"),
-          // A speaker with a bubble: the answer being spoken, told apart at a
-          // glance from the plain speaker that reads the source text.
-          symbol: model.isSpeaking(.result) ? "speaker.slash.fill" : "speaker.wave.2.bubble.left",
-          // Half an answer is not worth hearing, but audio already playing when
-          // the next translation starts still has to be stoppable.
-          isDisabled: model.outputText.isEmpty
-            || (model.isTranslating && !model.isSpeaking(.result))
-        ) {
-          model.speakOutput()
-        }
-        .accessibilityLabel(L10n.isChinese ? "朗读译文" : "Speak translation")
+      IconButton(
+        title: model.isSpeaking(.result)
+          ? (L10n.isChinese ? "停止朗读" : "Stop speaking")
+          : (L10n.isChinese ? "朗读译文" : "Speak the translation"),
+        // A speaker with a bubble: the answer being spoken, told apart at a
+        // glance from the plain speaker that reads the source text.
+        symbol: model.isSpeaking(.result) ? "speaker.slash.fill" : "speaker.wave.2.bubble.left",
+        // Half an answer is not worth hearing, but audio already playing when
+        // the next translation starts still has to be stoppable.
+        isDisabled: model.outputText.isEmpty
+          || (model.isTranslating && !model.isSpeaking(.result))
+      ) {
+        model.speakOutput()
       }
+      .accessibilityLabel(L10n.isChinese ? "朗读译文" : "Speak translation")
 
       // The action decides which commands its answer offers, and the source
       // decides which of those can run. The first is the pill; the rest sit
@@ -1003,9 +983,7 @@ private struct SelectionPanelBody: View {
       return command.help(sourceApplication: model.writableSource?.applicationName)
     }
     if didCopy { return L10n.isChinese ? "已拷贝" : "Copied" }
-    return model.dictionaryVisible
-      ? (L10n.isChinese ? "拷贝词条释义与出处" : "Copy dictionary entries with sources")
-      : (L10n.isChinese ? "拷贝 (⇧⌘C)" : "Copy the translation (⇧⌘C)")
+    return L10n.isChinese ? "拷贝 (⇧⌘C)" : "Copy the translation (⇧⌘C)"
   }
 
   private var isPinned: Bool { settingsStore.settings.selectionPanelPinned }
