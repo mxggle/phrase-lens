@@ -949,8 +949,6 @@ struct AppSettings: Codable, Equatable, Sendable {
   var legacyRoutingConnectionID: UUID?
   var sourceLanguage: LanguageCode = .auto
   var targetLanguage: LanguageCode = .simplifiedChinese
-  var dictionaryEnabled = true
-  var dictionaryDefinitionLanguage = "zh"
   var favoriteLanguages: [LanguageCode] = [.simplifiedChinese, .japanese, .english]
   var defaultActionID = TranslationAction.builtIns[0].id
   /// An explicit collection prevents deleted or newly shipped templates from
@@ -993,8 +991,6 @@ struct AppSettings: Codable, Equatable, Sendable {
     case provider, connections, defaultConnectionID, defaultModel, legacyRoutingConnectionID
     case sourceLanguage
     case targetLanguage
-    case dictionaryEnabled
-    case dictionaryDefinitionLanguage
     case favoriteLanguages
     case defaultActionID
     case actionOrder
@@ -1034,8 +1030,6 @@ struct AppSettings: Codable, Equatable, Sendable {
     targetLanguage =
       try container.decodeIfPresent(LanguageCode.self, forKey: .targetLanguage)
       ?? .simplifiedChinese
-    dictionaryEnabled = try container.decodeIfPresent(Bool.self, forKey: .dictionaryEnabled) ?? true
-    dictionaryDefinitionLanguage = try container.decodeIfPresent(String.self, forKey: .dictionaryDefinitionLanguage) ?? "zh"
     favoriteLanguages =
       try container.decodeIfPresent([LanguageCode].self, forKey: .favoriteLanguages)
       ?? [.simplifiedChinese, .japanese, .english]

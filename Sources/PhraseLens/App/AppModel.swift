@@ -49,13 +49,6 @@ enum OutputRendering: Sendable {
   case undetermined
 }
 
-/// Definition's two result tabs: the AI-written entry and the offline
-/// dictionary. `translation` is the AI tab, named for the request it streams.
-enum ResultTab: String, CaseIterable {
-  case translation = "Translation"
-  case dictionary = "Dictionary"
-}
-
 @MainActor
 final class AppModel: ObservableObject {
   @Published var inputText = "" {
@@ -65,25 +58,12 @@ final class AppModel: ObservableObject {
         outputText = ""
         errorMessage = nil
         resetFollowUps()
-        resetDictionary()
-        dictionarySourceOverride = "auto"
         statusMessage = L10n.isChinese ? "就绪" : "Ready"
       }
     }
   }
   @Published private(set) var translatorFocusToken = UUID()
   @Published private(set) var actionsFocusToken = UUID()
-  @Published private(set) var dictionaryState: DictionaryLookupState = .idle
-  @Published private(set) var selectedResultTab: ResultTab = .dictionary
-  private var translationRequested = false
-  private var translationErrorMessage: String?
-  private var translatedTarget: LanguageCode?
-  private var translatedSourceOverride: String?
-  @Published private var dictionaryWordConfirmed = false
-  @Published private(set) var dictionarySourceOverride = "auto"
-  private var dictionaryTask: Task<Void, Never>?
-  private var dictionaryRequestID = UUID()
-  private var dictionaryRegistry: DictionaryRegistry?
   @Published var outputText = ""
   @Published private(set) var outputRendering: OutputRendering = .plain
   @Published var selectedActionID = TranslationAction.builtIns[0].id
@@ -155,11 +135,10 @@ final class AppModel: ObservableObject {
   private var cancellables = Set<AnyCancellable>()
 
   init(settingsStore: SettingsStore = SettingsStore(), library: LibraryStore = LibraryStore(),
-       dictionaryRegistry: DictionaryRegistry? = nil, integrateWithSystem: Bool = true) {
+       integrateWithSystem: Bool = true) {
     self.settingsStore = settingsStore
     self.library = library
     isActionLibraryLoaded = !integrateWithSystem
-    self.dictionaryRegistry = dictionaryRegistry
     isAccessibilityTrusted = integrateWithSystem && accessibility.isTrusted()
     selectedActionID =
       settingsStore.settings.resolvedDefaultAction(customActions: [])?.id
@@ -295,216 +274,14 @@ final class AppModel: ObservableObject {
       || errorMessage.hasPrefix(TranslationError.invalidEndpoint("").localizedDescription)
   }
 
-  func resetDictionary() {
-    dictionaryRequestID = UUID()
-    dictionaryTask?.cancel()
-    dictionaryTask = nil
-    selectedResultTab = .dictionary
-    dictionaryState = .idle
-    dictionaryWordConfirmed = false
-    translationRequested = false
-    translatedTarget = nil
-    translatedSourceOverride = nil
-  }
-
-  /// Definition pairs the offline dictionary with an AI-written entry;
-  /// Translate only ever translates, so it never shows the dictionary tab.
-  private var supportsDictionaryTabs: Bool {
-    settingsStore.settings.dictionaryEnabled && selectedAction?.isBuiltIn == true && selectedAction?.mode == .definition
-  }
-
-  var dictionaryAvailable: Bool {
-    supportsDictionaryTabs && (DictionaryLanguageResolver.isLookupCandidate(inputText)
-      || (DictionaryLanguageResolver.canProbeLexicalEntry(inputText) && dictionaryWordConfirmed))
-  }
-
-  var dictionaryVisible: Bool { dictionaryAvailable && selectedResultTab == .dictionary }
-
-  // An AI request may finish while the user is reading offline definitions.
-  // Keep that error with its tab; dictionary save/speech errors remain visible.
-  var visibleErrorMessage: String? {
-    dictionaryVisible && errorMessage == translationErrorMessage ? nil : errorMessage
-  }
-
-  var canCopyResult: Bool { !currentResultText.isEmpty }
-
-  var currentResultText: String {
-    dictionaryVisible
-      ? dictionaryMatches.filter { $0.dictionary.canPersist }.map(\.plainText).joined(separator: "\n\n")
-      : outputText
-  }
-
-  func selectResultTab(_ tab: ResultTab) {
-    guard tab != .dictionary || dictionaryAvailable else { return }
-    selectedResultTab = tab
-    if isSpeaking(.result) { speech.stop() }
-    switch tab {
-    case .translation:
-      let languageChanged = (translatedTarget.map { $0 != settingsStore.settings.targetLanguage } ?? false)
-        || (translatedSourceOverride.map { $0 != dictionarySourceOverride } ?? false)
-      if languageChanged || (outputText.isEmpty && !isTranslating && !translationRequested) {
-        translateWithAI(preserveDictionary: true)
-      }
-    case .dictionary:
-      if case .idle = dictionaryState { lookupDictionary() }
-      // A definition-language change while this tab was hidden must not show
-      // the cached result in the old language.
-      if case .result(let result) = dictionaryState,
-        result.request.definitionLanguage != settingsStore.settings.dictionaryDefinitionLanguage {
-        lookupDictionary()
-      }
-    }
-  }
-
-  func setDictionarySource(_ language: String) {
-    dictionarySourceOverride = language
-    if !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { lookupDictionary() }
-  }
-
-  var dictionarySourceOptions: [String] {
-    let extra = dictionaryRegistry?.providers.flatMap { $0.descriptor.sourceLanguages } ?? []
-    return ["auto"] + Array(Set(LanguageCode.allCases.filter { $0 != .auto }.map(\.rawValue) + extra + [dictionarySourceOverride]).subtracting(["auto"])).sorted()
-  }
-
-  var dictionaryDefinitionOptions: [String] {
-    let extra = dictionaryRegistry?.providers.flatMap { $0.descriptor.definitionLanguages } ?? []
-    return ["zh"] + Array(Set(LanguageCode.allCases.filter { $0 != .auto }.map(\.rawValue) + extra + [settingsStore.settings.dictionaryDefinitionLanguage]).subtracting(["zh"])).sorted()
-  }
-
-  var dictionaryMatches: [DictionaryMatch] {
-    if case .result(let result) = dictionaryState { return result.matches }
-    return []
-  }
-
-  var isLookingUpDictionary: Bool {
-    if case .loading = dictionaryState { return true }
-    return false
-  }
-
-  func lookupDictionary(definitionLanguage: String? = nil, configuredSource: String? = nil, probing: Bool = false) {
-    let query = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard supportsDictionaryTabs, DictionaryLanguageResolver.canProbeLexicalEntry(query) else { return }
-    dictionaryTask?.cancel()
-    selectedResultTab = .dictionary
-    dictionaryState = .loading
-    let source = dictionarySourceOverride != "auto" ? dictionarySourceOverride
-      : (inputSource == .manual ? (configuredSource ?? settingsStore.settings.sourceLanguage.rawValue) : "auto")
-    let request = DictionaryRequest(text: query, sourceOverride: source,
-      definitionLanguage: definitionLanguage ?? settingsStore.settings.dictionaryDefinitionLanguage,
-      context: selectionContext)
-    let ticket = UUID()
-    dictionaryRequestID = ticket
-    statusMessage = L10n.isChinese ? "正在查词…" : "Looking up dictionary…"
-    dictionaryTask = Task {
-      do {
-        if dictionaryRegistry == nil { dictionaryRegistry = try BundledDictionaries.registry() }
-        guard let dictionaryRegistry else { throw DictionaryDataError.unavailable }
-        let result = try await dictionaryRegistry.lookup(request)
-        guard !Task.isCancelled, dictionaryRequestID == ticket else { return }
-        if !result.matches.isEmpty { dictionaryWordConfirmed = true }
-        dictionaryState = .result(result)
-        if probing && result.matches.isEmpty {
-          if selectedResultTab == .dictionary { translateWithAI(preserveDictionary: true) }
-          return
-        }
-        statusMessage = result.matches.isEmpty
-          ? (L10n.isChinese ? "未找到词条释义" : "No dictionary entry")
-          : (L10n.isChinese ? "词典 · 离线" : "Dictionary · Offline")
-        let saved = result.matches.filter { $0.dictionary.canPersist }
-        guard !saved.isEmpty else { return }
-        let snapshot = DictionarySnapshot(query: query, definitionLanguage: request.definitionLanguage, matches: saved)
-        let entry = HistoryEntry(sourceText: query,
-          translatedText: saved.map(\.plainText).joined(separator: "\n\n"),
-          sourceLanguage: LanguageCode(rawValue: saved[0].entry.sourceLanguage) ?? .auto,
-          targetLanguage: LanguageCode(rawValue: request.definitionLanguage) ?? .simplifiedChinese,
-          actionName: "Dictionary", provider: nil, model: "", dictionarySnapshot: snapshot,
-          selectionContext: request.context)
-        try await library.addHistory(entry)
-        history.insert(entry, at: 0)
-        // Dictionary history must not replace the AI history row used by follow-ups.
-      } catch is CancellationError { }
-      catch {
-        guard dictionaryRequestID == ticket else { return }
-        if case .result = dictionaryState {
-          statusMessage = L10n.isChinese ? "词典已加载；历史记录未能保存" : "Dictionary loaded; history could not be saved"
-        } else {
-          dictionaryState = .failed(error.localizedDescription)
-          statusMessage = L10n.isChinese ? "词典不可用" : "Dictionary unavailable"
-          if probing && selectedResultTab == .dictionary { translateWithAI(preserveDictionary: true) }
-        }
-      }
-    }
-  }
-
-  func explainDictionaryWithAI() {
-    // The translation uses the user's input, never licensed dictionary content.
-    selectResultTab(.translation)
-  }
-
-  func saveDictionaryEntry(_ match: DictionaryMatch, sense: DictionarySense? = nil) {
-    guard match.dictionary.canPersist else { return }
-    var selected = match
-    if let sense { selected.entry.senses = [sense] }
-    let snapshot = DictionarySnapshot(query: inputText,
-      definitionLanguage: match.entry.definitionLanguage, matches: [selected])
-    var entry = VocabularyEntry(word: match.entry.headword, explanation: selected.plainText,
-      sourceLanguage: LanguageCode(rawValue: match.entry.sourceLanguage) ?? .auto,
-      targetLanguage: LanguageCode(rawValue: match.entry.definitionLanguage) ?? .simplifiedChinese,
-      dictionarySnapshot: snapshot)
-    if let existing = vocabulary.first(where: { $0.matchesIdentity(of: entry) }) { entry.id = existing.id }
-    let savedEntry = entry
-    Task {
-      do {
-        try await library.addVocabulary(savedEntry)
-        vocabulary.removeAll { $0.matchesIdentity(of: savedEntry) }
-        vocabulary.insert(savedEntry, at: 0)
-        statusMessage = L10n.isChinese ? "词条已保存至生词本" : "Dictionary entry saved"
-      } catch { errorMessage = error.localizedDescription }
-    }
-  }
-
-  func isDictionaryEntrySaved(_ match: DictionaryMatch, sense: DictionarySense? = nil) -> Bool {
-    let ids = sense.map { [$0.id] } ?? match.entry.senses.map(\.id)
-    return vocabulary.contains {
-      $0.dictionarySnapshot?.matches.first?.id == match.id
-        && $0.dictionarySnapshot?.matches.first?.entry.senses.map(\.id) == ids
-    }
-  }
-
-  func copyDictionaryEntry(_ match: DictionaryMatch) {
-    guard match.dictionary.canPersist else { return }
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(match.plainText, forType: .string)
-    statusMessage = L10n.isChinese ? "已拷贝词条及出处" : "Dictionary entry copied with source"
-  }
-
-  func speakDictionaryEntry(_ match: DictionaryMatch) {
-    speech.speak(match.entry.readings.first ?? match.entry.headword,
-      language: LanguageCode(rawValue: match.entry.sourceLanguage) ?? .auto,
-      rate: settingsStore.settings.speechRate, volume: settingsStore.settings.speechVolume,
-      provider: settingsStore.settings.resolvedTTSProvider)
-    speakingPane = .source
-  }
-
-  var primaryActionTitle: String { dictionaryVisible ? "Look Up" : "Translate" }
+  var canCopyResult: Bool { !outputText.isEmpty }
 
   func translate() {
-    guard selectedAction != nil else { return }
-    if supportsDictionaryTabs, selectedResultTab == .dictionary,
-      DictionaryLanguageResolver.canProbeLexicalEntry(inputText) {
-      lookupDictionary(probing: !dictionaryAvailable)
-    } else {
-      translateWithAI(preserveDictionary: supportsDictionaryTabs)
-    }
+    translateWithAI()
   }
 
-  func translateWithAI(preserveDictionary: Bool = false, actionOverride: TranslationAction? = nil) {
+  func translateWithAI(actionOverride: TranslationAction? = nil) {
     guard let action = actionOverride ?? selectedAction else { return }
-    if !preserveDictionary { resetDictionary() }
-    selectedResultTab = .translation
-    translationRequested = true
-    translatedTarget = settingsStore.settings.targetLanguage
-    translatedSourceOverride = dictionarySourceOverride
     let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else {
       errorMessage = TranslationError.noInput.localizedDescription
@@ -517,19 +294,16 @@ final class AppModel: ObservableObject {
     outputText = ""
     // The thread hangs off the answer that is about to be replaced.
     resetFollowUps()
-    translationErrorMessage = nil
     errorMessage = nil
     isTranslating = true
 
     let settings = settingsStore.settings
-    let resolvedSource = TranslationSourceResolver.resolve(
+    let source = TranslationSourceResolver.resolve(
       text,
       configuredSource: settings.sourceLanguage,
       inputSource: inputSource,
       restoredSource: restoredSourceLanguage
     )
-    let source = preserveDictionary && dictionarySourceOverride != "auto"
-      ? (LanguageCode(rawValue: dictionarySourceOverride) ?? resolvedSource) : resolvedSource
     let target = settings.targetLanguage
     outputRendering = PromptBuilder.expectsMarkdown(action, text: text) ? .markdown : .plain
     let context = selectionContext
@@ -617,7 +391,6 @@ final class AppModel: ObservableObject {
         outputText = streamedText
         isTranslating = false
         statusMessage = L10n.isChinese ? "失败" : "Failed"
-        translationErrorMessage = error.localizedDescription
         errorMessage = error.localizedDescription
         // A provider that stopped early still answered. The text on screen is
         // as real as any other result and belongs in history; the message
@@ -649,12 +422,6 @@ final class AppModel: ObservableObject {
   /// Calls off everything the translator is running, the follow-up thread
   /// included: both stream into the same pane, so one Stop has to reach both.
   func stopTranslation() {
-    dictionaryRequestID = UUID()
-    dictionaryTask?.cancel()
-    dictionaryTask = nil
-    if case .loading = dictionaryState {
-      dictionaryState = .failed(L10n.isChinese ? "已停止查词。" : "Lookup stopped.")
-    }
     requestID = UUID()
     translationTask?.cancel()
     translationTask = nil
@@ -694,7 +461,6 @@ final class AppModel: ObservableObject {
   }
 
   func swapLanguages() {
-    resetDictionary()
     let source = settingsStore.settings.sourceLanguage
     guard source != .auto else { return }
     settingsStore.settings.sourceLanguage = settingsStore.settings.targetLanguage
@@ -703,7 +469,6 @@ final class AppModel: ObservableObject {
       let previousInput = inputText
       inputText = outputText
       outputText = previousInput
-      selectedResultTab = .translation
       outputRendering = .plain
       // The questions were asked about the answer that just became the input.
       resetFollowUps()
@@ -711,7 +476,7 @@ final class AppModel: ObservableObject {
   }
 
   func copyOutput() {
-    let text = currentResultText
+    let text = outputText
     guard !text.isEmpty else { return }
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
@@ -737,7 +502,6 @@ final class AppModel: ObservableObject {
   /// PDF leaves nothing to write back to, so the writing commands are left
   /// out rather than drawn disabled, and Copy moves up to primary.
   var offeredResultCommands: [ResultCommand] {
-    guard !dictionaryVisible else { return [.copy] }
     let commands = (selectedAction?.resultCommands ?? [.copy])
       .filter { !$0.writesToSource || writableSource != nil }
     return commands.isEmpty ? [.copy] : commands
@@ -748,7 +512,7 @@ final class AppModel: ObservableObject {
   func canPerform(_ command: ResultCommand) -> Bool {
     guard command.writesToSource else { return canCopyResult }
     // Half an answer is not worth writing into someone's document.
-    return writableSource != nil && !outputText.isEmpty && !isTranslating && !dictionaryVisible
+    return writableSource != nil && !outputText.isEmpty && !isTranslating
   }
 
   func perform(_ command: ResultCommand) {
@@ -1021,7 +785,6 @@ final class AppModel: ObservableObject {
         selectedActionID = TranslationAction.builtIn(for: action).id
         outputText = result
         outputRendering = .plain
-        selectResultTab(.translation)
         statusMessage = "Ready"
         SelectionPanelCoordinator.shared.show(model: self)
       } catch {
@@ -1184,24 +947,10 @@ final class AppModel: ObservableObject {
   }
 
   func restore(_ entry: HistoryEntry, showWindow: Bool = true) {
-    resetDictionary()
     stopTranslation()
     resetFollowUps()
     inputText = entry.sourceText
-    if let snapshot = entry.dictionarySnapshot {
-      settingsStore.settings.dictionaryDefinitionLanguage = snapshot.definitionLanguage
-      outputText = ""
-      dictionaryWordConfirmed = true
-      selectedResultTab = .dictionary
-      dictionaryState = .result(DictionaryLookupResult(
-        request: .init(text: snapshot.query, definitionLanguage: snapshot.definitionLanguage),
-        languages: Array(Set(snapshot.matches.map { $0.entry.sourceLanguage })).sorted(),
-        matches: snapshot.matches, notices: [], supportsPair: true))
-    } else {
-      selectedResultTab = .translation
-      translationRequested = true
-      outputText = entry.translatedText
-    }
+    outputText = entry.translatedText
     selectionContext = entry.selectionContext
     selectionDiagnostics = nil
     inputSource = .history
@@ -1226,13 +975,11 @@ final class AppModel: ObservableObject {
       selectDefaultAction()
       outputRendering = .undetermined
     }
+    // Lookups saved by the offline dictionary that Definition used to show.
+    // They restore as Definition's plain-text answer.
     if entry.dictionarySnapshot != nil {
       selectedActionID = TranslationAction.builtIn(for: .definition).id
-      if !dictionaryAvailable {
-        selectedResultTab = .translation
-        outputText = entry.translatedText
-        outputRendering = .plain
-      }
+      outputRendering = .plain
     }
     statusMessage = entry.dictionarySnapshot == nil
       ? (L10n.isChinese ? "已恢复历史记录" : "History restored")
@@ -1476,7 +1223,6 @@ final class AppModel: ObservableObject {
       wasDefault: settings.defaultActionID == id, wasSelected: selectedActionID == id))
     if selectedActionID == id {
       stopTranslation()
-      resetDictionary()
     }
     var updated = settings
     updated.installedBuiltInActionIDs.remove(id)
@@ -1527,7 +1273,6 @@ final class AppModel: ObservableObject {
   /// on click, so a keyboard switch re-runs the same way a click does.
   func selectAction(_ id: UUID) {
     guard id != selectedActionID, visibleActions.contains(where: { $0.id == id }) else { return }
-    resetDictionary()
     selectedActionID = id
     guard settingsStore.settings.autoTranslate,
       !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1556,47 +1301,6 @@ final class AppModel: ObservableObject {
   /// subscriptions remain active for the lifetime of the app, so changing a
   /// setting does not depend on a particular Settings pane being on screen.
   private func observeRuntimeSettings() {
-    settingsStore.$settings
-      .map(\.sourceLanguage)
-      .removeDuplicates()
-      .dropFirst()
-      .sink { [weak self] language in
-        guard let self, self.inputSource == .manual, self.dictionarySourceOverride == "auto" else { return }
-        if self.dictionaryVisible {
-          self.lookupDictionary(configuredSource: language.rawValue)
-        } else {
-          self.dictionaryTask?.cancel()
-          self.dictionaryRequestID = UUID()
-          self.dictionaryState = .idle
-        }
-      }
-      .store(in: &cancellables)
-
-    settingsStore.$settings
-      .map(\.dictionaryDefinitionLanguage)
-      .removeDuplicates()
-      .dropFirst()
-      .sink { [weak self] language in
-        guard let self else { return }
-        if self.dictionaryVisible {
-          self.lookupDictionary(definitionLanguage: language)
-        } else {
-          self.dictionaryTask?.cancel()
-          self.dictionaryRequestID = UUID()
-          self.dictionaryState = .idle
-        }
-      }
-      .store(in: &cancellables)
-
-    settingsStore.$settings
-      .map(\.dictionaryEnabled)
-      .removeDuplicates()
-      .dropFirst()
-      .sink { [weak self] enabled in
-        if !enabled { self?.resetDictionary() }
-      }
-      .store(in: &cancellables)
-
     settingsStore.$settings
       .map(\.shortcuts)
       .removeDuplicates()

@@ -1,5 +1,8 @@
 import Foundation
 
+// PhraseLens no longer bundles an offline dictionary. These types remain so
+// that history and vocabulary saved from it still decode and display.
+
 struct DictionarySense: Codable, Hashable, Identifiable, Sendable {
   var id: String
   var glosses: [String]
@@ -28,10 +31,6 @@ struct DictionaryDescriptor: Codable, Hashable, Identifiable, Sendable {
   var licenseURL: String
   var canPersist: Bool
   var canUseWithAI: Bool
-
-  func supports(source: String, definition: String) -> Bool {
-    sourceLanguages.contains(source) && definitionLanguages.contains(definition)
-  }
 }
 
 struct DictionaryMatch: Codable, Hashable, Identifiable, Sendable {
@@ -54,42 +53,6 @@ struct DictionarySnapshot: Codable, Hashable, Sendable {
   var query: String
   var definitionLanguage: String
   var matches: [DictionaryMatch]
-}
-
-struct DictionaryRequest: Sendable {
-  var text: String
-  var sourceOverride: String = "auto"
-  var definitionLanguage: String = "zh"
-  var context: String?
-}
-
-struct DictionaryLookupResult: Sendable {
-  var request: DictionaryRequest
-  var languages: [String]
-  var matches: [DictionaryMatch]
-  var notices: [String]
-  var supportsPair: Bool
-}
-
-enum DictionaryLookupState {
-  case idle
-  case loading
-  case result(DictionaryLookupResult)
-  case failed(String)
-}
-
-struct LexicalCandidate: Hashable, Sendable {
-  var text: String
-  var reason: String
-}
-
-protocol DictionaryProvider: Sendable {
-  var descriptor: DictionaryDescriptor { get }
-  func lookup(_ candidates: [LexicalCandidate], sourceLanguage: String, definitionLanguage: String) async throws -> [DictionaryMatch]
-}
-
-protocol LexicalProcessor: Sendable {
-  func candidates(for text: String) -> [LexicalCandidate]
 }
 
 enum DictionaryLanguages {

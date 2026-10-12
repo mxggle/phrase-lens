@@ -41,7 +41,7 @@ struct TranslatorView: View {
             Image(systemName: "exclamationmark.circle.fill")
               .font(.system(size: 12))
               .foregroundStyle(palette.warning)
-            Text(L10n.isChinese ? "连接服务商以使用 AI 翻译。离线词典现已就绪。" : "Connect a provider to use AI translation. Offline dictionary lookup is available now.")
+            Text(L10n.isChinese ? "连接服务商以使用 AI 翻译。" : "Connect a provider to use AI translation.")
               .font(AppFont.caption)
               .foregroundStyle(palette.secondaryForeground)
               .frame(maxWidth: .infinity, alignment: .leading)
@@ -71,10 +71,6 @@ struct TranslatorView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(palette.background)
-    .onChange(of: model.selectedResultTab) { _, _ in
-      copyResetTask?.cancel()
-      didCopy = false
-    }
     .onChange(of: model.inputText) { _, _ in
       copyResetTask?.cancel()
       didCopy = false
@@ -238,61 +234,18 @@ struct TranslatorView: View {
       // at the end of the answer, where a reader arrives once they have read
       // it — so the foot of the pane never stacks rows of chrome under the
       // text it is meant to leave room for.
-      if !model.dictionaryVisible && !model.outputText.isEmpty {
+      if !model.outputText.isEmpty {
         FollowUpComposer()
           .transition(.opacity)
       }
     }
   }
 
-  /// One strip for the whole result: which result it is, the language it is
-  /// in, and the commands on it. It used to be two — the Dictionary/AI switch
-  /// above a language-and-commands strip — which spent a second band of
-  /// chrome on a row that was mostly empty. The switch shortens its labels,
-  /// then draws glyphs, before the strip gives up and stacks.
-  @ViewBuilder
   private var resultHeader: some View {
-    if model.dictionaryAvailable {
-      ViewThatFits(in: .horizontal) {
-        combinedResultHeader(tabLabels: .full)
-        combinedResultHeader(tabLabels: .short)
-        combinedResultHeader(tabLabels: .icon)
-        VStack(spacing: 0) {
-          ResultTabBar {
-            if model.dictionaryVisible { dictionaryCopyButton }
-          }
-          if !model.dictionaryVisible {
-            PaneHeader(label: L10n.isChinese ? "译文与结果" : "Result") {
-              resultLanguageControls
-            } trailing: {
-              resultCommands
-            }
-          }
-        }
-      }
-    } else {
-      PaneHeader(label: L10n.isChinese ? "译文与结果" : "Result") {
-        resultLanguageControls
-      } trailing: {
-        resultCommands
-      }
-    }
-  }
-
-  private func combinedResultHeader(tabLabels: ResultTypePicker.LabelStyle) -> some View {
     PaneHeader(label: L10n.isChinese ? "译文与结果" : "Result") {
-      ResultTypePicker(labels: tabLabels)
-      if model.dictionaryVisible {
-        DictionaryLanguagesButton()
-      } else {
-        resultLanguageControls
-      }
+      resultLanguageControls
     } trailing: {
-      if model.dictionaryVisible {
-        dictionaryCopyButton
-      } else {
-        resultCommands
-      }
+      resultCommands
     }
   }
 
@@ -308,12 +261,6 @@ struct TranslatorView: View {
     if model.isTranslating {
       Spinner(size: 12, isLive: true)
         .transition(.opacity)
-    }
-  }
-
-  private var dictionaryCopyButton: some View {
-    IconButton(title: didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝词条释义与出处" : "Copy dictionary entries with sources"), symbol: didCopy ? "checkmark" : "doc.on.doc", isDisabled: !model.canCopyResult) {
-      copyOutput()
     }
   }
 
@@ -372,12 +319,10 @@ struct TranslatorView: View {
 
   @ViewBuilder
   private var resultBody: some View {
-    if model.dictionaryVisible {
-      DictionaryResultsView()
-    } else if model.outputText.isEmpty {
+    if model.outputText.isEmpty {
       EmptyState(
         symbol: model.isTranslating ? "ellipsis" : "character.bubble",
-        title: model.isTranslating ? (L10n.isChinese ? "正在翻译…" : "Translating…") : model.isLookingUpDictionary ? (L10n.isChinese ? "正在查词…" : "Checking word…") : (L10n.isChinese ? "暂无翻译内容" : "No translation yet"),
+        title: model.isTranslating ? (L10n.isChinese ? "正在翻译…" : "Translating…") : (L10n.isChinese ? "暂无翻译内容" : "No translation yet"),
         message: model.inputText.isEmpty
           ? (L10n.isChinese ? "在左侧输入文本，或在其他应用中划选文字后按下 ⌥F。" : "Enter text on the left, or press ⌥F while text is selected in another app.")
           : (L10n.isChinese ? "按下 ↩ 开始翻译。" : "Press Enter to translate.")
@@ -540,7 +485,6 @@ private struct TranslateButton: View {
 
   private var title: String {
     if model.isTranslating { return L10n.isChinese ? "停止" : "Stop" }
-    if model.dictionaryVisible { return L10n.isChinese ? "查词" : "Look Up" }
     return L10n.isChinese ? "翻译" : "Translate"
   }
 

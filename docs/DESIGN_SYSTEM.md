@@ -71,7 +71,6 @@ still supplies text input, menus, focus, and accessibility.
 | `Hairline` | A rule in the palette's border color. `Divider()` uses an AppKit separator that is not on this ramp. |
 | `AppButtonStyle` / `.appButton(_:size:capsule:)` | Seven variants (including `.brand`) × six sizes, with a shared hover/press ramp. `capsule` rounds the ends, for chips and the send command. |
 | `AppMenuButton` | A command that opens a menu, in button chrome rather than AppKit's pull-down bezel. |
-| `SegmentedControl` | Switches between views of one thing (Dictionary / AI). Same raised pill as the action strip. |
 | `IconButton` | Icon-only command with matched tooltip and accessibility label. |
 | `AdaptiveLabel` | A command label that drops its title when its bar runs out of room. |
 | `Badge`, `KeyCombo` | State labels and keycaps. |
@@ -127,11 +126,10 @@ toggle), and the icon rail is wide enough to contain them.
 the source and the result, folded along one hairline inside the panel rather
 than laid out as two cards. Each pane's header is its language, as a ghost
 select aligned with the text below it. The source footer carries the brand run
-command (Translate / Look Up, with ↩ inside the button) and transient status,
+command (Translate, with ↩ inside the button) and transient status,
 so the primary command sits at the foot of the text it runs on. The result has
-a single header row — result type, language, and the commands on the result —
-whose Dictionary/AI switch shortens its labels, then draws glyphs, before the
-row stacks. Its foot is a prompt-style composer: one rounded box holding the
+a single header row: the language and the commands on the result. An action
+has exactly one result, so the pane never carries sub-tabs. Its foot is a prompt-style composer: one rounded box holding the
 question and a round send command that turns brand when there is something to
 send. Questions asked appear as bubbles on the trailing edge; suggested
 questions are pills at the end of the answer.

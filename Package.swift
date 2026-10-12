@@ -22,7 +22,6 @@ let package = Package(
       name: "PhraseLens",
       dependencies: [.product(name: "Sparkle", package: "Sparkle")],
       resources: [
-        .copy("Resources/Dictionaries"),
         .process("Resources/en.lproj"),
         .process("Resources/zh-Hans.lproj")
       ],

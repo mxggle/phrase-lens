@@ -9,15 +9,6 @@ struct PhraseLensApp: App {
   @StateObject private var appUpdater: AppUpdater
 
   init() {
-    if CommandLine.arguments.contains("--dictionary-self-test") {
-      Task.detached {
-        let failures = await DictionarySelfTestRunner.run()
-        failures.forEach { print("DICTIONARY TEST FAILED: \($0)") }
-        if failures.isEmpty { print("DICTIONARY TEST PASSED") }
-        Darwin.exit(failures.isEmpty ? EXIT_SUCCESS : EXIT_FAILURE)
-      }
-      dispatchMain()
-    }
     if CommandLine.arguments.contains("--self-test") {
       let failures = SelfTestRunner.run()
       if failures.isEmpty {
@@ -81,7 +72,6 @@ struct PhraseLensApp: App {
       } else if let result = previewValue("--preview-result") {
         // Deterministic visual QA without credentials, network or user history.
         model.outputText = result
-        model.selectResultTab(.translation)
         if let question = previewValue("--preview-question") {
           model.seedPreviewFollowUp(question: question, answer: previewValue("--preview-answer") ?? "")
         }

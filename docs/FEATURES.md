@@ -4,7 +4,6 @@ This file maps the original desktop behaviors to their native implementation.
 
 | Capability | Native implementation |
 |---|---|
-| Offline dictionary | Extensible provider registry, Japanese/English-to-Chinese SQLite packs, automatic language candidates and override, shared sourced cards, entry/sense saves; [coverage and limitations](DICTIONARY_DATA.md) |
 | Streaming translate | `TranslationClient` with provider-specific SSE/JSON decoders |
 | Translate, polish, summarize, analyze, usage, context, synonyms, code | `PromptBuilder` and action tabs |
 | OpenAI, ChatGPT API, Azure, Claude, Gemini, Ollama, Groq, DeepSeek, Moonshot, MiniMax, Cohere, Cerebras, ChatGLM, Kimi, TeamoRouter, custom | Editable provider profiles and native `URLSession` requests |

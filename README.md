@@ -52,7 +52,6 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | Feature | Description |
 | :--- | :--- |
 | 🔍 **Global Selection Lookup** | Select text anywhere in Safari, Xcode, Slack, or any app and trigger a compact pop-up right next to your cursor. |
-| 📖 **Offline Dictionary** | Japanese and English lookup with sourced Chinese definitions, readings, inflected forms, and source/license links, shown by the **Definition** action next to an AI-written definition with examples. Translate returns the translation only. Japanese coverage is limited; see [data coverage](docs/DICTIONARY_DATA.md). |
 | 🖥️ **Full Language Workspace** | Dedicated multi-tab workspace for translation, polishing, summarization, usage and context explanation, synonym comparison, and code analysis. |
 | 💬 **Follow-Up Questions** | Keep asking about a result — examples, nuance, collocations, grammar — with one-tap suggested questions. The thread is saved with the result and reopens with it from History. |
 | 📸 **Vision Screenshot OCR** | Snip any region on your screen to extract, recognize, and translate text instantly via Apple's Vision framework. |
@@ -252,7 +251,7 @@ The **Actions** workspace contains your own action collection. Every action, inc
 
 In **Settings > AI Connections**, create named connections with independent credentials, including multiple accounts or OpenAI-compatible gateways. Selecting a connection edits it; **Make global default** explicitly changes the default connection and model. Referenced connections cannot be deleted until their actions and global default are reassigned.
 
-In **Settings > Actions**, choose **Use global default** or pin a connection and model. Switching connections selects that connection's remembered model. Duplicate and prompt reset preserve routing. The writing shortcut uses the Translate action; vocabulary tagging uses the global default; dictionaries remain local. Follow-ups retain the original connection, model, prompts, language, and proxy context, including when restored from history. If the connection is removed or its endpoint, authentication, or credentials change, rerun the original action with an explicitly selected connection. Older history without route metadata needs a new original request before follow-ups.
+In **Settings > Actions**, choose **Use global default** or pin a connection and model. Switching connections selects that connection's remembered model. Duplicate and prompt reset preserve routing. The writing shortcut uses the Translate action; vocabulary tagging uses the global default. Follow-ups retain the original connection, model, prompts, language, and proxy context, including when restored from history. If the connection is removed or its endpoint, authentication, or credentials change, rerun the original action with an explicitly selected connection. Older history without route metadata needs a new original request before follow-ups.
 
 Migration copies credentials from the app-owned encrypted store into stable connection identities and retains legacy data; it never automatically reads the old Keychain. Legacy action model choices are retained, with the previously active explicit choice migrated to a pinned route.
 

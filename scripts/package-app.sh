@@ -66,7 +66,7 @@ else
     fi
     RESOURCE_BUILD_DIR="${ARM64_BUILD_DIR}"
 fi
-# The dictionary loader uses the signed application's resources directory.
+# Resources are loaded from the signed application's resources directory.
 cp -R "${RESOURCE_BUILD_DIR}/PhraseLens_PhraseLens.bundle" "${APP_PATH}/Contents/Resources/PhraseLens_PhraseLens.bundle"
 # Copy localization resource bundles to top-level Resources for macOS native bundle resolution
 for lproj in en.lproj zh-Hans.lproj; do

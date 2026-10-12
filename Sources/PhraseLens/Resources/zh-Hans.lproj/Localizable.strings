@@ -118,7 +118,7 @@
 "translator.badge.screen" = "截屏";
 "translator.badge.history" = "历史";
 "translator.offline_badge" = "离线";
-"translator.provider_warning" = "连接服务商以使用 AI 翻译。离线词典查询现已就绪。";
+"translator.provider_warning" = "连接服务商以使用 AI 翻译。";
 "translator.set_up_provider" = "配置服务商";
 "translator.stop_translating_help" = "停止翻译 (⌘.)";
 "translator.translate_help" = "%@ (↩)";
@@ -138,30 +138,6 @@
 "translator.status.actions_saved" = "动作已保存";
 "translator.status.saved_to_vocabulary" = "已添加到生词本";
 "translator.status.removed_from_vocabulary" = "已从生词本中移除";
-
-/* --- Dictionary Results --- */
-"dictionary.select_to_lookup" = "选择或输入单词以在词典中查询。";
-"dictionary.looking_up" = "正在查询词典…";
-"dictionary.try_again" = "重试";
-"dictionary.possible_languages" = "可能的语言：%@。请使用语言菜单进行选择。";
-"dictionary.no_entry" = "未找到包含 %@ 释义的词条。";
-"dictionary.no_installed" = "当前安装的词典不支持此单词语言及 %@ 释义。";
-"dictionary.suggestions" = "请尝试输入单词原型或选择单词语言，您也可以查看 AI 翻译。";
-"dictionary.view_translation" = "查看 AI 翻译";
-"dictionary.speak_headword" = "朗读词头";
-"dictionary.copy_entry" = "拷贝词条释义与出处";
-"dictionary.save_entry" = "保存词条到生词本";
-"dictionary.save_meaning" = "收藏第 %d 条释义";
-"dictionary.tab_translation" = "AI 翻译";
-"dictionary.tab_dictionary" = "离线词典";
-"dictionary.tab_tooltip" = "词典释义来自权威离线词典。AI 释义由大模型生成，含释义与例句。";
-"dictionary.copy_entries_sources" = "拷贝词条释义与出处";
-"dictionary.status.entry_saved" = "词条已保存到生词本";
-"dictionary.status.entry_copied" = "已拷贝词条及出处";
-"dictionary.status.no_entry" = "词典中未收录此词";
-"dictionary.status.offline" = "词典 · 离线";
-"dictionary.status.saved_lookup" = "词典 · 已保存查询";
-"dictionary.status.unavailable" = "离线词典不可用";
 
 /* --- Follow-up Q&A --- */
 "followup.thread" = "深入追问";
@@ -353,11 +329,6 @@
 "settings.general.default_target_detail" = "新建翻译时默认的目标语言。";
 "settings.general.languages_in_translator" = "翻译器候选语言";
 "settings.general.languages_detail" = "至少保留一种已启用的语言。默认为中文、英语和日语。";
-"settings.general.dictionary" = "词典选项";
-"settings.general.word_dictionary" = "单词词典";
-"settings.general.word_dictionary_detail" = "“释义”动作查询单词时先显示离线词典，并附带“AI 释义”标签页；句子只显示 AI 释义。";
-"settings.general.definitions" = "释义语言";
-"settings.general.definitions_detail" = "中文词条保留原始词典简繁字形；其他语言需要安装对应语言的离线词典包。";
 "settings.general.translation" = "翻译偏好";
 "settings.general.default_action" = "默认动作";
 "settings.general.auto_translate" = "自动开始翻译";
