@@ -533,7 +533,9 @@ private struct NavBarControls: View {
   var body: some View {
     switch section {
     case .translator:
-      ActionTabBar(actions: model.visibleActions, selection: actionSelection)
+      ActionTabBar(actions: model.visibleActions, selection: actionSelection) { source, target in
+        model.moveAction(source, onto: target)
+      }
     case .setup, .history, .vocabulary, .actions:
       EmptyView()
     }

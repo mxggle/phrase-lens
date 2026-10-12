@@ -1194,6 +1194,20 @@ final class AppModel: ObservableObject {
     settingsStore.settings.actionOrder = ids
   }
 
+  /// Puts `sourceID` where `targetID` is, or last when there is no target.
+  /// Dropping onto a later action lands after it, onto an earlier one before
+  /// it, so neighbours swap either way.
+  func moveAction(_ sourceID: UUID, onto targetID: UUID?) {
+    let ids = orderedActions.map(\.id)
+    guard sourceID != targetID, ids.contains(sourceID) else { return }
+    guard let targetID else {
+      moveAction(sourceID, to: ids.count)
+      return
+    }
+    guard let destination = ids.firstIndex(of: targetID) else { return }
+    moveAction(sourceID, to: destination)
+  }
+
   func restoreActionDefaults(_ id: UUID) {
     guard TranslationAction.factoryBuiltIn(for: id) != nil else { return }
     settingsStore.settings.resetBuiltInAction(id)

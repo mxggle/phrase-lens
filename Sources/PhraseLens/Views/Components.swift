@@ -1133,6 +1133,9 @@ struct ChipToggleStyle: ToggleStyle {
 /// to learn what it does, which is exactly the work a tab strip exists to
 /// save. The armed action is always one of the visible tabs, so the strip
 /// never hides what is running behind the menu.
+///
+/// With `onMove`, a tab can be dragged onto another to take its place, or
+/// onto More to go to the end of the list.
 struct ActionTabBar: View {
   enum Size {
     /// Window chrome.
@@ -1172,10 +1175,15 @@ struct ActionTabBar: View {
   let actions: [TranslationAction]
   @Binding var selection: UUID
   var size: Size = .regular
+  /// Moves the dragged action into the target's place; a nil target means
+  /// the end of the list. Without it the tabs cannot be dragged.
+  var onMove: ((_ source: UUID, _ target: UUID?) -> Void)?
 
   @Environment(\.palette) private var palette
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Namespace private var pill
+  /// The tab, or More when nil, a dragged tab is hovering over.
+  @State private var dropTarget: UUID??
 
   var body: some View {
     ViewThatFits(in: .horizontal) {
@@ -1199,6 +1207,45 @@ struct ActionTabBar: View {
     selection = id
   }
 
+  /// Makes `content` a place a tab can be dropped. Does nothing without
+  /// `onMove`, so a strip that cannot reorder accepts no drops.
+  @ViewBuilder
+  private func dropZone<Content: View>(_ target: UUID?, @ViewBuilder content: () -> Content) -> some View {
+    if let onMove {
+      content()
+        .background {
+          if dropTarget == .some(target) {
+            RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+              .fill(palette.mutedHover)
+          }
+        }
+        .dropDestination(for: String.self) { values, _ in
+          guard let value = values.first, let source = UUID(uuidString: value),
+            source != target, actions.contains(where: { $0.id == source })
+          else { return false }
+          onMove(source, target)
+          return true
+        } isTargeted: { isTargeted in
+          if isTargeted {
+            dropTarget = .some(target)
+          } else if dropTarget == .some(target) {
+            dropTarget = nil
+          }
+        }
+    } else {
+      content()
+    }
+  }
+
+  @ViewBuilder
+  private func dragSource<Content: View>(_ id: UUID, @ViewBuilder content: () -> Content) -> some View {
+    if onMove != nil {
+      content().draggable(id.uuidString)
+    } else {
+      content()
+    }
+  }
+
   /// The first `count` actions in display order, with the armed one swapped
   /// into the last slot when it would otherwise fall behind the menu.
   private func visibleActions(count: Int) -> [TranslationAction] {
@@ -1216,10 +1263,16 @@ struct ActionTabBar: View {
     let overflow = actions.filter { action in !visible.contains { $0.id == action.id } }
     return HStack(spacing: 2) {
       ForEach(visible) { action in
-        tab(action, variant: visibleCount)
+        dropZone(action.id) {
+          dragSource(action.id) {
+            tab(action, variant: visibleCount)
+          }
+        }
       }
       if !overflow.isEmpty {
-        moreMenu(overflow)
+        dropZone(nil) {
+          moreMenu(overflow)
+        }
       }
     }
     .frame(height: size.height + 6)
