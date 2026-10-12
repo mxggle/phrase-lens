@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import os
 import plistlib
 import subprocess
 import tempfile
@@ -16,6 +17,11 @@ spec.loader.exec_module(release)
 
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
+        # A release run exports RELEASE_BUMP; the planning tests need the default.
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("RELEASE_BUMP", None)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -49,6 +55,13 @@ class ReleaseTests(unittest.TestCase):
     def test_no_change_does_not_release(self):
         with patch.multiple(release, ROOT=self.root, PLIST=self.plist, CHANGELOG=self.changelog, LANDING=self.pages):
             self.assertFalse(release.plan()["release"])
+
+    def test_release_bump_overrides_the_computed_bump(self):
+        self.git("-c", "user.name=Test", "-c", "user.email=test@example.com",
+                 "commit", "--allow-empty", "-qm", "feat(landing): add a page section")
+        with patch.multiple(release, ROOT=self.root, PLIST=self.plist, CHANGELOG=self.changelog, LANDING=self.pages), \
+                patch.dict(os.environ, {"RELEASE_BUMP": "patch"}):
+            self.assertEqual(release.plan()["next"], "0.7.1")
 
     def test_feature_release_updates_every_version_surface_and_keeps_curated_notes(self):
         self.git("-c", "user.name=Test", "-c", "user.email=test@example.com",
