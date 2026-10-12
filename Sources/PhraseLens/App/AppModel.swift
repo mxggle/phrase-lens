@@ -1893,8 +1893,14 @@ final class AppModel: ObservableObject {
     let availableIDs = Set(
       (settingsStore.settings.resolvedBuiltInActions + customActions).map(\.id)
     )
-    settingsStore.settings.actionOrder.removeAll { !availableIDs.contains($0) }
-    settingsStore.settings.hiddenActionIDs.formIntersection(availableIDs)
+    // Every write to `settings` persists it and re-renders every window, even
+    // an unchanged one, and this runs each time an edited prompt is saved.
+    if settingsStore.settings.actionOrder.contains(where: { !availableIDs.contains($0) }) {
+      settingsStore.settings.actionOrder.removeAll { !availableIDs.contains($0) }
+    }
+    if !settingsStore.settings.hiddenActionIDs.isSubset(of: availableIDs) {
+      settingsStore.settings.hiddenActionIDs.formIntersection(availableIDs)
+    }
     reconcileActionSelection()
   }
 

@@ -714,6 +714,11 @@ struct AppTextField: View {
 }
 
 /// Multi-line input with the same chrome as `AppTextField`.
+///
+/// Built on `PlainTextView` rather than `TextEditor`. The prompt editors sit in
+/// a screen that re-renders whenever an edit is saved, and `TextEditor` writes
+/// its binding back into the text view on those passes: an input method's
+/// marked text is thrown away mid-composition and the caret jumps to the end.
 struct AppTextEditor: View {
   @Binding var text: String
   var placeholder: String = ""
@@ -722,18 +727,21 @@ struct AppTextEditor: View {
   var fontSize: Double = 12
 
   @Environment(\.palette) private var palette
-  @FocusState private var isFocused: Bool
+  @State private var isFocused = false
 
   var body: some View {
     ZStack(alignment: .topLeading) {
-      TextEditor(text: $text)
-        .font(.system(size: fontSize, design: monospaced ? .monospaced : .default))
-        .foregroundStyle(palette.foreground)
-        .scrollContentBackground(.hidden)
-        .textEditorOverlayScrollers()
-        .focused($isFocused)
-        .padding(.horizontal, AppSpacing.sm - 1)
-        .padding(.vertical, AppSpacing.sm - 2)
+      PlainTextView(
+        text: $text,
+        isFocused: $isFocused,
+        font: monospaced
+          ? .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+          : .systemFont(ofSize: fontSize),
+        textColor: NSColor(palette.foreground),
+        accessibilityLabel: placeholder
+      )
+      .padding(.horizontal, AppSpacing.sm - 1)
+      .padding(.vertical, AppSpacing.sm - 2)
 
       // Marked IME text can be visible while the SwiftUI binding is still empty.
       if text.isEmpty, !placeholder.isEmpty, !isFocused {
@@ -755,6 +763,112 @@ struct AppTextEditor: View {
 
   private var shape: RoundedRectangle {
     RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+  }
+}
+
+/// A plain-text `NSTextView` in a transparent scroll view with overlay
+/// scrollers.
+///
+/// The binding and the text view only meet when they actually differ, and
+/// never while an input method holds marked text: composition is the text
+/// view's business until it commits. Re-renders therefore leave the caret,
+/// the selection, the scroll position, and the pointer's cursor rects alone.
+private struct PlainTextView: NSViewRepresentable {
+  @Binding var text: String
+  @Binding var isFocused: Bool
+  let font: NSFont
+  let textColor: NSColor
+  let accessibilityLabel: String
+
+  func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+  func makeNSView(context: Context) -> NSScrollView {
+    let scrollView = NSScrollView()
+    scrollView.drawsBackground = false
+    scrollView.borderType = .noBorder
+    scrollView.hasVerticalScroller = true
+    scrollView.hasHorizontalScroller = false
+    scrollView.autohidesScrollers = true
+    scrollView.scrollerStyle = .overlay
+    scrollView.verticalScroller?.controlSize = .small
+
+    let textView = FocusReportingTextView()
+    textView.isRichText = false
+    textView.importsGraphics = false
+    textView.allowsUndo = true
+    textView.drawsBackground = false
+    textView.textContainerInset = .zero
+    // Prompts are templates: `${text}` and straight quotes must stay as typed.
+    textView.isAutomaticQuoteSubstitutionEnabled = false
+    textView.isAutomaticDashSubstitutionEnabled = false
+    textView.isAutomaticTextReplacementEnabled = false
+    textView.minSize = .zero
+    textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+    textView.isVerticallyResizable = true
+    textView.isHorizontallyResizable = false
+    textView.autoresizingMask = [.width]
+    textView.textContainer?.widthTracksTextView = true
+    textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+    textView.font = font
+    textView.textColor = textColor
+    textView.insertionPointColor = textColor
+    textView.string = text
+    textView.delegate = context.coordinator
+    textView.setAccessibilityLabel(accessibilityLabel)
+
+    scrollView.documentView = textView
+    return scrollView
+  }
+
+  func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    context.coordinator.parent = self
+    guard let textView = scrollView.documentView as? FocusReportingTextView else { return }
+    let coordinator = context.coordinator
+    textView.onFocusChange = { focused in
+      // Responder changes can arrive inside a layout pass.
+      DispatchQueue.main.async {
+        if coordinator.parent.isFocused != focused { coordinator.parent.isFocused = focused }
+      }
+    }
+    if textView.insertionPointColor != textColor { textView.insertionPointColor = textColor }
+    guard !textView.hasMarkedText() else { return }
+    if textView.string != text {
+      // An outside change, such as restoring the default prompt.
+      let length = (text as NSString).length
+      let selection = textView.selectedRange()
+      textView.string = text
+      textView.setSelectedRange(NSRange(location: min(selection.location, length), length: 0))
+    }
+    if textView.font != font { textView.font = font }
+    if textView.textColor != textColor { textView.textColor = textColor }
+  }
+
+  final class Coordinator: NSObject, NSTextViewDelegate {
+    var parent: PlainTextView
+
+    init(_ parent: PlainTextView) { self.parent = parent }
+
+    func textDidChange(_ notification: Notification) {
+      // Marked text is a proposal, not an edit; the commit fires this again.
+      guard let textView = notification.object as? NSTextView, !textView.hasMarkedText() else { return }
+      if parent.text != textView.string { parent.text = textView.string }
+    }
+  }
+}
+
+private final class FocusReportingTextView: NSTextView {
+  var onFocusChange: ((Bool) -> Void)?
+
+  override func becomeFirstResponder() -> Bool {
+    let became = super.becomeFirstResponder()
+    if became { onFocusChange?(true) }
+    return became
+  }
+
+  override func resignFirstResponder() -> Bool {
+    let resigned = super.resignFirstResponder()
+    if resigned { onFocusChange?(false) }
+    return resigned
   }
 }
 
