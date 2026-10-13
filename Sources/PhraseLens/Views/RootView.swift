@@ -533,7 +533,12 @@ private struct NavBarControls: View {
   var body: some View {
     switch section {
     case .translator:
-      ActionTabBar(actions: model.visibleActions, selection: actionSelection)
+      ActionTabBar(
+        actions: model.visibleActions,
+        selection: actionSelection,
+        defaultActionID: settingsStore.settings.defaultActionID,
+        setDefault: { settingsStore.setDefaultAction($0) }
+      )
     case .setup, .history, .vocabulary, .actions:
       EmptyView()
     }
