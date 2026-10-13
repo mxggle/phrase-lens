@@ -244,6 +244,7 @@ PhraseLens is designed with a zero-trust, privacy-first mindset:
 The **Actions** workspace contains your own action collection. Every action, including Translate, can be edited or deleted. New installations start with Translate, Definition, and Polish; existing installations retain their collection.
 
 - Use **+ > New Action** to write your own prompt, or **+ > Add from Templates** to add an individual preset. Installed templates are marked and cannot be added twice.
+- To choose the action new translations start with, right-click any tab in the action strip and pick **Set as Default**. Actions behind the **More** menu are under **More > Default action**. A small dot marks the current default.
 - **Restore default actions** adds all missing presets. It preserves existing prompts, model routing, visibility, relative order, and custom actions. Deleted presets return with their factory configuration.
 - After deleting an action, use **Undo Delete** to recover its complete configuration, including edited prompts and its position. Consecutive deletions can be undone during the current app session; quitting clears the undo history.
 - Deleting every action leaves an empty collection with recovery controls in the translator and selection pop-up. No translation runs until an action is added. Deleted presets stay deleted after restarting; future templates are not installed automatically.

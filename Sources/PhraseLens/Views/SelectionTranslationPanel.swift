@@ -535,7 +535,9 @@ private struct SelectionPanelBody: View {
         ActionTabBar(
           actions: model.visibleActions,
           selection: actionSelection,
-          size: .compact
+          size: .compact,
+          defaultActionID: settingsStore.settings.defaultActionID,
+          setDefault: { settingsStore.setDefaultAction($0) }
         )
         // The strip sizes to its content now, so pin it to the leading edge
         // rather than letting the stack centre a half-width track.

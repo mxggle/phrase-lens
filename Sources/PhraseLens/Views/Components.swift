@@ -1133,6 +1133,10 @@ struct ChipToggleStyle: ToggleStyle {
 /// to learn what it does, which is exactly the work a tab strip exists to
 /// save. The armed action is always one of the visible tabs, so the strip
 /// never hides what is running behind the menu.
+///
+/// The default action is chosen in place: a small dot marks it, any drawn tab
+/// offers Set as Default on right-click, and the More menu and the pull-down
+/// carry a Default submenu so actions behind a menu can be chosen too.
 struct ActionTabBar: View {
   enum Size {
     /// Window chrome.
@@ -1172,6 +1176,10 @@ struct ActionTabBar: View {
   let actions: [TranslationAction]
   @Binding var selection: UUID
   var size: Size = .regular
+  /// The action new translations start with, marked in the strip.
+  var defaultActionID: UUID?
+  /// Makes an action the default without arming it. Nil hides the controls.
+  var setDefault: ((UUID) -> Void)?
 
   @Environment(\.palette) private var palette
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1198,6 +1206,12 @@ struct ActionTabBar: View {
     guard id != selection else { return }
     selection = id
   }
+
+  private func isDefault(_ action: TranslationAction) -> Bool {
+    setDefault != nil && action.id == defaultActionID
+  }
+
+  private var defaultLabel: String { L10n.tr("actions.default_action") }
 
   /// The first `count` actions in display order, with the armed one swapped
   /// into the last slot when it would otherwise fall behind the menu.
@@ -1233,9 +1247,13 @@ struct ActionTabBar: View {
         Button {
           select(action.id)
         } label: {
-          Label(action.name, systemImage: action.mode?.symbol ?? "sparkles")
+          Label(
+            isDefault(action) ? "\(action.name) · \(L10n.tr("common.default"))" : action.name,
+            systemImage: action.mode?.symbol ?? "sparkles"
+          )
         }
       }
+      defaultSubmenu
     } label: {
       // One text run, so the menu's label keeps the chevron after the word
       // rather than laying the glyph out first as a button image.
@@ -1274,6 +1292,7 @@ struct ActionTabBar: View {
           }
         }
       }
+      defaultSubmenu
     } label: {
       HStack(spacing: AppSpacing.xs + 1) {
         Image(systemName: armedAction?.mode?.symbol ?? "sparkles")
@@ -1300,6 +1319,61 @@ struct ActionTabBar: View {
   }
 
   // MARK: - Parts
+
+  /// Every action with the current default checked, so one behind a menu can
+  /// be made the default without opening Settings.
+  @ViewBuilder private var defaultSubmenu: some View {
+    if let setDefault {
+      Divider()
+      Menu(defaultLabel) {
+        ForEach(actions) { action in
+          Button {
+            setDefault(action.id)
+          } label: {
+            if isDefault(action) {
+              Label(action.name, systemImage: "checkmark")
+            } else {
+              Text(action.name)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /// A drawn tab's right-click menu: Set as Default, or a checked, inert row
+  /// when the tab already is the default.
+  @ViewBuilder private func defaultContextMenu(_ action: TranslationAction) -> some View {
+    if let setDefault {
+      if isDefault(action) {
+        Button {} label: { Label(defaultLabel, systemImage: "checkmark") }
+          .disabled(true)
+      } else {
+        Button(L10n.tr("actions.set_as_default")) { setDefault(action.id) }
+      }
+    }
+  }
+
+  /// A dot in the tab's corner, inside its padding so marking a tab never
+  /// changes the strip's width. Accent on the armed pill, faint elsewhere.
+  private func defaultMark(isSelected: Bool) -> some View {
+    Circle()
+      .fill(isSelected ? palette.accent : palette.faintForeground)
+      .frame(width: 4, height: 4)
+      .padding(.top, 4)
+      .padding(.trailing, 4)
+      .accessibilityHidden(true)
+  }
+
+  private func tabHelp(_ action: TranslationAction) -> String {
+    guard setDefault != nil else { return action.name }
+    if isDefault(action) {
+      return "\(action.name) · \(defaultLabel)"
+    }
+    return L10n.isChinese
+      ? "\(action.name) · 右键设为默认"
+      : "\(action.name) · Right-click to set as default"
+  }
 
   /// The raised surface under the armed option. The strip has no track of
   /// its own: it sits on the window frame, and the armed pill is the same
@@ -1330,6 +1404,11 @@ struct ActionTabBar: View {
       .fixedSize()
       .padding(.horizontal, size.horizontalPadding)
       .frame(height: size.height)
+      .overlay(alignment: .topTrailing) {
+        if isDefault(action) {
+          defaultMark(isSelected: isSelected)
+        }
+      }
       .background {
         if isSelected {
           // One geometry group per variant: `ViewThatFits` builds all of them
@@ -1342,9 +1421,14 @@ struct ActionTabBar: View {
       .ambientFocusRing(palette, radius: AppRadius.md)
     }
     .buttonStyle(.plain)
-    .help(action.name)
+    .contextMenu { defaultContextMenu(action) }
+    .help(tabHelp(action))
     .accessibilityLabel(action.name)
+    .accessibilityValue(isDefault(action) ? defaultLabel : "")
     .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    .accessibilityAction(named: L10n.tr("actions.set_as_default")) {
+      if !isDefault(action) { setDefault?(action.id) }
+    }
   }
 }
 
