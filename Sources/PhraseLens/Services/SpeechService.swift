@@ -1,5 +1,4 @@
 @preconcurrency import AVFoundation
-import CryptoKit
 import Foundation
 
 enum SpeechServiceError: LocalizedError {
@@ -178,8 +177,12 @@ enum EdgeTTSProtocol {
     components.path = "/consumer/speech/synthesize/readaloud/edge/v1"
     components.queryItems = [
       URLQueryItem(name: "TrustedClientToken", value: trustedClientToken),
-      URLQueryItem(name: "Sec-MS-GEC", value: securityToken()),
-      URLQueryItem(name: "Sec-MS-GEC-Version", value: "1-\(chromiumFullVersion)"),
+      URLQueryItem(
+        name: "Sec-MS-GEC",
+        value: EdgeTTSToken.secMSGEC(
+          trustedClientToken: trustedClientToken, unixTime: Date().timeIntervalSince1970)),
+      URLQueryItem(
+        name: "Sec-MS-GEC-Version", value: "\(EdgeTTSToken.version)-\(chromiumFullVersion)"),
       URLQueryItem(name: "ConnectionId", value: connectionID),
     ]
     guard let url = components.url, url.host == "speech.platform.bing.com" else {
@@ -192,6 +195,7 @@ enum EdgeTTSProtocol {
     request.setValue("no-cache", forHTTPHeaderField: "Pragma")
     request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
     request.setValue("muid=\(connectionID.uppercased());", forHTTPHeaderField: "Cookie")
+    request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
     request.setValue(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         + "(KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
@@ -285,14 +289,6 @@ enum EdgeTTSProtocol {
     formatter.timeZone = TimeZone(secondsFromGMT: 0)
     formatter.dateFormat = "EEE MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'"
     return formatter.string(from: Date())
-  }
-
-  private static func securityToken(at date: Date = Date()) -> String {
-    let unixSeconds = UInt64(max(0, date.timeIntervalSince1970.rounded(.down)))
-    let roundedSeconds = unixSeconds - unixSeconds % 300
-    let windowsTicks = (roundedSeconds + 11_644_473_600) * 10_000_000
-    let digest = SHA256.hash(data: Data("\(windowsTicks)\(trustedClientToken)".utf8))
-    return digest.map { String(format: "%02X", $0) }.joined()
   }
 }
 
