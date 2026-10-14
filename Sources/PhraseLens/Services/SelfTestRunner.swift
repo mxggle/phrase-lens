@@ -1107,6 +1107,18 @@ enum SelfTestRunner {
       "Edge TTS defaults are incorrect",
       failures: &failures
     )
+    // Reference values from edge-tts 7.3.1 `generate_sec_ms_gec_v2`.
+    let edgeClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+    check(
+      EdgeTTSToken.secMSGEC(trustedClientToken: edgeClientToken, unixTime: 0)
+        == "52BC7A17B50DFEC9-28C4394775C8751CD2F6859C030C06DB1489ACAB3B3A7651831FC26895177ED6"
+        && EdgeTTSToken.secMSGEC(trustedClientToken: edgeClientToken, unixTime: 1_760_403_299.9)
+          == "6711CB672114DD1F-ADFD8B69051FCDA08461BFE115C7666E9D726BFA37EE5F86C6DF5BCFD848D43B"
+        && EdgeTTSToken.secMSGEC(trustedClientToken: edgeClientToken, unixTime: 1_791_939_900)
+          == "6A8C4B4553A127D7-E77DDA68814A3F052F8CA5A04387BC22569F423A9B07E46998305056BE9679AA",
+      "Edge TTS Sec-MS-GEC v2 token does not match the reference",
+      failures: &failures
+    )
     check(
       LanguageDetector.detect("東京") == .japanese
         && LanguageDetector.detect("日本語を勉強する") == .japanese
