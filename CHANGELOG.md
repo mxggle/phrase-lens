@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-10-14
+
+### Fixed
+
+- update a visible pop-up in place instead of replaying its entrance (#7).
+- send the v2 Sec-MS-GEC token Edge TTS now requires (#8).
+
 ## [0.12.0] — 2026-10-13
 
 ### Added
@@ -458,7 +465,8 @@ themselves, so an unrecognized value costs that value and not the collection.
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/mxggle/phrase-lens/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/mxggle/phrase-lens/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/mxggle/phrase-lens/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/mxggle/phrase-lens/compare/v0.10.0...v0.10.1
