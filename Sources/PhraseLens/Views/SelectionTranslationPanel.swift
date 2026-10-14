@@ -38,6 +38,15 @@ final class SelectionPanelCoordinator {
   var isVisible: Bool { panel != nil }
 
   func show(model: AppModel) {
+    // A pop-up that is already on screen for this model just shows the new
+    // lookup: its view observes the model, so the content updates in place.
+    // Rebuilding it would replay the entrance for a window that never left,
+    // and move a panel the user has pinned where they want it.
+    if let panel, panel.isVisible, self.model === model {
+      panel.makeKeyAndOrderFront(nil)
+      return
+    }
+
     // A replacement pop-up should not cross-fade with the one it replaces:
     // two stacked panels at the same spot read as a flicker, not a transition.
     // This is a hand-off, not a dismissal — the request the new panel is about
