@@ -24,6 +24,7 @@
 		525E7F439CAEE6BF63B6E65F /* ActionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44A62499D4A6143D48BF0D9A /* ActionViewController.swift */; };
 		558E72B2ECFCBF74F6DDB5A1 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26BCC87A8E8D0E9613DD2BA5 /* MarkdownText.swift */; };
 		5883E867EFAF77E7C8B16415 /* LookupSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A26F75DF86EF65DFB8DF54AB /* LookupSession.swift */; };
+		63AA029F0A4E2F79232E9D78 /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B469F90A10045890583BBF24 /* SettingsScreen.swift */; };
 		702D90E348D11A17759C1871 /* TranslationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A252D0F2AD0CCEA7A9709CD3 /* TranslationClient.swift */; };
 		7443A8D77EF9BC19EEE542AE /* PhraseLensAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 065F3E1754043F3B2CC3D67B /* PhraseLensAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		75CF6CAACE33AF91D28807B5 /* DictionaryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25E7733AFA63D4DD92F7C02C /* DictionaryModels.swift */; };
@@ -35,11 +36,11 @@
 		957A374945D5BE83584508C6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E2B24F7C7FF1F8557747DFF9 /* Assets.xcassets */; };
 		9E1F06224ED6F88A650E472A /* ActionsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 810385E933651611E12B3A82 /* ActionsScreen.swift */; };
 		A7CC847C4848A728CE40AFEA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5CB665470C0DD1F09F1DE1ED /* Assets.xcassets */; };
-		ABB42F4B58A9FC271CC9537E /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FBFDFB02AFE1DD60CA50A60 /* SettingsScreen.swift */; };
 		B5CEAA255C42F5163C792AD6 /* VocabularyFacets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2688E9AC3F170902BC8AB134 /* VocabularyFacets.swift */; };
 		BF12EE8539A459633AAF3013 /* PhraseLensMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5755275AA831588029FE2787 /* PhraseLensMobileApp.swift */; };
 		C3D4DC54FB922C2B9036E0A2 /* LookupResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7849C4D705815E989F586772 /* LookupResultView.swift */; };
 		CAE5F3C9B7A0829B4865DC29 /* MobileCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6940C5F6E1536F53D2FC832 /* MobileCredentials.swift */; };
+		CD70B6A6FF16F3F2D740453F /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B469F90A10045890583BBF24 /* SettingsScreen.swift */; };
 		D5B16D739588279CE363BE14 /* PronunciationGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79796D8527FB0E8A68E27DA1 /* PronunciationGuide.swift */; };
 		DB0BB5E8D17620618FFF23C1 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A73EDB0F7F22B2248433E712 /* Localization.swift */; };
 		DFBEA4F4716A278CB29D42C5 /* LookupScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B2D955A2D7D0F9101D80170 /* LookupScreen.swift */; };
@@ -94,7 +95,6 @@
 		26BCC87A8E8D0E9613DD2BA5 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		2B6577B46CBF9244EB376A40 /* AppModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModels.swift; sourceTree = "<group>"; };
 		380D35A4170CE562B4117D0C /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
-		3FBFDFB02AFE1DD60CA50A60 /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
 		44A62499D4A6143D48BF0D9A /* ActionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionViewController.swift; sourceTree = "<group>"; };
 		5755275AA831588029FE2787 /* PhraseLensMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhraseLensMobileApp.swift; sourceTree = "<group>"; };
 		5BB445BC27FFE377798DB686 /* VocabularyTaxonomy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabularyTaxonomy.swift; sourceTree = "<group>"; };
@@ -114,6 +114,7 @@
 		A252D0F2AD0CCEA7A9709CD3 /* TranslationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationClient.swift; sourceTree = "<group>"; };
 		A26F75DF86EF65DFB8DF54AB /* LookupSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookupSession.swift; sourceTree = "<group>"; };
 		A73EDB0F7F22B2248433E712 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
+		B469F90A10045890583BBF24 /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
 		B6940C5F6E1536F53D2FC832 /* MobileCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileCredentials.swift; sourceTree = "<group>"; };
 		B6C2A7C15611FE70F01A9AB0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BAF1C8F55D4A15E1FA11BF49 /* PhraseLens.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PhraseLens.entitlements; sourceTree = "<group>"; };
@@ -159,6 +160,7 @@
 				B6940C5F6E1536F53D2FC832 /* MobileCredentials.swift */,
 				79C00DA357B23C36C420A9F6 /* MobileSettings.swift */,
 				96C0A03D12A8CCF6C25E3286 /* MobileTheme.swift */,
+				B469F90A10045890583BBF24 /* SettingsScreen.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -222,7 +224,6 @@
 				1B2D955A2D7D0F9101D80170 /* LookupScreen.swift */,
 				BAF1C8F55D4A15E1FA11BF49 /* PhraseLens.entitlements */,
 				5755275AA831588029FE2787 /* PhraseLensMobileApp.swift */,
-				3FBFDFB02AFE1DD60CA50A60 /* SettingsScreen.swift */,
 			);
 			path = PhraseLens;
 			sourceTree = "<group>";
@@ -396,7 +397,7 @@
 				BF12EE8539A459633AAF3013 /* PhraseLensMobileApp.swift in Sources */,
 				E57291B85DF3FF5E27544049 /* PromptBuilder.swift in Sources */,
 				7FA6C01B356ADFB367122018 /* PronunciationGuide.swift in Sources */,
-				ABB42F4B58A9FC271CC9537E /* SettingsScreen.swift in Sources */,
+				CD70B6A6FF16F3F2D740453F /* SettingsScreen.swift in Sources */,
 				702D90E348D11A17759C1871 /* TranslationClient.swift in Sources */,
 				B5CEAA255C42F5163C792AD6 /* VocabularyFacets.swift in Sources */,
 				3D9D0F9F9892ED4166F081F5 /* VocabularyTaxonomy.swift in Sources */,
@@ -431,6 +432,7 @@
 				81DAD2D5FE414BF22763F982 /* MobileTheme.swift in Sources */,
 				141F5EE15CA7D9E012590EEF /* PromptBuilder.swift in Sources */,
 				D5B16D739588279CE363BE14 /* PronunciationGuide.swift in Sources */,
+				63AA029F0A4E2F79232E9D78 /* SettingsScreen.swift in Sources */,
 				FF97BC92ABD4D456A1CA58C0 /* TranslationClient.swift in Sources */,
 				252ECFCEE32E55C2669617E0 /* VocabularyFacets.swift in Sources */,
 				4A3FE73DFAE9A4633A04F38E /* VocabularyTaxonomy.swift in Sources */,

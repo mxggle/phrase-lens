@@ -64,3 +64,15 @@ from it and committed so the project opens without XcodeGen.
    in Settings, then try Share → PhraseLens on selected text in Safari.
    The first time, PhraseLens may sit under **Edit Actions…**; add it to
    Favorites to keep it at the top.
+
+### With a free Apple ID (Personal Team)
+
+A Personal Team cannot sign the App Group, so build without the entitlements
+and the app and the Share sheet each keep their own settings and API key; the
+Share sheet offers **Set Up Here** the first time. Installs expire after 7 days.
+
+```sh
+xcodebuild -project PhraseLens.xcodeproj -scheme PhraseLens \
+  -destination 'platform=iOS,id=<device-udid>' -allowProvisioningUpdates \
+  DEVELOPMENT_TEAM=<team-id> CODE_SIGN_ENTITLEMENTS= build
+```
