@@ -23,8 +23,8 @@ PRODUCT_NAME="PhraseLens"
 EXECUTABLE_NAME="PhraseLens"
 PRODUCT_IDENTIFIER="com.harry.phraselens"
 BUILD_DIR="${PROJECT_DIR}/.build"
-ARM64_BUILD_DIR="${BUILD_DIR}/arm64-apple-macosx/release"
-X86_64_BUILD_DIR="${BUILD_DIR}/x86_64-apple-macosx/release"
+ARM64_BUILD_DIR="${BUILD_DIR}/package/arm64"
+X86_64_BUILD_DIR="${BUILD_DIR}/package/x86_64"
 OUTPUT_DIR="${PROJECT_DIR}/dist"
 APP_PATH="${OUTPUT_DIR}/${PRODUCT_NAME}.app"
 EXECUTABLE_PATH="${APP_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
@@ -37,8 +37,17 @@ if (( LOCAL_BUILD )); then
     LOCAL_BUILD_DIR="$(swift build --show-bin-path)"
 else
     # Distribution builds include both supported macOS architectures.
+    # SwiftPM's default build system writes every triple to the same bin path,
+    # so stage each architecture's output before the next build replaces it.
     for target in arm64-apple-macosx14.0 x86_64-apple-macosx14.0; do
         swift build --disable-sandbox -c release --triple "${target}" -Xswiftc -Osize -Xswiftc -warnings-as-errors
+        bin_path="$(swift build -c release --triple "${target}" --show-bin-path)"
+        stage_dir="${ARM64_BUILD_DIR}"
+        [[ "${target}" == x86_64-* ]] && stage_dir="${X86_64_BUILD_DIR}"
+        rm -rf "${stage_dir}"
+        mkdir -p "${stage_dir}"
+        cp "${bin_path}/${EXECUTABLE_NAME}" "${stage_dir}/${EXECUTABLE_NAME}"
+        cp -R "${bin_path}/PhraseLens_PhraseLens.bundle" "${stage_dir}/PhraseLens_PhraseLens.bundle"
     done
 fi
 
