@@ -471,3 +471,20 @@ struct WidthReader<Content: View>: View {
     }
   }
 }
+
+/// A one-pixel rule in the palette's border color. `Divider()` picks up an
+/// AppKit separator color that does not belong to this ramp.
+struct Hairline: View {
+  @Environment(\.palette) private var palette
+  var axis: Axis = .horizontal
+
+  var body: some View {
+    Rectangle()
+      .fill(palette.border)
+      .frame(
+        width: axis == .vertical ? 1 : nil,
+        height: axis == .horizontal ? 1 : nil
+      )
+      .accessibilityHidden(true)
+  }
+}

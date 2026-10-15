@@ -2,7 +2,7 @@
 #
 # The app and its Action extension compile the macOS app's provider, prompt,
 # and model code straight from ../Sources, so a fix there ships to both.
-name: PhraseLensMobile
+name: PhraseLens
 options:
   bundleIdPrefix: com.harry
   deploymentTarget:
@@ -27,23 +27,14 @@ targets:
     sources:
       - path: PhraseLens
       - path: Shared
-        group: Shared
       - path: ../Sources/PhraseLens/Models
-        group: MacShared
       - path: ../Sources/PhraseLens/Services/PromptBuilder.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Services/TranslationClient.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Services/EndpointValidator.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Services/LanguageDetector.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Services/Localization.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Views/DesignSystem.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Views/MarkdownText.swift
-        group: MacShared
     info:
       path: PhraseLens/Info.plist
       properties:
@@ -87,23 +78,14 @@ targets:
     sources:
       - path: PhraseLensAction
       - path: Shared
-        group: Shared
       - path: ../Sources/PhraseLens/Models
-        group: MacShared
       - path: ../Sources/PhraseLens/Services/PromptBuilder.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Services/TranslationClient.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Services/EndpointValidator.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Services/LanguageDetector.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Services/Localization.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Views/DesignSystem.swift
-        group: MacShared
       - path: ../Sources/PhraseLens/Views/MarkdownText.swift
-        group: MacShared
     info:
       path: PhraseLensAction/Info.plist
       properties:

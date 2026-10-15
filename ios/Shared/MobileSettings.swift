@@ -53,7 +53,7 @@ struct MobileSettings: Codable, Equatable, Sendable {
 /// foreground in case the two were open at once.
 @MainActor
 final class MobileSettingsStore: ObservableObject {
-  static let appGroup = "group.com.harry.phraselens"
+  nonisolated static let appGroup = "group.com.harry.phraselens"
   private static let key = "mobile-settings.v1"
 
   @Published var settings: MobileSettings {
