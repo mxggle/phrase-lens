@@ -278,23 +278,31 @@ struct TranslationClient: Sendable {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
     request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+    let generation = ClaudeGeneration(model: configuration.model)
     // Anthropic bills thinking tokens against max_tokens, so a shared cap leaves
     // the visible answer whatever thinking did not spend. Budget them apart.
+    // Claude 5 models think whether or not they are asked to.
     let thinkingBudget = 4_000
     let answerBudget = 4_096
+    let thinks = configuration.extendedThinking || generation.alwaysThinks
     var body: [String: Any] = [
       "model": configuration.model,
-      "max_tokens": configuration.extendedThinking
-        ? thinkingBudget + answerBudget : answerBudget,
+      "max_tokens": thinks ? thinkingBudget + answerBudget : answerBudget,
       "stream": true,
       "system": prompt.system,
       "messages": Self.chatMessages(prompt),
     ]
     if configuration.extendedThinking {
-      body["thinking"] = ["type": "enabled", "budget_tokens": thinkingBudget]
-      body["temperature"] = 1
-    } else {
-      body["temperature"] = 0.2
+      body["thinking"] =
+        generation.usesAdaptiveThinking
+        ? ["type": "adaptive"]
+        : ["type": "enabled", "budget_tokens": thinkingBudget]
+    } else if generation.alwaysThinks {
+      // Thinking cannot be switched off on these models; keep it short instead.
+      body["output_config"] = ["effort": "low"]
+    }
+    if generation.acceptsTemperature {
+      body["temperature"] = configuration.extendedThinking ? 1 : 0.2
     }
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
     return request
@@ -649,5 +657,69 @@ enum StreamDecoder {
     case "RECITATION": "the provider stopped it for reproducing training data"
     case .some(let other): "the provider ended it early (\(other))"
     }
+  }
+}
+
+/// What a Claude model accepts, read from its ID. Claude Opus 4.7 and every
+/// model after it reject `temperature` and `budget_tokens` with a 400; Opus and
+/// Sonnet 4.6 take adaptive thinking; older models need the fixed budget.
+/// Claude Opus 5, Sonnet 5 and later run adaptive thinking even when it is not
+/// requested. IDs that are not Claude at all (an Anthropic-compatible endpoint
+/// serving another model) keep the classic request, which those servers expect.
+struct ClaudeGeneration {
+  /// Version in tenths, such as 46 for claude-opus-4-6. Nil when the ID is
+  /// not a Claude model or is a shape this code does not know.
+  let version: Int?
+  let isClaude: Bool
+
+  init(model: String) {
+    let id = model.lowercased()
+    guard id.contains("claude") else {
+      isClaude = false
+      version = nil
+      return
+    }
+    isClaude = true
+    // claude-3-5-sonnet-20241022, claude-2.1, claude-instant-1.2
+    if id.range(of: #"claude-(instant|[123])([.\-]|$)"#, options: .regularExpression) != nil {
+      version = 30
+      return
+    }
+    // claude-opus-4-6, claude-sonnet-4-20250514, anthropic.claude-haiku-5-5,
+    // claude-opus-4-5@20251101. A minor version is one or two digits; a longer
+    // run of digits is a snapshot date.
+    let pattern = #"claude-[a-z]+-(\d+)(?:-(\d{1,2}))?(?![0-9])"#
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+      let match = regex.firstMatch(in: id, range: NSRange(id.startIndex..., in: id)),
+      let majorRange = Range(match.range(at: 1), in: id),
+      let major = Int(id[majorRange])
+    else {
+      // A Claude ID in a shape we do not know is newer than this code.
+      version = nil
+      return
+    }
+    var minor = 0
+    if let minorRange = Range(match.range(at: 2), in: id), let value = Int(id[minorRange]) {
+      minor = min(value, 9)
+    }
+    version = major * 10 + minor
+  }
+
+  var acceptsTemperature: Bool {
+    guard isClaude else { return true }
+    guard let version else { return false }
+    return version < 47
+  }
+
+  var usesAdaptiveThinking: Bool {
+    guard isClaude else { return false }
+    guard let version else { return true }
+    return version >= 46
+  }
+
+  var alwaysThinks: Bool {
+    guard isClaude else { return false }
+    guard let version else { return true }
+    return version >= 50
   }
 }
