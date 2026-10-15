@@ -301,7 +301,7 @@ struct TranslationClient: Sendable {
       // Thinking cannot be switched off on these models; keep it short instead.
       body["output_config"] = ["effort": "low"]
     }
-    if generation.acceptsTemperature {
+    if !generation.isClaude {
       body["temperature"] = configuration.extendedThinking ? 1 : 0.2
     }
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -660,12 +660,13 @@ enum StreamDecoder {
   }
 }
 
-/// What a Claude model accepts, read from its ID. Claude Opus 4.7 and every
-/// model after it reject `temperature` and `budget_tokens` with a 400; Opus and
-/// Sonnet 4.6 take adaptive thinking; older models need the fixed budget.
-/// Claude Opus 5, Sonnet 5 and later run adaptive thinking even when it is not
-/// requested. IDs that are not Claude at all (an Anthropic-compatible endpoint
-/// serving another model) keep the classic request, which those servers expect.
+/// What a Claude model accepts, read from its ID. Anthropic has deprecated
+/// `temperature` and now answers it with a 400, so no Claude request sends it.
+/// Claude Opus 4.7 and later also reject `budget_tokens`; Opus and Sonnet 4.6
+/// take adaptive thinking; older models need the fixed budget. Claude Opus 5,
+/// Sonnet 5 and later run adaptive thinking even when it is not requested. IDs
+/// that are not Claude at all (an Anthropic-compatible endpoint serving another
+/// model) keep the classic request, which those servers expect.
 struct ClaudeGeneration {
   /// Version in tenths, such as 46 for claude-opus-4-6. Nil when the ID is
   /// not a Claude model or is a shape this code does not know.
@@ -703,12 +704,6 @@ struct ClaudeGeneration {
       minor = min(value, 9)
     }
     version = major * 10 + minor
-  }
-
-  var acceptsTemperature: Bool {
-    guard isClaude else { return true }
-    guard let version else { return false }
-    return version < 47
   }
 
   var usesAdaptiveThinking: Bool {
