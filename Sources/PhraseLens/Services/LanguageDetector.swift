@@ -66,6 +66,15 @@ enum LanguageDetector {
   }
 }
 
+/// Where the text being translated came from, which decides how its source
+/// language is chosen.
+enum InputSource: Sendable {
+  case manual
+  case selection
+  case ocr
+  case history
+}
+
 enum TranslationSourceResolver {
   static func resolve(
     _ text: String,

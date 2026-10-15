@@ -3,6 +3,11 @@ import SwiftUI
 
 public enum AppResources: Sendable {
   public static var bundle: Bundle {
+    // The iOS app compiles this file straight into its Xcode targets, where
+    // there is no SwiftPM resource bundle and the strings sit in the main one.
+    #if !SWIFT_PACKAGE
+    return Bundle.main
+    #else
     if Bundle.main.bundleURL.pathExtension == "app" {
       if let url = Bundle.main.resourceURL?.appendingPathComponent("PhraseLens_PhraseLens.bundle"),
          let bundle = Bundle(url: url) {
@@ -11,6 +16,7 @@ public enum AppResources: Sendable {
       return Bundle.main
     }
     return Bundle.module
+    #endif
   }
 }
 

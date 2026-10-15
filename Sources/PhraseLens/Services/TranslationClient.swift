@@ -392,6 +392,10 @@ struct TranslationClient: Sendable {
     configuration.waitsForConnectivity = false
     configuration.timeoutIntervalForResource = 600
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    // The HTTPS and exception-list proxy keys exist only on macOS. The iOS
+    // app, which shares this client, has no proxy setting of its own and
+    // follows the system's.
+    #if os(macOS)
     if let proxy {
       configuration.connectionProxyDictionary = [
         kCFNetworkProxiesHTTPEnable as String: proxy.scheme == "http",
@@ -405,6 +409,7 @@ struct TranslationClient: Sendable {
           .map { $0.trimmingCharacters(in: .whitespaces) },
       ]
     }
+    #endif
     return URLSession(configuration: configuration)
   }
 

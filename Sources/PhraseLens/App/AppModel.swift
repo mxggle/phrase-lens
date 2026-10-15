@@ -3,13 +3,6 @@ import Combine
 import Foundation
 import os
 
-enum InputSource: Sendable {
-  case manual
-  case selection
-  case ocr
-  case history
-}
-
 /// Whether the armed action got the surrounding text it works from.
 enum SelectionContextState: Sendable {
   /// The action does not read the text around the selection.

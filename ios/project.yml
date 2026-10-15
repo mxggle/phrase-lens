@@ -1,0 +1,142 @@
+# Generates PhraseLens.xcodeproj:  cd ios && xcodegen generate
+#
+# The app and its Action extension compile the macOS app's provider, prompt,
+# and model code straight from ../Sources, so a fix there ships to both.
+name: PhraseLensMobile
+options:
+  bundleIdPrefix: com.harry
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Set your Apple team here (or in Xcode's Signing tab) to run on a phone.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+
+targets:
+  PhraseLens:
+    type: application
+    platform: iOS
+    sources:
+      - path: PhraseLens
+      - path: Shared
+        group: Shared
+      - path: ../Sources/PhraseLens/Models
+        group: MacShared
+      - path: ../Sources/PhraseLens/Services/PromptBuilder.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Services/TranslationClient.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Services/EndpointValidator.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Services/LanguageDetector.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Services/Localization.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Views/DesignSystem.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Views/MarkdownText.swift
+        group: MacShared
+    info:
+      path: PhraseLens/Info.plist
+      properties:
+        CFBundleDisplayName: PhraseLens
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    entitlements:
+      path: PhraseLens/PhraseLens.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.harry.phraselens
+    settings:
+      base:
+        PRODUCT_NAME: PhraseLens
+        PRODUCT_BUNDLE_IDENTIFIER: com.harry.phraselens.ios
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - target: PhraseLensAction
+        embed: true
+
+  PhraseLensAction:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PhraseLensAction
+      - path: Shared
+        group: Shared
+      - path: ../Sources/PhraseLens/Models
+        group: MacShared
+      - path: ../Sources/PhraseLens/Services/PromptBuilder.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Services/TranslationClient.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Services/EndpointValidator.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Services/LanguageDetector.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Services/Localization.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Views/DesignSystem.swift
+        group: MacShared
+      - path: ../Sources/PhraseLens/Views/MarkdownText.swift
+        group: MacShared
+    info:
+      path: PhraseLensAction/Info.plist
+      properties:
+        CFBundleDisplayName: PhraseLens
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: en
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ui-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ActionViewController
+          NSExtensionAttributes:
+            NSExtensionActionWantsFullScreenPresentation: false
+            NSExtensionServiceAllowsFinderPreviewItem: false
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+    entitlements:
+      path: PhraseLensAction/PhraseLensAction.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.harry.phraselens
+    settings:
+      base:
+        PRODUCT_NAME: PhraseLensAction
+        PRODUCT_BUNDLE_IDENTIFIER: com.harry.phraselens.ios.action
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        APPLICATION_EXTENSION_API_ONLY: YES
+
+schemes:
+  PhraseLens:
+    build:
+      targets:
+        PhraseLens: all
+        PhraseLensAction: all
+    run:
+      config: Debug
