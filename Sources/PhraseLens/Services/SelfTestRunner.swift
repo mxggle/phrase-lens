@@ -1631,8 +1631,8 @@ enum SelfTestRunner {
         "TranslationClient Kimi K3 request creation failed",
         failures: &failures
       )
-      // Claude Opus 4.7 and later answer a request carrying temperature or a
-      // thinking budget with a 400; older models still want both.
+      // Claude answers a request carrying temperature with a 400, and Opus 4.7
+      // and later reject a thinking budget too; older models still want one.
       func claudeBody(_ model: String, thinking: Bool) throws -> [String: Any]? {
         let request = try client.makeRequest(
           prompt: testPrompt,
@@ -1654,10 +1654,10 @@ enum SelfTestRunner {
       let opus55 = try claudeBody("claude-opus-5-5", thinking: false)
       let thirdParty = try claudeBody("MiniMax-M2.7", thinking: false)
       check(
-        sonnet45?["temperature"] as? Double == 0.2
+        sonnet45?["temperature"] == nil
           && sonnet45?["thinking"] == nil
           && (haiku45Thinking?["thinking"] as? [String: Any])?["budget_tokens"] as? Int == 4_000
-          && haiku45Thinking?["temperature"] as? Double == 1
+          && haiku45Thinking?["temperature"] == nil
           && (opus46Thinking?["thinking"] as? [String: Any])?["type"] as? String == "adaptive"
           && opus48?["temperature"] == nil
           && opus48?["thinking"] == nil
@@ -1678,7 +1678,8 @@ enum SelfTestRunner {
           && ClaudeGeneration(model: "anthropic.claude-opus-4-8").version == 48
           && ClaudeGeneration(model: "claude-opus-4-5@20251101").version == 45
           && ClaudeGeneration(model: "claude-fable-5-1").version == 51
-          && !ClaudeGeneration(model: "claude-next").acceptsTemperature,
+          && ClaudeGeneration(model: "claude-next").alwaysThinks
+          && !ClaudeGeneration(model: "MiniMax-M2.7").isClaude,
         "ClaudeGeneration misread a Claude model ID",
         failures: &failures
       )
