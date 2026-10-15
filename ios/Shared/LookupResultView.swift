@@ -8,6 +8,8 @@ struct LookupResultView: View {
   /// Shown when the answer failed for want of a key, so the reader knows
   /// where to fix it. The extension cannot open Settings itself.
   var setupHint: String?
+  /// Opens the connection settings where the lookup is, for the Share sheet.
+  var onSetup: (() -> Void)?
 
   @Environment(\.palette) private var palette
   @State private var copied = false
@@ -69,6 +71,10 @@ struct LookupResultView: View {
           Text(setupHint)
             .font(.footnote)
             .foregroundStyle(palette.mutedForeground)
+        }
+        if let onSetup, needsSetup {
+          Button(L10n.isChinese ? "在这里设置" : "Set Up Here", systemImage: "key", action: onSetup)
+            .buttonStyle(.borderedProminent)
         }
       }
     } else if session.output.isEmpty {

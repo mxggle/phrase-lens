@@ -3,6 +3,10 @@ import SwiftUI
 /// The model connection and the answer language. One connection serves every
 /// action; an action can still pick its own model.
 struct SettingsScreen: View {
+  /// Set when the screen is presented over the Share sheet, which needs a
+  /// way back to the lookup.
+  var onDone: (() -> Void)?
+
   @EnvironmentObject private var store: MobileSettingsStore
   @State private var apiKey = ""
   @State private var loadedKeyFor: ProviderKind?
@@ -118,6 +122,16 @@ struct SettingsScreen: View {
         }
       }
       .navigationTitle(L10n.isChinese ? "设置" : "Settings")
+      .toolbar {
+        if let onDone {
+          ToolbarItem(placement: .confirmationAction) {
+            Button(L10n.isChinese ? "完成" : "Done") {
+              saveKey()
+              onDone()
+            }
+          }
+        }
+      }
       .onAppear(perform: loadKey)
       .onChange(of: store.settings.provider.provider) { _, _ in loadKey() }
       .onChange(of: apiKey) { _, _ in saveKey() }

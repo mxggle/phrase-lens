@@ -77,6 +77,7 @@ final class ActionViewController: UIViewController {
 private struct ActionSheetView: View {
   @ObservedObject var session: LookupSession
   let done: () -> Void
+  @State private var settingUp = false
 
   var body: some View {
     NavigationStack {
@@ -93,9 +94,8 @@ private struct ActionSheetView: View {
         }
         LookupResultView(
           session: session,
-          setupHint: L10n.isChinese
-            ? "打开 PhraseLens App，在“设置”里填好服务商和 API Key。"
-            : "Open the PhraseLens app and add your provider and API key in Settings."
+          setupHint: setupHint,
+          onSetup: { settingUp = true }
         )
       }
       .navigationTitle("PhraseLens")
@@ -107,5 +107,23 @@ private struct ActionSheetView: View {
       }
     }
     .mobilePalette()
+    .sheet(isPresented: $settingUp, onDismiss: { session.run() }) {
+      SettingsScreen(onDone: { settingUp = false })
+        .environmentObject(session.store)
+        .mobilePalette()
+    }
+  }
+
+  /// Where the key is set depends on whether this build shares settings with
+  /// the app. A Personal Team build cannot, so the sheet keeps its own.
+  private var setupHint: String {
+    if MobileSettingsStore.isAppGroupAvailable {
+      return L10n.isChinese
+        ? "在 PhraseLens App 的“设置”里填好服务商和 API Key，或者直接在这里设置。"
+        : "Add your provider and API key in the PhraseLens app's Settings, or set them up here."
+    }
+    return L10n.isChinese
+      ? "这个版本的共享面板和 App 不共用设置，需要在这里单独填一次服务商和 API Key。"
+      : "This build's Share sheet keeps its own settings, so add your provider and API key here once."
   }
 }
