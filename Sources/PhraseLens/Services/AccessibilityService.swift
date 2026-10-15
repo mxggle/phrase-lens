@@ -4,36 +4,6 @@ import Carbon.HIToolbox
 import Foundation
 import os
 
-/// Where the text surrounding a selection came from.
-enum SelectionContextSource: String, Sendable {
-  /// The control that owns the selection reported it: a paragraph expanded
-  /// from a text marker range, or the value of the focused field.
-  case accessibility
-  /// Rebuilt by locating the selection among the window's own text nodes.
-  case surroundingSegments
-  /// Nothing usable was found.
-  case none
-}
-
-/// What one capture managed to read.
-///
-/// Lengths and roles only, never the text itself: this is written to the
-/// system log and shown in a tooltip, and the selection is the reader's own
-/// material.
-struct SelectionDiagnostics: Equatable, Sendable {
-  var focusedRole: String?
-  var candidateCount = 0
-  var textSegmentCount = 0
-  var accessibilityTextLength = 0
-  var accessibilityContextLength = 0
-  var copiedTextLength = 0
-  var contextSource: SelectionContextSource = .none
-  var traversalMilliseconds = 0
-  /// Whether the search gave up on its own budget rather than running out of
-  /// elements. A true here means the answer below may be incomplete.
-  var traversalTruncated = false
-}
-
 /// Where a captured selection lives, kept so an answer can be written back
 /// over it or after it.
 ///
