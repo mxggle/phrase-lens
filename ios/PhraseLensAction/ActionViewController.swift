@@ -101,6 +101,13 @@ private struct ActionSheetView: View {
       .navigationTitle("PhraseLens")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
+        // Always reachable: a build without the App Group keeps the sheet's
+        // own settings, and this is the only way back to them after setup.
+        ToolbarItem(placement: .topBarLeading) {
+          Button(L10n.isChinese ? "设置" : "Settings", systemImage: "gearshape") {
+            settingUp = true
+          }
+        }
         ToolbarItem(placement: .confirmationAction) {
           Button(L10n.isChinese ? "完成" : "Done", action: done)
         }
