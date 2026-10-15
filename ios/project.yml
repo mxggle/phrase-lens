@@ -110,9 +110,25 @@ targets:
       base:
         PRODUCT_NAME: PhraseLensAction
         PRODUCT_BUNDLE_IDENTIFIER: com.harry.phraselens.ios.action
+        # A template glyph: the Share sheet draws action icons from alpha alone,
+        # so the opaque app icon would show as a solid square.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: NO
         APPLICATION_EXTENSION_API_ONLY: YES
+
+  PhraseLensUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: PhraseLensUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.harry.phraselens.ios.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+    dependencies:
+      - target: PhraseLens
 
 schemes:
   PhraseLens:
@@ -122,3 +138,7 @@ schemes:
         PhraseLensAction: all
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - PhraseLensUITests

@@ -53,7 +53,20 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "6D2FE199D56BA2225BB71558"
+               BuildableName = "PhraseLensUITests.xctest"
+               BlueprintName = "PhraseLensUITests"
+               ReferencedContainer = "container:PhraseLens.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

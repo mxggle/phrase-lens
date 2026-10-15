@@ -53,8 +53,8 @@ struct LookupScreen: View {
           LookupResultView(
             session: session,
             setupHint: L10n.isChinese
-              ? "到“设置”里填好服务商和 API Key。"
-              : "Add your provider and API key in Settings."
+              ? "在下方的“设置”标签页里检查服务商、模型和 API Key。"
+              : "Check the provider, model, and API key in the Settings tab below."
           )
         }
       }

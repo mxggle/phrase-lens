@@ -32,6 +32,7 @@
 		8067A70BA18F8A7076BECC2F /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 380D35A4170CE562B4117D0C /* DesignSystem.swift */; };
 		81DAD2D5FE414BF22763F982 /* MobileTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C0A03D12A8CCF6C25E3286 /* MobileTheme.swift */; };
 		83FCDB0E9D0A3D7D23732050 /* EndpointValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C36C220A5AC6965A0870509 /* EndpointValidator.swift */; };
+		957A374945D5BE83584508C6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E2B24F7C7FF1F8557747DFF9 /* Assets.xcassets */; };
 		9E1F06224ED6F88A650E472A /* ActionsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 810385E933651611E12B3A82 /* ActionsScreen.swift */; };
 		A7CC847C4848A728CE40AFEA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5CB665470C0DD1F09F1DE1ED /* Assets.xcassets */; };
 		ABB42F4B58A9FC271CC9537E /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FBFDFB02AFE1DD60CA50A60 /* SettingsScreen.swift */; };
@@ -46,6 +47,7 @@
 		E3BDEF43B93BBF39F535B015 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A73EDB0F7F22B2248433E712 /* Localization.swift */; };
 		E57291B85DF3FF5E27544049 /* PromptBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7290104D6F37F9DBC6D901F7 /* PromptBuilder.swift */; };
 		E9DA13F5887F57B1F1609221 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26BCC87A8E8D0E9613DD2BA5 /* MarkdownText.swift */; };
+		EA7A2F73F2A7B867BF5DC01F /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA072301C8B3610BDB6EFDA /* SmokeTests.swift */; };
 		F2D8414D955E9697E55E6258 /* LookupSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A26F75DF86EF65DFB8DF54AB /* LookupSession.swift */; };
 		F638B7C4350D03D909D5B93C /* LanguageDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 927E2496076A88FBC0062B37 /* LanguageDetector.swift */; };
 		FCD55954F31814476D6F3014 /* MobileTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C0A03D12A8CCF6C25E3286 /* MobileTheme.swift */; };
@@ -53,6 +55,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		62F516DF1ABEF8661232A1C2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CDE21617D991A2DA8638F3F7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 97A92789027FD30494AC3D4A;
+			remoteInfo = PhraseLens;
+		};
 		8591B7722A241368AAF18965 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = CDE21617D991A2DA8638F3F7 /* Project object */;
@@ -79,6 +88,7 @@
 /* Begin PBXFileReference section */
 		065F3E1754043F3B2CC3D67B /* PhraseLensAction.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = PhraseLensAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1B2D955A2D7D0F9101D80170 /* LookupScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookupScreen.swift; sourceTree = "<group>"; };
+		205C7E63135A556B2D3A981F /* PhraseLensUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PhraseLensUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		25E7733AFA63D4DD92F7C02C /* DictionaryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryModels.swift; sourceTree = "<group>"; };
 		2688E9AC3F170902BC8AB134 /* VocabularyFacets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabularyFacets.swift; sourceTree = "<group>"; };
 		26BCC87A8E8D0E9613DD2BA5 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
@@ -99,6 +109,7 @@
 		927E2496076A88FBC0062B37 /* LanguageDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageDetector.swift; sourceTree = "<group>"; };
 		96C0A03D12A8CCF6C25E3286 /* MobileTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTheme.swift; sourceTree = "<group>"; };
 		9937273C04D38C9939503832 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9AA072301C8B3610BDB6EFDA /* SmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmokeTests.swift; sourceTree = "<group>"; };
 		A1D22435208BC2F9A6A0F070 /* PhraseLensAction.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PhraseLensAction.entitlements; sourceTree = "<group>"; };
 		A252D0F2AD0CCEA7A9709CD3 /* TranslationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationClient.swift; sourceTree = "<group>"; };
 		A26F75DF86EF65DFB8DF54AB /* LookupSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookupSession.swift; sourceTree = "<group>"; };
@@ -107,6 +118,7 @@
 		B6C2A7C15611FE70F01A9AB0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BAF1C8F55D4A15E1FA11BF49 /* PhraseLens.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PhraseLens.entitlements; sourceTree = "<group>"; };
 		DDC71672EDA4FE4C96BA4534 /* MobileActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileActions.swift; sourceTree = "<group>"; };
+		E2B24F7C7FF1F8557747DFF9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -125,8 +137,17 @@
 			children = (
 				6E0274194CA840A64FC0D4E1 /* PhraseLens.app */,
 				065F3E1754043F3B2CC3D67B /* PhraseLensAction.appex */,
+				205C7E63135A556B2D3A981F /* PhraseLensUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		3A17523E1BA899889919B935 /* PhraseLensUITests */ = {
+			isa = PBXGroup;
+			children = (
+				9AA072301C8B3610BDB6EFDA /* SmokeTests.swift */,
+			);
+			path = PhraseLensUITests;
 			sourceTree = "<group>";
 		};
 		4B5D5F7FF19F135B5363A390 /* Shared */ = {
@@ -156,6 +177,7 @@
 				87BCA8E06780F8FBCDDFA7D1 /* phrase-lens-ios */,
 				BE76110B6B220323A977460E /* PhraseLens */,
 				D07C62F582452F47ED2C8853 /* PhraseLensAction */,
+				3A17523E1BA899889919B935 /* PhraseLensUITests */,
 				4B5D5F7FF19F135B5363A390 /* Shared */,
 				1B6FB5E944EB23D1C5D467B9 /* Products */,
 			);
@@ -221,6 +243,7 @@
 			isa = PBXGroup;
 			children = (
 				44A62499D4A6143D48BF0D9A /* ActionViewController.swift */,
+				E2B24F7C7FF1F8557747DFF9 /* Assets.xcassets */,
 				B6C2A7C15611FE70F01A9AB0 /* Info.plist */,
 				A1D22435208BC2F9A6A0F070 /* PhraseLensAction.entitlements */,
 			);
@@ -230,6 +253,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		6D2FE199D56BA2225BB71558 /* PhraseLensUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A5B881B904A29CBC4EE6DA98 /* Build configuration list for PBXNativeTarget "PhraseLensUITests" */;
+			buildPhases = (
+				B228AD7CE8091BACD5FBA781 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				95F433869ADA1DCABFA16EC5 /* PBXTargetDependency */,
+			);
+			name = PhraseLensUITests;
+			packageProductDependencies = (
+			);
+			productName = PhraseLensUITests;
+			productReference = 205C7E63135A556B2D3A981F /* PhraseLensUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		97A92789027FD30494AC3D4A /* PhraseLens */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = FB66EFC31650DFE733D94454 /* Build configuration list for PBXNativeTarget "PhraseLens" */;
@@ -255,6 +296,7 @@
 			buildConfigurationList = 5B878775F12846A4AD1A88D3 /* Build configuration list for PBXNativeTarget "PhraseLensAction" */;
 			buildPhases = (
 				F27819E7F5A3A5026D64512A /* Sources */,
+				D44E1E261D8C40D00CBD5AAE /* Resources */,
 			);
 			buildRules = (
 			);
@@ -276,6 +318,11 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					6D2FE199D56BA2225BB71558 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+						TestTargetID = 97A92789027FD30494AC3D4A;
+					};
 					97A92789027FD30494AC3D4A = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
@@ -302,6 +349,7 @@
 			targets = (
 				97A92789027FD30494AC3D4A /* PhraseLens */,
 				BA27F5681B324AFFD5A5A9B6 /* PhraseLensAction */,
+				6D2FE199D56BA2225BB71558 /* PhraseLensUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -312,6 +360,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				A7CC847C4848A728CE40AFEA /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D44E1E261D8C40D00CBD5AAE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				957A374945D5BE83584508C6 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -344,6 +400,14 @@
 				702D90E348D11A17759C1871 /* TranslationClient.swift in Sources */,
 				B5CEAA255C42F5163C792AD6 /* VocabularyFacets.swift in Sources */,
 				3D9D0F9F9892ED4166F081F5 /* VocabularyTaxonomy.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B228AD7CE8091BACD5FBA781 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EA7A2F73F2A7B867BF5DC01F /* SmokeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -381,9 +445,31 @@
 			target = BA27F5681B324AFFD5A5A9B6 /* PhraseLensAction */;
 			targetProxy = 8591B7722A241368AAF18965 /* PBXContainerItemProxy */;
 		};
+		95F433869ADA1DCABFA16EC5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 97A92789027FD30494AC3D4A /* PhraseLens */;
+			targetProxy = 62F516DF1ABEF8661232A1C2 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		4B75B1AB15710C49FD890C5D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.harry.phraselens.ios.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = PhraseLens;
+			};
+			name = Debug;
+		};
 		569446B731AD2CD6ADEDD4A5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -457,6 +543,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PhraseLensAction/PhraseLensAction.entitlements;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PhraseLensAction/Info.plist;
@@ -553,10 +640,28 @@
 			};
 			name = Release;
 		};
+		D5117DD4C9474869940EF50D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.harry.phraselens.ios.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = PhraseLens;
+			};
+			name = Release;
+		};
 		DFA7BBFB1F67CE38371AA32A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PhraseLensAction/PhraseLensAction.entitlements;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PhraseLensAction/Info.plist;
@@ -608,6 +713,15 @@
 			buildConfigurations = (
 				569446B731AD2CD6ADEDD4A5 /* Debug */,
 				BDDEDD609FDF86771CB87E87 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A5B881B904A29CBC4EE6DA98 /* Build configuration list for PBXNativeTarget "PhraseLensUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4B75B1AB15710C49FD890C5D /* Debug */,
+				D5117DD4C9474869940EF50D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

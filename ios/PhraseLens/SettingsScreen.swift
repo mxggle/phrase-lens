@@ -28,9 +28,13 @@ struct SettingsScreen: View {
               Text(provider.rawValue).tag(provider)
             }
           }
-          LabeledContent(L10n.isChinese ? "接口地址" : "Endpoint") {
+          // Stacked rather than side by side: a full URL does not fit beside
+          // its label and wrapped under it at an odd indent.
+          VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.isChinese ? "接口地址" : "Endpoint")
             TextField("https://…", text: $store.settings.provider.endpoint)
-              .multilineTextAlignment(.trailing)
+              .font(.callout)
+              .foregroundStyle(.secondary)
               .keyboardType(.URL)
               .textInputAutocapitalization(.never)
               .autocorrectionDisabled()

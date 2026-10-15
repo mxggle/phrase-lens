@@ -44,6 +44,11 @@ cd ios && ./scripts/build.sh   # regenerates the project, builds for the Simulat
 open PhraseLens.xcodeproj      # or run from Xcode
 ```
 
+`./scripts/screenshots.sh ["iPhone 18 Pro"]` runs the UI smoke test on a
+Simulator: it walks the three tabs, then selects a word in Safari and opens
+PhraseLens from Share…, saving a screenshot of each step to
+`build/screenshots/`.
+
 `project.yml` is the source of truth; `PhraseLens.xcodeproj` is generated
 from it and committed so the project opens without XcodeGen.
 
