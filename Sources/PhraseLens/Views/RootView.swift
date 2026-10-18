@@ -3,6 +3,7 @@ import SwiftUI
 enum AppSection: String, CaseIterable, Identifiable {
   case setup
   case translator
+  case learning
   case history
   case vocabulary
   case actions
@@ -13,6 +14,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     switch self {
     case .setup: L10n.isChinese ? "新手引导" : "Getting Started"
     case .translator: L10n.isChinese ? "翻译" : "Translator"
+    case .learning: L10n.isChinese ? "学习中心" : "Study"
     case .history: L10n.isChinese ? "历史记录" : "History"
     case .vocabulary: L10n.isChinese ? "生词本" : "Vocabulary"
     case .actions: L10n.isChinese ? "动作配置" : "Actions"
@@ -23,6 +25,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     switch self {
     case .setup: "checklist"
     case .translator: "character.bubble"
+    case .learning: "graduationcap"
     case .history: "clock.arrow.circlepath"
     case .vocabulary: "books.vertical"
     case .actions: "slider.horizontal.3"
@@ -35,6 +38,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     switch self {
     case .setup: L10n.isChinese ? "连接服务商、启用快捷键并体验首次翻译" : "Connect a provider, enable shortcuts, and try a translation"
     case .translator: L10n.isChinese ? "翻译、润色与解析文本" : "Translate, rewrite, and explain text"
+    case .learning: L10n.isChinese ? "反复查询、相关词、复习与学习诊断" : "Repeats, related terms, review, and diagnosis"
     case .history: L10n.isChinese ? "保存在本机的所有翻译记录" : "Every translation saved on this Mac"
     case .vocabulary: L10n.isChinese ? "阅读时收集的高频词汇" : "Words you collected while reading"
     case .actions: L10n.isChinese ? "定制每个动作背后的提示词" : "The prompts behind each action"
@@ -47,14 +51,14 @@ enum AppSection: String, CaseIterable, Identifiable {
   /// a live control strip is decoration, and it spends the width the controls
   /// need.
   var showsCaption: Bool {
-    self != .translator
+    self != .translator && self != .learning
   }
 
   /// Sidebar grouping.
   var group: Group {
     switch self {
     case .setup: .configure
-    case .translator: .workspace
+    case .translator, .learning: .workspace
     case .history, .vocabulary: .library
     case .actions: .configure
     }
@@ -134,6 +138,40 @@ struct RootView: View {
         let section = AppSection(rawValue: arguments[index + 1]) {
         selection = section
       }
+      if let index = arguments.firstIndex(of: "--preview-learning-tab"), index + 1 < arguments.count,
+        let tab = LearningTab(rawValue: arguments[index + 1]) {
+        model.learning.tab = tab
+      }
+      if arguments.contains("--preview-assistant") {
+        model.learning.assistantMessages = [
+          AssistantMessage(role: .user, text: "我最近学习上卡在哪里？"),
+          AssistantMessage(
+            role: .assistant,
+            text: """
+              ## 你卡在哪里
+              1. **affect 反复查仍记不住**：4 天查了 4 次，还问过它和 effect 的区别。
+                 - 建议：做一张对比卡，affect 主要作动词（影响），effect 主要作名词（效果）。
+              2. **形近词对容易混**：affect / effect、adopt / adapt 都还没分清。
+              3. **长句结构要靠逐块拆解**：*It was not until the 1990s that…* 这类句型问了 3 次。
+
+              优先复习：affect、勉強、adopt。
+              """,
+            events: [
+              AssistantToolEvent(name: "get_report", summary: "读取学习诊断"),
+              AssistantToolEvent(name: "get_stats", summary: "统计最近 14 天"),
+              AssistantToolEvent(name: "search_terms", summary: "列出词条（stubborn）"),
+            ]
+          ),
+        ]
+      }
+      if let index = arguments.firstIndex(of: "--preview-learning-term"), index + 1 < arguments.count {
+        let word = arguments[index + 1]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+          if let term = model.learning.terms.first(where: { $0.display == word || $0.headword == word }) {
+            model.learning.select(term.id)
+          }
+        }
+      }
       if let index = arguments.firstIndex(of: "--preview-size"), index + 1 < arguments.count {
         let parts = arguments[index + 1].split(separator: "x").compactMap { Double($0) }
         if parts.count == 2 {
@@ -152,6 +190,7 @@ struct RootView: View {
     }
     .onChange(of: model.translatorFocusToken) { _, _ in selection = .translator }
     .onChange(of: model.actionsFocusToken) { _, _ in selection = .actions }
+    .onChange(of: model.learningFocusToken) { _, _ in selection = .learning }
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
     .environment(\.locale, settingsStore.resolvedLocale)
     .alert(
@@ -227,6 +266,7 @@ private struct Shell: View {
           selection = .translator
         }
         case .translator: TranslatorView()
+        case .learning: LearningView()
         case .history: HistoryView()
         case .vocabulary: VocabularyView()
         case .actions: ActionsView()
@@ -252,6 +292,7 @@ private struct SidebarView: View {
 
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
+  @EnvironmentObject private var learning: LearningModel
   @Environment(\.palette) private var palette
   @Environment(\.openSettings) private var openSettings
   @State private var isHoveringProvider = false
@@ -374,6 +415,7 @@ private struct SidebarView: View {
     case .vocabulary: model.vocabulary.isEmpty ? nil : "\(model.vocabulary.count)"
     case .actions: model.orderedActions.isEmpty ? nil : "\(model.orderedActions.count)"
     case .translator: nil
+    case .learning: learning.dueCount > 0 ? "\(learning.dueCount)" : nil
     }
   }
 
@@ -539,6 +581,8 @@ private struct NavBarControls: View {
         defaultActionID: settingsStore.settings.defaultActionID,
         setDefault: { settingsStore.setDefaultAction($0) }
       )
+    case .learning:
+      LearningTabBar()
     case .setup, .history, .vocabulary, .actions:
       EmptyView()
     }

@@ -262,6 +262,7 @@ struct TranslatorView: View {
       Spinner(size: 12, isLive: true)
         .transition(.opacity)
     }
+    LearningLookupBadge()
   }
 
   private var resultCommands: some View {

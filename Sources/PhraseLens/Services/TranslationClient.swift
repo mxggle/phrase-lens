@@ -384,7 +384,7 @@ struct TranslationClient: Sendable {
     prompt.messages.map { ["role": $0.role.rawValue, "content": $0.content] }
   }
 
-  private func makeSession(proxy: ProxySettings) -> URLSession {
+  func makeSession(proxy: ProxySettings) -> URLSession {
     guard proxy.enabled, !proxy.host.isEmpty else {
       return Self.directSession
     }
@@ -421,7 +421,7 @@ struct TranslationClient: Sendable {
     return URLSession(configuration: configuration)
   }
 
-  private func providerError(status: Int, body: String) -> String {
+  func providerError(status: Int, body: String) -> String {
     guard let data = body.data(using: .utf8),
       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else {

@@ -7,6 +7,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
   case provider
   case shortcuts
   case speech
+  case learning
   case network
   case setup
   case about
@@ -19,6 +20,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case .provider: L10n.isChinese ? "AI 连接" : "AI Connections"
     case .shortcuts: L10n.isChinese ? "快捷键" : "Shortcuts"
     case .speech: L10n.isChinese ? "语音朗读" : "Speech"
+    case .learning: L10n.isChinese ? "学习助手" : "Study"
     case .network: L10n.isChinese ? "网络代理" : "Network"
     case .setup: L10n.isChinese ? "新手引导" : "Getting Started"
     case .about: L10n.isChinese ? "关于" : "About"
@@ -31,6 +33,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case .provider: "cpu"
     case .shortcuts: "keyboard"
     case .speech: "speaker.wave.2"
+    case .learning: "graduationcap"
     case .network: "network"
     case .setup: "checklist"
     case .about: "info.circle"
@@ -43,6 +46,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case .provider: L10n.isChinese ? "应答模型及 API 密钥配置" : "Which model answers, and the credential it uses"
     case .shortcuts: L10n.isChinese ? "全局快捷键与系统权限" : "Global keys and the permission they need"
     case .speech: L10n.isChinese ? "语音播放引擎与朗读参数" : "Voice playback and writing replacement"
+    case .learning: L10n.isChinese ? "学习记录、后台分析与复习" : "The study record, background analysis, and review"
     case .network: L10n.isChinese ? "代理服务器与直连白名单" : "Proxy configuration"
     case .setup: L10n.isChinese ? "连接服务商、启用快捷键并体验首次翻译" : "Connect a provider, enable shortcuts, and try a translation"
     case .about: L10n.isChinese ? "版本、软件更新与开源许可协议" : "Version, software updates, and licensing"
@@ -240,6 +244,7 @@ private struct SettingsShell: View {
               case .provider: ProviderSettingsPane()
               case .shortcuts: ShortcutSettingsPane()
               case .speech: SpeechWritingSettingsPane()
+              case .learning: LearningSettingsPane()
               case .network: NetworkSettingsPane()
               case .about: AboutSettingsPane()
               case .setup: EmptyView()

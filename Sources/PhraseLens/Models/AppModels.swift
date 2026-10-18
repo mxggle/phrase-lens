@@ -982,6 +982,18 @@ struct AppSettings: Codable, Equatable, Sendable {
   var writingTargetLanguage: LanguageCode = .english
   var shortcuts = ShortcutSettings()
   var proxy = ProxySettings()
+  /// Keeps the study record the learning assistant reads.
+  var learningEnabled = true
+  /// Hands what the record says about a term to explanations of it.
+  var learningMemoryInPrompts = true
+  /// Lets the assistant ask the model, in the background, about the record:
+  /// dictionary forms, senses, related terms, and cards for stubborn words.
+  var learningAutoAnalyze = true
+  /// Saves a term that keeps coming back to Vocabulary on its own.
+  var learningAutoCollect = true
+  /// Lets the study assistant look English words up in public dictionary
+  /// APIs. Only the word being looked up is sent.
+  var learningAssistantWebTools = true
 
   var resolvedTTSProvider: TTSProvider { ttsProvider ?? .edge }
 
@@ -1017,6 +1029,11 @@ struct AppSettings: Codable, Equatable, Sendable {
     case writingTargetLanguage
     case shortcuts
     case proxy
+    case learningEnabled
+    case learningMemoryInPrompts
+    case learningAutoAnalyze
+    case learningAutoCollect
+    case learningAssistantWebTools
   }
 
   init(from decoder: Decoder) throws {
@@ -1084,6 +1101,13 @@ struct AppSettings: Codable, Equatable, Sendable {
       ?? .english
     shortcuts = try container.decodeIfPresent(ShortcutSettings.self, forKey: .shortcuts) ?? .init()
     proxy = try container.decodeIfPresent(ProxySettings.self, forKey: .proxy) ?? .init()
+    learningEnabled = try container.decodeIfPresent(Bool.self, forKey: .learningEnabled) ?? true
+    learningMemoryInPrompts =
+      try container.decodeIfPresent(Bool.self, forKey: .learningMemoryInPrompts) ?? true
+    learningAutoAnalyze = try container.decodeIfPresent(Bool.self, forKey: .learningAutoAnalyze) ?? true
+    learningAutoCollect = try container.decodeIfPresent(Bool.self, forKey: .learningAutoCollect) ?? true
+    learningAssistantWebTools =
+      try container.decodeIfPresent(Bool.self, forKey: .learningAssistantWebTools) ?? true
 
     sanitizeActionConfiguration()
   }

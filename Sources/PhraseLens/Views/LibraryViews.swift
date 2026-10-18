@@ -483,15 +483,20 @@ private struct LibrarySectionHeader: View {
 
 struct HistoryView: View {
   @EnvironmentObject private var model: AppModel
+  @EnvironmentObject private var learning: LearningModel
   @Environment(\.layoutWidth) private var layoutWidth
   @State private var searchText = ""
   @State private var selection = Set<UUID>()
   @State private var pendingDelete = Set<UUID>()
   @State private var isConfirmingDelete = false
   @State private var favoritesOnly = false
+  @State private var repeatsOnly = false
 
   private var filtered: [HistoryEntry] {
-    let pool = favoritesOnly ? model.history.filter(\.favorite) : model.history
+    var pool = favoritesOnly ? model.history.filter(\.favorite) : model.history
+    if repeatsOnly {
+      pool = pool.filter { learning.term(forHistoryID: $0.id).map(LearningLedger.isRepeat) ?? false }
+    }
     guard !searchText.isEmpty else { return pool }
     return pool.filter {
       $0.sourceText.localizedCaseInsensitiveContains(searchText)
@@ -520,7 +525,7 @@ struct HistoryView: View {
             onOpen: { model.restore(entry) },
             hoverActions: { AnyView(rowActions(for: entry)) }
           ) {
-            HistoryRow(entry: entry)
+            HistoryRow(entry: entry, term: learning.term(forHistoryID: entry.id))
           }
           .contextMenu {
             Button(L10n.isChinese ? "在翻译器中载入" : "Restore in translator") {
@@ -609,6 +614,22 @@ struct HistoryView: View {
     .accessibilityLabel(L10n.isChinese ? "只显示收藏" : "Favorites only")
     .accessibilityAddTraits(favoritesOnly ? [.isSelected] : [])
 
+    if learning.isEnabled {
+      Button {
+        repeatsOnly.toggle()
+      } label: {
+        AdaptiveLabel(
+          title: L10n.isChinese ? "反复查询" : "Repeats",
+          symbol: "arrow.counterclockwise",
+          iconOnly: layoutWidth.isCompact
+        )
+      }
+      .appButton(repeatsOnly ? .secondary : .outline, size: .sm)
+      .help(L10n.isChinese ? "只显示查过不止一次的词" : "Show only terms looked up more than once")
+      .accessibilityLabel(L10n.isChinese ? "只显示反复查询" : "Repeats only")
+      .accessibilityAddTraits(repeatsOnly ? [.isSelected] : [])
+    }
+
     if !selection.isEmpty {
       Button {
         confirmDelete(of: selection)
@@ -686,7 +707,18 @@ struct HistoryView: View {
 
   @ViewBuilder
   private var emptyState: some View {
-    if favoritesOnly, searchText.isEmpty {
+    if repeatsOnly, searchText.isEmpty {
+      EmptyState(
+        symbol: "arrow.counterclockwise",
+        title: L10n.isChinese ? "还没有反复查询的词" : "No repeats yet",
+        message: L10n.isChinese
+          ? "隔一段时间再次查同一个词或短语，它就会出现在这里。"
+          : "Look the same word or phrase up again later and it shows up here."
+      ) {
+        Button(L10n.isChinese ? "显示全部" : "Show All") { repeatsOnly = false }
+          .appButton(.outline, size: .sm)
+      }
+    } else if favoritesOnly, searchText.isEmpty {
       EmptyState(
         symbol: "star",
         title: L10n.isChinese ? "还没有收藏的记录" : "No favorites yet",
@@ -722,7 +754,9 @@ struct HistoryView: View {
 
 private struct HistoryRow: View {
   let entry: HistoryEntry
+  var term: LearningTerm?
 
+  @EnvironmentObject private var model: AppModel
   @Environment(\.palette) private var palette
   @Environment(\.layoutWidth) private var layoutWidth
 
@@ -739,6 +773,19 @@ private struct HistoryRow: View {
             .font(.system(size: 9))
             .foregroundStyle(palette.warning)
             .accessibilityLabel(L10n.isChinese ? "已收藏" : "Favorite")
+        }
+        if let term, term.encounters.count > 1 {
+          Button {
+            model.openLearning(termID: term.id)
+          } label: {
+            Badge(
+              text: LearningCopy.lookups(term),
+              variant: LearningLedger.isStubborn(term) ? .warning : .neutral,
+              symbol: "arrow.counterclockwise"
+            )
+          }
+          .buttonStyle(.plain)
+          .help(L10n.isChinese ? "在学习中心查看这个词" : "Open this term in Study")
         }
         Spacer(minLength: AppSpacing.sm)
         Text(entry.createdAt, format: .relative(presentation: .named))
@@ -1402,7 +1449,7 @@ private struct VocabularyRow: View {
 /// typically a heading repeating the word, then bold field labels. Four lines is
 /// too little room to lay that out as a document, and at that size the markers
 /// read as damage rather than as emphasis, so the card takes the prose alone.
-private enum VocabularyPreview {
+enum VocabularyPreview {
   /// Roughly what the reserved lines can hold at the widest column. Whatever
   /// follows is not dropped, only unread here — the saved entry keeps it.
   private static let characterBudget = 400

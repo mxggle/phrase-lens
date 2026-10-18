@@ -65,11 +65,21 @@ actor LibraryStore {
   private let historyFile: JSONFileStore<[HistoryEntry]>
   private let vocabularyFile: JSONFileStore<[VocabularyEntry]>
   private let actionsFile: JSONFileStore<[TranslationAction]>
+  private let learningFile: JSONFileStore<LearningLibrary>
 
   init(directory: URL? = nil) {
     historyFile = JSONFileStore(filename: "history.json", directory: directory)
     vocabularyFile = JSONFileStore(filename: "vocabulary.json", directory: directory)
     actionsFile = JSONFileStore(filename: "actions.json", directory: directory)
+    learningFile = JSONFileStore(filename: "learning.json", directory: directory)
+  }
+
+  func learning() throws -> LearningLibrary {
+    try learningFile.load(default: LearningLibrary())
+  }
+
+  func saveLearning(_ library: LearningLibrary) throws {
+    try learningFile.save(library)
   }
 
   func history() throws -> [HistoryEntry] {
