@@ -2012,6 +2012,7 @@ enum SelfTestRunner {
     }
 
     failures += resultCommandFailures()
+    failures += LearningSelfTests.run()
 
     return failures
   }

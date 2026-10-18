@@ -57,6 +57,9 @@ final class AppModel: ObservableObject {
   }
   @Published private(set) var translatorFocusToken = UUID()
   @Published private(set) var actionsFocusToken = UUID()
+  /// Changes whenever something asks for the study section, carrying the term
+  /// to open there, if any.
+  @Published private(set) var learningFocusToken = UUID()
   @Published var outputText = ""
   @Published private(set) var outputRendering: OutputRendering = .plain
   @Published var selectedActionID = TranslationAction.builtIns[0].id
@@ -107,6 +110,7 @@ final class AppModel: ObservableObject {
   let settingsStore: SettingsStore
   let modelCatalog = ModelCatalogStore()
   let speech = SpeechService()
+  let learning: LearningModel
 
   private let client = TranslationClient()
   private let tagger = VocabularyTagger()
@@ -131,6 +135,7 @@ final class AppModel: ObservableObject {
        integrateWithSystem: Bool = true) {
     self.settingsStore = settingsStore
     self.library = library
+    learning = LearningModel(library: library, settingsStore: settingsStore)
     isActionLibraryLoaded = !integrateWithSystem
     isAccessibilityTrusted = integrateWithSystem && accessibility.isTrusted()
     selectedActionID =
@@ -161,9 +166,48 @@ final class AppModel: ObservableObject {
       }
       .store(in: &cancellables)
     observeRuntimeSettings()
+    connectLearning()
     if integrateWithSystem {
       Task { await loadLibrary() }
       configureHotKeys()
+    }
+  }
+
+  /// Gives the study record what it needs from the rest of the app: the
+  /// history it was filed from, and a way to save a word to Vocabulary.
+  private func connectLearning() {
+    learning.historyProvider = { [weak self] in self?.history ?? [] }
+    learning.isCollected = { [weak self] term in
+      guard let self else { return true }
+      return self.vocabularyEntry(matching: term.display) != nil
+        || self.vocabularyEntry(matching: term.headword) != nil
+    }
+    learning.onCollect = { [weak self] term, explanation in
+      self?.collectFromLearning(term, explanation: explanation)
+    }
+  }
+
+  /// Saves a term the reader keeps looking up to Vocabulary, filed like any
+  /// other collected word.
+  private func collectFromLearning(_ term: LearningTerm, explanation: String) {
+    let entry = VocabularyEntry(
+      word: term.headword,
+      explanation: explanation,
+      sourceLanguage: term.language,
+      targetLanguage: settingsStore.settings.targetLanguage
+    )
+    guard !vocabulary.contains(where: { $0.matchesIdentity(of: entry) }) else { return }
+    Task {
+      do {
+        try await library.addVocabulary(entry)
+        vocabulary.insert(entry, at: 0)
+        statusMessage = L10n.isChinese
+          ? "反复查询的“\(term.headword)”已加入生词本"
+          : "“\(term.headword)” keeps coming back, so it was added to Vocabulary"
+        tagVocabulary([entry], announcing: false)
+      } catch {
+        // Unattended: the next sitting with this term tries again.
+      }
     }
   }
 
@@ -305,7 +349,8 @@ final class AppModel: ObservableObject {
       source: source,
       target: target,
       action: action,
-      selectionContext: context
+      selectionContext: context,
+      memory: learning.memory(for: text, language: source)
     )
     let connection: AIConnection
     let configuration: ProviderConfiguration
@@ -410,6 +455,7 @@ final class AppModel: ObservableObject {
     try await library.addHistory(entry)
     history.insert(entry, at: 0)
     currentHistoryID = entry.id
+    learning.record(entry)
   }
 
   /// Calls off everything the translator is running, the follow-up thread
@@ -621,8 +667,9 @@ final class AppModel: ObservableObject {
   var followUpSuggestions: [FollowUpSuggestion] {
     guard canAskFollowUp else { return [] }
     let asked = Set(followUps.map(\.question))
-    return FollowUpSuggestion.suggestions(for: inputText, mode: selectedAction?.mode)
+    let suggestions = FollowUpSuggestion.suggestions(for: inputText, mode: selectedAction?.mode)
       .filter { !asked.contains($0.question) }
+    return learning.ranked(suggestions, forTerm: FollowUpSuggestion.isShortPhrase(inputText))
   }
 
   /// Total streamed text in the result pane. The pane follows its own tail
@@ -861,6 +908,7 @@ final class AppModel: ObservableObject {
     let answered = followUps.filter { !$0.answer.isEmpty }
     history[index].followUps = answered.isEmpty ? nil : answered
     let updated = history[index]
+    learning.recordFollowUps(for: updated)
     do {
       try await library.updateHistory(updated)
     } catch {
@@ -987,6 +1035,28 @@ final class AppModel: ObservableObject {
     WindowCoordinator.showMain()
   }
 
+  /// Opens the study section, on one term when given.
+  func openLearning(termID: UUID? = nil, tab: LearningTab? = nil) {
+    if let termID {
+      learning.selectedTermID = termID
+      learning.tab = .terms
+    }
+    if let tab { learning.tab = tab }
+    learningFocusToken = UUID()
+    WindowCoordinator.showMain()
+  }
+
+  /// The language the text in the source box is read as, worked out the way a
+  /// translation of it would work it out.
+  var currentSourceLanguage: LanguageCode {
+    TranslationSourceResolver.resolve(
+      inputText,
+      configuredSource: settingsStore.settings.sourceLanguage,
+      inputSource: inputSource,
+      restoredSource: restoredSourceLanguage
+    )
+  }
+
   func openTranslator() {
     translatorFocusToken = UUID()
     WindowCoordinator.showMain()
@@ -1007,6 +1077,7 @@ final class AppModel: ObservableObject {
 
   func deleteHistory(ids: Set<UUID>) {
     history.removeAll { ids.contains($0.id) }
+    learning.forget(historyIDs: ids)
     Task {
       do {
         try await library.removeHistory(ids: ids)
@@ -1326,6 +1397,19 @@ final class AppModel: ObservableObject {
       .store(in: &cancellables)
 
     settingsStore.$settings
+      .map(\.learningEnabled)
+      .removeDuplicates()
+      .dropFirst()
+      .filter { $0 }
+      .sink { [weak self] _ in
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          await self.learning.backfillIfNeeded(history: self.history)
+        }
+      }
+      .store(in: &cancellables)
+
+    settingsStore.$settings
       .map(\.appLanguage)
       .removeDuplicates()
       .dropFirst()
@@ -1571,6 +1655,7 @@ final class AppModel: ObservableObject {
       reconcileActionSelection(preferDefault: true)
       history = try await loadedHistory
       vocabulary = try await loadedVocabulary
+      await learning.load(history: history)
     } catch {
       errorMessage = L10n.isChinese
         ? "无法载入本地资料库：\(error.localizedDescription)"

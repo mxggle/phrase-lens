@@ -18,6 +18,11 @@ This file maps the original desktop behaviors to their native implementation.
 | Pronunciation readings | `PronunciationGuide` per language, applied by `PromptBuilder` to the looked-up term and to short translations |
 | History | Atomic JSON storage, search, restore, favorites, delete |
 | Vocabulary | Atomic JSON storage, deduplication, search, delete |
+| Study record | `LearningLedger` files lookups into `learning.json`: repeats, sentences, senses, follow-ups — [design](learning-assistant.md) |
+| Learner memory | `PromptBuilder.applyingLearnerMemory` hands the record to explanations; follow-up chips ordered by habit |
+| Related terms and cards | Local candidates (`LearningRelations`) judged by `LearningAnnotator`; memory cards and weekly diagnosis by `LearningCoach` |
+| Review | `ReviewScheduler` spaced repetition, with a re-lookup counted as a lapse |
+| Study assistant | Tool-using chat over the record (`AgentClient`, `LearningTools`), native for Anthropic and OpenAI-compatible connections |
 | Custom actions | Editable prompts with source, target, and text variables |
 | Global shortcuts | Carbon hot-key registration with conflict reporting |
 | Menu bar | `MenuBarExtra` actions and quit/settings access |

@@ -56,6 +56,7 @@ final class SelectionPanelCoordinator {
     let rootView = SelectionTranslationPanelView()
       .environmentObject(model)
       .environmentObject(model.settingsStore)
+      .environmentObject(model.learning)
       .frame(width: contentSize.width, height: contentSize.height)
     let hostingController = NSHostingController(rootView: rootView)
     let panel = SelectionPopoverPanel(
@@ -602,6 +603,10 @@ private struct SelectionPanelBody: View {
         .font(AppFont.bodyMedium)
         .foregroundStyle(palette.foreground)
         .allowsHitTesting(false)
+
+      // A term the reader keeps coming back to says so where they are reading
+      // it, which is the moment knowing it helps.
+      LearningLookupBadge()
 
       Spacer(minLength: AppSpacing.sm)
 
