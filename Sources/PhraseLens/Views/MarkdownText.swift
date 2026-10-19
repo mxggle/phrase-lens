@@ -19,7 +19,13 @@ struct MarkdownText: View {
 
   var body: some View {
     let blocks = MarkdownCache.blocks(for: markdown)
-    LazyVStack(alignment: .leading, spacing: 0) {
+    // A plain stack, not a lazy one. A document is a page or two, so laziness
+    // saves nothing, and a `LazyVStack` in a scroll view re-estimates and
+    // re-places its rows on every pass. With selectable text each placement
+    // refreshes the text's AppKit selection overlay, which invalidates layout
+    // and asks for another pass: a stream scrolled away from the top could
+    // spin the main thread in that loop for good, freezing the app.
+    VStack(alignment: .leading, spacing: 0) {
       ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
         blockView(block)
           .padding(.top, index == 0 ? 0 : gap(before: block, after: blocks[index - 1]))
