@@ -20,6 +20,9 @@ final class ComposeModel: ObservableObject {
   @Published private(set) var style = WritingStyle(language: .japanese, register: .polite)
   /// Every style tried on this draft, so switching back to one is instant.
   @Published private(set) var drafts: [WritingStyle: ComposeDraft] = [:]
+  /// Fixed when the draft is read, so picking Japanese does not take away a
+  /// third language the pop-up opened with.
+  @Published private(set) var languageOptions = WritingStyle.languageOptions(including: [])
   /// Why the draft could not be read, or the translation could not be written.
   @Published private(set) var errorMessage: String?
   /// The translation went to the clipboard after a write that failed.
@@ -48,7 +51,6 @@ final class ComposeModel: ObservableObject {
   var applicationName: String? { capture?.target.applicationName }
   var currentDraft: ComposeDraft? { drafts[style] }
   var isStreaming: Bool { currentDraft?.isStreaming == true }
-  var languageOptions: [LanguageCode] { WritingStyle.languageOptions(including: style.language) }
 
   /// The translation in the current style, as the reader has edited it. Edits
   /// are refused while it is still arriving: the next chunk would erase them.
@@ -114,6 +116,9 @@ final class ComposeModel: ObservableObject {
     self.capture = capture
     sourceText = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
     style = settingsStore.settings.writingStyle(forApp: capture.bundleIdentifier)
+    languageOptions = WritingStyle.languageOptions(
+      including: [settingsStore.settings.writingTargetLanguage, style.language]
+    )
     drafts = [:]
     errorMessage = nil
     copiedAfterFailure = false
@@ -193,8 +198,16 @@ final class ComposeModel: ObservableObject {
     // Pressed Enter early, then changed the style: the wait was for the
     // translation that is no longer on screen.
     replacesWhenFinished = false
-    settingsStore.settings.rememberWritingStyle(next, forApp: capture?.bundleIdentifier)
+    remember(next)
     request(next)
+  }
+
+  /// Files a style as the one used in this app. Settings are only written
+  /// when that changes anything, since every write re-renders every window.
+  private func remember(_ style: WritingStyle) {
+    let app = capture?.bundleIdentifier
+    guard !settingsStore.settings.remembersWritingStyle(style, forApp: app) else { return }
+    settingsStore.settings.rememberWritingStyle(style, forApp: app)
   }
 
   // MARK: - Translating
@@ -270,6 +283,9 @@ final class ComposeModel: ObservableObject {
     }
     let text = WriteBackComposer.clean(draft.text)
     guard !text.isEmpty else { return }
+    // Sending in the style the pop-up opened with is a choice too: without
+    // this, an app that was never switched would follow the next app that is.
+    remember(style)
     cancelRequests()
     errorMessage = nil
     copiedAfterFailure = false

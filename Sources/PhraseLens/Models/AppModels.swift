@@ -973,11 +973,13 @@ struct WritingStyle: Codable, Hashable, Sendable {
   var register: WritingRegister
 
   /// The languages the pop-up offers. Japanese and English are what it is
-  /// for; a different language chosen in Settings joins them rather than
-  /// replacing either.
-  static func languageOptions(including current: LanguageCode) -> [LanguageCode] {
+  /// for; a different language chosen in Settings or remembered for the app
+  /// joins them rather than replacing either.
+  static func languageOptions(including languages: [LanguageCode]) -> [LanguageCode] {
     var options: [LanguageCode] = [.japanese, .english]
-    if current != .auto, !options.contains(current) { options.append(current) }
+    for language in languages where language != .auto && !options.contains(language) {
+      options.append(language)
+    }
     return options
   }
 }
@@ -1279,6 +1281,12 @@ struct AppSettings: Codable, Equatable, Sendable {
       return remembered
     }
     return WritingStyle(language: writingTargetLanguage, register: writingRegister)
+  }
+
+  /// Whether `style` is already what this app, and every unseen app, opens with.
+  func remembersWritingStyle(_ style: WritingStyle, forApp bundleIdentifier: String?) -> Bool {
+    writingTargetLanguage == style.language && writingRegister == style.register
+      && (bundleIdentifier.map { writingStylesByApp[$0] == style } ?? true)
   }
 
   /// Remembers a style chosen in the pop-up, for this app and as the

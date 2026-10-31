@@ -1602,6 +1602,9 @@ extension AccessibilityService {
           : "The text in the field changed since it was read, so nothing was written. Press the shortcut again."
       )
     }
+    // A draft that needed no change — Japanese that was already right — is
+    // done, and both routes below would read the unchanged value as a failure.
+    if let valueBefore, valueBefore == payload { return .accessibility }
 
     var selectsAllWithKeyboard = true
     if let element = target.element, !target.isWebContent, let valueBefore {
