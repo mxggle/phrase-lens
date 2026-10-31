@@ -2375,7 +2375,7 @@ const cmpStage = $('#cmpStage'), cmpPanel = $('#cmpPanel'), cmpOut = $('#cmpOut'
 /* every style tried on this draft is kept, edits included, so switching back is instant */
 const cmp = {lang:'ja', reg:'polite', open:false, streaming:false, pending:false, drafts:{}, alt:{}};
 const cmpKey = () => cmp.lang + '.' + cmp.reg;
-let cmpRun = 0, cmpTok = 0;
+let cmpRun = 0, cmpTok = 0, cmpTouched = false;
 const cmpWait = (ms) => new Promise(r => setTimeout(r, ms));
 
 function cmpStep(n) { $$('#cmpSteps li').forEach(li => li.classList.toggle('on', +li.dataset.step === n)); }
@@ -2501,7 +2501,7 @@ function cmpReset() {
   cmpPaint();
 }
 /* the reader took over: the demo stops where it is */
-const cmpTouch = () => { cmpRun++; $('#cmpReplay').classList.remove('nudge'); };
+const cmpTouch = () => { cmpRun++; cmpTouched = true; $('#cmpReplay').classList.remove('nudge'); };
 
 async function cmpPlay() {
   cmpReset();
@@ -2577,6 +2577,8 @@ addEventListener('keydown', e => {
 cmpPaint();
 new IntersectionObserver((es, o) => es.forEach(e => {
   if (!e.isIntersecting) return; o.disconnect();
+  /* opened with ⌥W before it came into view: the reader already has it */
+  if (cmpTouched) return;
   if (reduce()) { cmpSetDraft(CMP_SRC); cmpOpen(); return; }
   cmpPlay();
 }), {threshold:.45}).observe(cmpStage);
