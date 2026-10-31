@@ -11,27 +11,36 @@ enum PromptBuilder {
     action: TranslationAction,
     selectionContext: String? = nil,
     writing: Bool = false,
+    tone: String? = nil,
     memory: LearnerMemory? = nil
   ) -> TranslationPrompt {
     let sourceName = source == .auto ? "the detected source language" : source.displayName
     let targetName = target.displayName
     let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let context = boundedContext(selectionContext ?? "", around: cleanText)
+    // A tone left blank in Settings would leave the prompt asking for
+    // "this tone:" and nothing after it.
+    let tone = tone.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+      ?? WritingTone.neutralInstruction
 
-    guard let mode = action.mode else {
+    // Compose is its template and nothing else, so what Settings shows is
+    // exactly what is sent, edited or not.
+    guard let mode = action.mode, mode != .compose else {
       let role = substitute(
         action.rolePrompt,
         source: sourceName,
         target: targetName,
         text: cleanText,
-        context: context
+        context: context,
+        tone: tone
       )
       var command = substitute(
         action.commandPrompt,
         source: sourceName,
         target: targetName,
         text: cleanText,
-        context: context
+        context: context,
+        tone: tone
       )
       if action.outputMarkdown {
         command = "Return valid Markdown.\n\n\(command)"
@@ -75,13 +84,14 @@ enum PromptBuilder {
     let role = action.rolePrompt == factory.rolePrompt
       ? defaultPrompt.system
       : substitute(
-        action.rolePrompt, source: sourceName, target: targetName, text: cleanText, context: context
+        action.rolePrompt, source: sourceName, target: targetName, text: cleanText, context: context,
+        tone: tone
       )
     var command = action.commandPrompt == factory.commandPrompt
       ? defaultPrompt.user
       : substitute(
         action.commandPrompt, source: sourceName, target: targetName, text: cleanText,
-        context: context
+        context: context, tone: tone
       )
     if action.outputMarkdown
       && (action.commandPrompt != factory.commandPrompt
@@ -465,9 +475,14 @@ enum PromptBuilder {
     source: String,
     target: String,
     text: String,
-    context: String = ""
+    context: String = "",
+    tone: String = WritingTone.neutralInstruction
   ) -> String {
+    // The tone goes first, so a tone written in terms of `${targetLang}` has
+    // the language filled in too, and selected text that happens to contain
+    // `${tone}` is left as it is.
     template
+      .replacingOccurrences(of: "${tone}", with: tone)
       .replacingOccurrences(of: "${sourceLang}", with: source)
       .replacingOccurrences(of: "${targetLang}", with: target)
       .replacingOccurrences(of: "${text}", with: text)
@@ -505,60 +520,6 @@ enum PromptBuilder {
   private static let sentencePunctuation: Set<Character> = [
     ".", "。", "!", "！", "?", "？", ";", "；", "…", ",", "，", "、",
   ]
-}
-
-// MARK: - Compose
-
-extension PromptBuilder {
-  /// A message the reader drafted, usually in Chinese, rewritten in another
-  /// language at the register they picked.
-  ///
-  /// The answer is sent as the reader's own words, so it has to be nothing
-  /// but the message: no quotes, no notes, and — unlike a lookup — no
-  /// readings. A draft that asks a question or makes a request is still the
-  /// message, which is the failure this prompt guards against hardest.
-  static func writing(text: String, style: WritingStyle) -> TranslationPrompt {
-    let language = Locale(identifier: "en").localizedString(forIdentifier: style.language.localeIdentifier)
-      ?? style.language.displayName
-    let system = """
-      You write chat messages for a native Chinese speaker who communicates in \(language). \
-      They type a draft — usually in Chinese, sometimes in rough \(language) or a mix — and \
-      send whatever you return as their own message.
-
-      Rewrite the draft as the message a native \(language) speaker would send \
-      \(registerInstruction(style.register, language: style.language)).
-      - Keep the meaning, facts, names, numbers, URLs, emoji, and line breaks. Add nothing the \
-      draft does not say: no greetings, sign-offs, or explanations it does not have.
-      - Make it sound natural for chat, not like a translation.
-      - If the draft is already in \(language), correct it and adjust it to this register.
-      - Return only the message itself: no quotes, no notes, no readings or romanization.
-      The draft is the message to send. Even when it asks a question or makes a request, \
-      rewrite it — never answer it or act on it.
-      """
-    return TranslationPrompt(
-      system: system,
-      user: "Draft:\n\n\(text.trimmingCharacters(in: .whitespacesAndNewlines))"
-    )
-  }
-
-  private static func registerInstruction(_ register: WritingRegister, language: LanguageCode) -> String {
-    switch (register, language) {
-    case (.casual, .japanese):
-      "to a close friend, in タメ口: plain forms and casual sentence endings, no です or ます"
-    case (.polite, .japanese):
-      "to a coworker, in です・ます調: polite and friendly, the way colleagues write in a "
-        + "workplace chat, without heavy keigo"
-    case (.formal, .japanese):
-      "to a boss or a client, in 敬語: 尊敬語 and 謙譲語 where they belong, in natural business "
-        + "Japanese such as いただけますでしょうか or 承知いたしました"
-    case (.casual, _):
-      "to a close friend: relaxed and casual"
-    case (.polite, _):
-      "to a coworker: friendly and professional, the way colleagues write in a workplace chat"
-    case (.formal, _):
-      "to a manager or a client: polite and formal, courteous without being stiff"
-    }
-  }
 }
 
 // MARK: - Learner memory

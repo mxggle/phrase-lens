@@ -354,6 +354,7 @@ final class AppModel: ObservableObject {
       target: target,
       action: action,
       selectionContext: context,
+      tone: settings.lastWritingToneInstruction,
       memory: learning.memory(for: text, language: source)
     )
     let connection: AIConnection
@@ -703,7 +704,11 @@ final class AppModel: ObservableObject {
     }
     let prompt = PromptBuilder.followUp(
       question: question,
-      base: PromptBuilder.build(text: route.text, source: route.source, target: route.target, action: route.action, selectionContext: route.selectionContext),
+      base: PromptBuilder.build(
+        text: route.text, source: route.source, target: route.target, action: route.action,
+        selectionContext: route.selectionContext,
+        tone: settingsStore.settings.lastWritingToneInstruction
+      ),
       answer: outputText, turns: followUps, target: route.target
     )
 
@@ -1439,9 +1444,12 @@ final class AppModel: ObservableObject {
       captureOCR()
     case .writing:
       if settingsStore.settings.writingShowsPreview {
-        compose.toggle(sourceProcessIdentifier: sourceProcessIdentifier)
+        compose.toggle(
+          sourceProcessIdentifier: sourceProcessIdentifier,
+          actions: settingsStore.settings.writingActions(customActions: customActions)
+        )
       } else {
-        translateFocusedInput()
+        translateFocusedInput(sourceProcessIdentifier: sourceProcessIdentifier)
       }
     }
   }
@@ -1552,25 +1560,34 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func translateFocusedInput() {
-    guard settingsStore.settings.resolvedBuiltInActions.contains(where: { $0.mode == .translate }) else {
+  /// The writing shortcut with the pop-up turned off: the action, language,
+  /// and tone the pop-up would open with in this app run straight away, and
+  /// the answer replaces the text in the field.
+  func translateFocusedInput(sourceProcessIdentifier: pid_t? = nil) {
+    let settings = settingsStore.settings
+    let actions = settings.writingActions(customActions: customActions)
+    guard !actions.isEmpty else {
       errorMessage = L10n.isChinese
-        ? "请先在动作配置中从预置模板添加“翻译”，再使用写作翻译。"
-        : "Add Translate from the action templates before using writing translation."
+        ? "请先在动作配置里给一个动作打开“写作时可用”，再使用写作快捷键。"
+        : "Turn on “Use when writing” for an action in Actions before using the writing shortcut."
       return
     }
+    let bundleIdentifier = (sourceProcessIdentifier ?? ActiveApplicationTracker.shared.lastExternalProcessIdentifier)
+      .flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+    let style = settings.writingStyle(forApp: bundleIdentifier)
+    let action = actions.first { $0.id == style.actionID } ?? actions[0]
+    let tone = settings.writingTone(style.toneID)?.instruction
     Task {
       do {
         let original = try accessibility.currentEditableText()
-        let settings = settingsStore.settings
         let source = LanguageDetector.detect(original)
-        guard let action = settings.resolvedBuiltInActions.first(where: { $0.mode == .translate }) else { return }
         let prompt = PromptBuilder.build(
           text: original,
           source: source,
-          target: settings.writingTargetLanguage,
+          target: style.language,
           action: action,
-          writing: true
+          writing: true,
+          tone: tone
         )
         let (connection, configuration) = try settingsStore.resolve(action)
         let (key, accountId) = try await settingsStore.validCredentials(for: connection, proxy: settings.proxy)

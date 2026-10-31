@@ -209,6 +209,7 @@ struct ActionsView: View {
           isSelected: action.id == selectedID,
           isHidden: isHidden,
           isDefault: settingsStore.settings.defaultActionID == action.id,
+          isWriting: settingsStore.settings.writingActionIDs.contains(action.id),
           canHide: isHidden || visibleActionCount > 1,
           onSelect: {
             selectedID = action.id
@@ -406,6 +407,32 @@ struct ActionsView: View {
       }
       Hairline()
       SettingsRow(
+        L10n.isChinese ? "写作时可用" : "Use when writing",
+        detail: L10n.isChinese
+          ? "在输入框里按 \(settingsStore.settings.shortcuts.writing) 时，出现在写作浮窗里，处理输入框里写好的文字，回车替换原文。"
+          : "Offered in the pop-up that \(settingsStore.settings.shortcuts.writing) opens on a text field, working on what you wrote there. Return puts the result in its place."
+      ) {
+        Toggle(
+          "",
+          isOn: Binding(
+            get: { settingsStore.settings.writingActionIDs.contains(action.wrappedValue.id) },
+            set: { isOn in
+              let id = action.wrappedValue.id
+              guard settingsStore.settings.writingActionIDs.contains(id) != isOn else { return }
+              if isOn {
+                settingsStore.settings.writingActionIDs.insert(id)
+              } else {
+                settingsStore.settings.writingActionIDs.remove(id)
+              }
+            }
+          )
+        )
+        .toggleStyle(AppSwitchStyle())
+        .labelsHidden()
+        .accessibilityLabel(L10n.isChinese ? "写作时可用" : "Use when writing")
+      }
+      Hairline()
+      SettingsRow(
         L10n.isChinese ? "默认动作" : "Default action",
         detail: L10n.isChinese ? "新翻译开始时默认使用此动作。" : "Use this action when a new translation starts."
       ) {
@@ -456,12 +483,13 @@ struct ActionsView: View {
           minHeight: 140
         )
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
-          HStack(spacing: AppSpacing.xs + 2) {
+          // Wraps, so a new variable never pushes the row past a narrow editor.
+          FlowLayout(spacing: AppSpacing.xs + 2, lineSpacing: AppSpacing.xs) {
             Text(L10n.isChinese ? "可用变量：" : "Available variables:")
               .font(AppFont.caption)
               .foregroundStyle(palette.mutedForeground)
             ForEach(
-              ["${text}", "${sourceLang}", "${targetLang}", "${context}"], id: \.self
+              ["${text}", "${sourceLang}", "${targetLang}", "${context}", "${tone}"], id: \.self
             ) { variable in
               Text(variable)
                 .font(AppFont.monoSmall)
@@ -481,6 +509,7 @@ struct ActionsView: View {
               "${sourceLang}: \(variableHint("${sourceLang}"))",
               "${targetLang}: \(variableHint("${targetLang}"))",
               "${context}: \(variableHint("${context}"))",
+              "${tone}: \(variableHint("${tone}"))",
             ].joined(separator: " · ")
           )
           .font(AppFont.caption)
@@ -808,6 +837,10 @@ struct ActionsView: View {
       return L10n.isChinese ? "目标语言" : "target language"
     case "${context}":
       return L10n.isChinese ? "选区周围上下文" : "surrounding context"
+    case "${tone}":
+      return L10n.isChinese
+        ? "写作浮窗里选的语体（在设置 › 朗读与写作里编辑）"
+        : "the tone picked in the writing pop-up (edit the list in Settings › Speech & Writing)"
     default:
       return variable
     }
@@ -855,6 +888,8 @@ private struct ActionListRow: View {
   let isSelected: Bool
   let isHidden: Bool
   let isDefault: Bool
+  /// Offered in the writing pop-up.
+  let isWriting: Bool
   let canHide: Bool
   let onSelect: () -> Void
   let onToggleVisibility: () -> Void
@@ -901,6 +936,12 @@ private struct ActionListRow: View {
             HStack(spacing: AppSpacing.xs) {
               Text(isHidden ? (L10n.isChinese ? "\(kind) · 已隐藏" : "\(kind) · Hidden") : kind)
                 .foregroundStyle(palette.mutedForeground)
+              if isWriting {
+                Text("·").foregroundStyle(palette.faintForeground)
+                Text(L10n.isChinese ? "写作" : "Writing")
+                  .foregroundStyle(palette.mutedForeground)
+                  .help(L10n.isChinese ? "出现在写作浮窗里" : "Offered in the writing pop-up")
+              }
               if isDefault {
                 Text("·").foregroundStyle(palette.faintForeground)
                 Text(L10n.isChinese ? "默认" : "Default")

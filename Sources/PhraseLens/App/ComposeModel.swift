@@ -1,15 +1,20 @@
 import AppKit
 import Foundation
 
-/// One translation of the draft, in one style.
+/// One answer for the draft, from one action in one style.
 struct ComposeDraft: Equatable, Sendable {
   var text = ""
   var isStreaming = true
   var error: String?
 }
 
-/// The writing shortcut's pop-up: the message drafted in another app, its
-/// translation in the chosen style, and the write back over the draft.
+/// The writing shortcut's pop-up: the message drafted in another app, an
+/// action's answer for it, and the write back over the draft.
+///
+/// The actions are the reader's own, from the action list: Compose and
+/// Polish to begin with, and any other action switched on for writing. An
+/// action that uses `${tone}` gets the tone chips, and one that uses
+/// `${targetLang}` gets the language switch.
 ///
 /// Kept apart from the translator's own model on purpose. Writing a message
 /// must not clear what the main window is showing, and a lookup must not
@@ -17,19 +22,23 @@ struct ComposeDraft: Equatable, Sendable {
 @MainActor
 final class ComposeModel: ObservableObject {
   @Published private(set) var sourceText = ""
-  @Published private(set) var style = WritingStyle(language: .japanese, register: .polite)
-  /// Every style tried on this draft, so switching back to one is instant.
+  @Published private(set) var style = WritingStyle(language: .japanese)
+  /// Every action and style tried on this draft, so switching back to one is instant.
   @Published private(set) var drafts: [WritingStyle: ComposeDraft] = [:]
+  /// The actions on offer, read once per draft so a settings change cannot
+  /// pull the tab that is on screen out from under the reader.
+  @Published private(set) var actions: [TranslationAction] = []
+  @Published private(set) var tones: [WritingTone] = []
   /// Fixed when the draft is read, so picking Japanese does not take away a
   /// third language the pop-up opened with.
   @Published private(set) var languageOptions = WritingStyle.languageOptions(including: [])
-  /// Why the draft could not be read, or the translation could not be written.
+  /// Why the draft could not be read, or the answer could not be written.
   @Published private(set) var errorMessage: String?
-  /// The translation went to the clipboard after a write that failed.
+  /// The answer went to the clipboard after a write that failed.
   @Published private(set) var copiedAfterFailure = false
   @Published private(set) var isAccessibilityPermissionMissing = false
-  /// Enter was pressed while the translation was still arriving. It is
-  /// written the moment it finishes.
+  /// Enter was pressed while the answer was still arriving. It is written
+  /// the moment it finishes.
   @Published private(set) var replacesWhenFinished = false
   /// Changes with every draft read, so the pop-up can put the caret back in
   /// its editor, and so a request started for an earlier draft can tell it
@@ -49,17 +58,21 @@ final class ComposeModel: ObservableObject {
   /// Whether there is a draft on screen, as opposed to only a reason there is not.
   var hasDraft: Bool { capture != nil }
   var applicationName: String? { capture?.target.applicationName }
-  var currentDraft: ComposeDraft? { drafts[style] }
+  var currentAction: TranslationAction? { actions.first { $0.id == style.actionID } }
+  var showsTones: Bool { currentAction?.usesTone == true && !tones.isEmpty }
+  var showsLanguages: Bool { currentAction?.usesTargetLanguage == true }
+  var currentDraft: ComposeDraft? { drafts[requestKey(for: style)] }
   var isStreaming: Bool { currentDraft?.isStreaming == true }
 
-  /// The translation in the current style, as the reader has edited it. Edits
+  /// The answer in the current style, as the reader has edited it. Edits
   /// are refused while it is still arriving: the next chunk would erase them.
   var translation: String {
-    get { drafts[style]?.text ?? "" }
+    get { currentDraft?.text ?? "" }
     set {
-      guard var draft = drafts[style], !draft.isStreaming, draft.text != newValue else { return }
+      let key = requestKey(for: style)
+      guard var draft = drafts[key], !draft.isStreaming, draft.text != newValue else { return }
       draft.text = newValue
-      drafts[style] = draft
+      drafts[key] = draft
     }
   }
 
@@ -79,13 +92,20 @@ final class ComposeModel: ObservableObject {
   // MARK: - Opening and closing
 
   /// The writing shortcut: opens the pop-up on the focused control's text,
-  /// or puts it away when it is already open.
-  func toggle(sourceProcessIdentifier: pid_t?) {
+  /// or puts it away when it is already open. `actions` are the ones
+  /// switched on for writing, in the action list's order.
+  func toggle(sourceProcessIdentifier: pid_t?, actions: [TranslationAction]) {
     if ComposePanelCoordinator.shared.isVisible {
       cancel()
       return
     }
     SelectionPanelCoordinator.shared.close()
+    guard !actions.isEmpty else {
+      fail(message: L10n.isChinese
+        ? "还没有写作时可用的动作。在“动作”里选一个动作，打开“写作时可用”。"
+        : "No action is set up for writing. In Actions, pick one and turn on “Use when writing”.")
+      return
+    }
     let processIdentifier =
       sourceProcessIdentifier ?? ActiveApplicationTracker.shared.lastExternalProcessIdentifier
     let allowCopyFallback = settingsStore.settings.useClipboardFallback
@@ -95,7 +115,7 @@ final class ComposeModel: ObservableObject {
           from: processIdentifier,
           allowCopyFallback: allowCopyFallback
         )
-        begin(with: capture)
+        begin(with: capture, actions: actions)
       } catch {
         fail(error)
       }
@@ -111,13 +131,21 @@ final class ComposeModel: ObservableObject {
     ComposePanelCoordinator.shared.close()
   }
 
-  private func begin(with capture: ComposeCapture) {
+  private func begin(with capture: ComposeCapture, actions: [TranslationAction]) {
     cancelRequests()
+    let settings = settingsStore.settings
     self.capture = capture
+    self.actions = actions
+    tones = settings.writingTones
     sourceText = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
-    style = settingsStore.settings.writingStyle(forApp: capture.bundleIdentifier)
+    var style = settings.writingStyle(forApp: capture.bundleIdentifier)
+    // An action or tone deleted since this app last used it gives way to
+    // the first one, rather than to a pop-up with nothing chosen.
+    if !actions.contains(where: { $0.id == style.actionID }) { style.actionID = actions[0].id }
+    if let tone = settings.writingTone(style.toneID) { style.toneID = tone.id }
+    self.style = style
     languageOptions = WritingStyle.languageOptions(
-      including: [settingsStore.settings.writingTargetLanguage, style.language]
+      including: [settings.writingTargetLanguage, style.language]
     )
     drafts = [:]
     errorMessage = nil
@@ -129,30 +157,36 @@ final class ComposeModel: ObservableObject {
     ComposePanelCoordinator.shared.show(model: self, anchor: capture.anchorRect)
   }
 
-  /// Nothing to translate. Saying so beats a shortcut that silently does
+  /// Nothing to work on. Saying so beats a shortcut that silently does
   /// nothing, which reads as broken.
   private func fail(_ error: Error) {
+    let translationError = error as? TranslationError
+    let shortcut = settingsStore.settings.shortcuts.writing
+    let message: String
+    switch translationError {
+    case .noInput?:
+      message = L10n.isChinese
+        ? "输入框是空的。先在里面写好要发的内容，再按 \(shortcut)。"
+        : "The field is empty. Write your message there first, then press \(shortcut)."
+    case .focusedInputUnavailable?, .selectionUnavailable?:
+      message = L10n.isChinese
+        ? "没有找到可以写入的输入框。把光标放进聊天输入框，再按 \(shortcut)。"
+        : "No text field to write into. Put the cursor in the message box, then press \(shortcut)."
+    default:
+      message = error.localizedDescription
+    }
+    fail(message: message, permissionMissing: translationError == .accessibilityPermissionRequired)
+  }
+
+  private func fail(message: String, permissionMissing: Bool = false) {
     cancelRequests()
     capture = nil
     sourceText = ""
     drafts = [:]
     copiedAfterFailure = false
     replacesWhenFinished = false
-    let translationError = error as? TranslationError
-    isAccessibilityPermissionMissing = translationError == .accessibilityPermissionRequired
-    let shortcut = settingsStore.settings.shortcuts.writing
-    switch translationError {
-    case .noInput?:
-      errorMessage = L10n.isChinese
-        ? "输入框是空的。先在里面写好要发的内容，再按 \(shortcut)。"
-        : "The field is empty. Write your message there first, then press \(shortcut)."
-    case .focusedInputUnavailable?, .selectionUnavailable?:
-      errorMessage = L10n.isChinese
-        ? "没有找到可以写入的输入框。把光标放进聊天输入框，再按 \(shortcut)。"
-        : "No text field to write into. Put the cursor in the message box, then press \(shortcut)."
-    default:
-      errorMessage = error.localizedDescription
-    }
+    isAccessibilityPermissionMissing = permissionMissing
+    errorMessage = message
     sessionID = UUID()
     ComposePanelCoordinator.shared.show(model: self, anchor: nil)
   }
@@ -165,30 +199,57 @@ final class ComposeModel: ObservableObject {
     }
   }
 
-  // MARK: - Style
+  // MARK: - Choosing
 
-  func select(_ register: WritingRegister) {
-    choose(WritingStyle(language: style.language, register: register))
+  func select(action id: UUID) {
+    var next = style
+    next.actionID = id
+    choose(next)
+  }
+
+  func select(tone id: UUID) {
+    var next = style
+    next.toneID = id
+    choose(next)
   }
 
   func select(_ language: LanguageCode) {
-    choose(WritingStyle(language: language, register: style.register))
+    var next = style
+    next.language = language
+    choose(next)
   }
 
-  func cycleRegister(backwards: Bool = false) {
-    select(backwards ? style.register.previous : style.register.next)
+  /// The action at a position in the tab row, for ⌘1 to ⌘9.
+  func selectAction(at index: Int) {
+    guard actions.indices.contains(index) else { return }
+    select(action: actions[index].id)
+  }
+
+  func cycleAction(backwards: Bool = false) {
+    guard let index = actions.firstIndex(where: { $0.id == style.actionID }) else { return }
+    select(action: actions[Self.wrapped(index, backwards: backwards, count: actions.count)].id)
+  }
+
+  func cycleTone(backwards: Bool = false) {
+    guard showsTones else { return }
+    let index = tones.firstIndex { $0.id == style.toneID } ?? 0
+    select(tone: tones[Self.wrapped(index, backwards: backwards, count: tones.count)].id)
   }
 
   func cycleLanguage() {
-    let options = languageOptions
-    let index = options.firstIndex(of: style.language) ?? 0
-    select(options[(index + 1) % options.count])
+    guard showsLanguages else { return }
+    let index = languageOptions.firstIndex(of: style.language) ?? 0
+    select(languageOptions[Self.wrapped(index, backwards: false, count: languageOptions.count)])
+  }
+
+  private static func wrapped(_ index: Int, backwards: Bool, count: Int) -> Int {
+    (index + (backwards ? -1 : 1) + count) % count
   }
 
   /// Asks again for the current style, for a different wording.
   func regenerate() {
     guard capture != nil, !isStreaming else { return }
-    drafts[style] = nil
+    drafts[requestKey(for: style)] = nil
     request(style)
   }
 
@@ -196,7 +257,7 @@ final class ComposeModel: ObservableObject {
     guard capture != nil, next != style else { return }
     style = next
     // Pressed Enter early, then changed the style: the wait was for the
-    // translation that is no longer on screen.
+    // answer that is no longer on screen.
     replacesWhenFinished = false
     remember(next)
     request(next)
@@ -210,26 +271,44 @@ final class ComposeModel: ObservableObject {
     settingsStore.settings.rememberWritingStyle(style, forApp: app)
   }
 
-  // MARK: - Translating
+  /// The style with whatever the action ignores taken out, so Polish asked
+  /// for the boss and Polish asked for a friend are the same request.
+  private func requestKey(for style: WritingStyle) -> WritingStyle {
+    guard let action = actions.first(where: { $0.id == style.actionID }) else { return style }
+    var key = style
+    if !action.usesTone || tones.isEmpty { key.toneID = WritingTone.coworkersID }
+    if !action.usesTargetLanguage { key.language = .auto }
+    return key
+  }
+
+  // MARK: - Asking
 
   private func request(_ style: WritingStyle) {
-    if let draft = drafts[style], draft.error == nil { return }
-    tasks[style]?.cancel()
-    drafts[style] = ComposeDraft()
-    let prompt = PromptBuilder.writing(text: sourceText, style: style)
+    let key = requestKey(for: style)
+    if let draft = drafts[key], draft.error == nil { return }
+    guard let action = actions.first(where: { $0.id == style.actionID }) else { return }
+    tasks[key]?.cancel()
+    drafts[key] = ComposeDraft()
     let settings = settingsStore.settings
-    // The connection and model chosen for Translate, so a message is written
-    // by the same model that reads one.
-    let action = settings.resolvedBuiltInActions.first { $0.mode == .translate }
-      ?? TranslationAction.builtIn(for: .translate)
+    // The draft's own language is left for the model to tell: the detector
+    // takes Han-only text for Japanese, and a Chinese draft is the usual case.
+    let prompt = PromptBuilder.build(
+      text: sourceText,
+      source: .auto,
+      target: style.language,
+      action: action,
+      writing: true,
+      tone: tones.first { $0.id == style.toneID }?.instruction
+    )
     let session = sessionID
 
-    tasks[style] = Task { [weak self] in
+    tasks[key] = Task { [weak self] in
       guard let self else { return }
       var streamed = ""
       do {
+        // Each action keeps its own connection and model, as in a lookup.
         let (connection, configuration) = try settingsStore.resolve(action)
-        let (key, accountId) = try await settingsStore.validCredentials(
+        let (apiKey, accountId) = try await settingsStore.validCredentials(
           for: connection,
           proxy: settings.proxy
         )
@@ -238,7 +317,7 @@ final class ComposeModel: ObservableObject {
         for try await chunk in client.stream(
           prompt: prompt,
           configuration: configuration,
-          apiKey: key,
+          apiKey: apiKey,
           accountId: accountId,
           proxy: settings.proxy
         ) {
@@ -246,22 +325,22 @@ final class ComposeModel: ObservableObject {
           streamed.append(chunk)
           let now = clock.now
           if now >= nextUpdate {
-            drafts[style]?.text = streamed
+            drafts[key]?.text = streamed
             nextUpdate = now.advanced(by: .milliseconds(50))
           }
         }
         guard sessionID == session, !Task.isCancelled else { return }
         let text = WriteBackComposer.clean(streamed)
         guard !text.isEmpty else { throw TranslationError.invalidResponse }
-        drafts[style] = ComposeDraft(text: text, isStreaming: false)
-        if style == self.style, replacesWhenFinished {
+        drafts[key] = ComposeDraft(text: text, isStreaming: false)
+        if key == requestKey(for: self.style), replacesWhenFinished {
           replacesWhenFinished = false
           replace()
         }
       } catch {
         guard sessionID == session, !Task.isCancelled else { return }
-        drafts[style] = ComposeDraft(text: streamed, isStreaming: false, error: error.localizedDescription)
-        if style == self.style { replacesWhenFinished = false }
+        drafts[key] = ComposeDraft(text: streamed, isStreaming: false, error: error.localizedDescription)
+        if key == requestKey(for: self.style) { replacesWhenFinished = false }
       }
     }
   }
@@ -273,8 +352,8 @@ final class ComposeModel: ObservableObject {
 
   // MARK: - Writing back
 
-  /// Enter: writes the translation over the draft. Pressed while the
-  /// translation is still arriving, it waits for the end of it.
+  /// Enter: writes the answer over the draft. Pressed while the answer is
+  /// still arriving, it waits for the end of it.
   func replace() {
     guard let capture, let draft = currentDraft, draft.error == nil else { return }
     guard !draft.isStreaming else {
@@ -297,7 +376,7 @@ final class ComposeModel: ObservableObject {
         _ = try await accessibility.replaceComposed(text, in: capture)
         self.capture = nil
       } catch {
-        // The translation must not be lost to a failed write: it goes on the
+        // The answer must not be lost to a failed write: it goes on the
         // clipboard, and the pop-up comes back to say why.
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
