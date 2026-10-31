@@ -266,7 +266,7 @@ enum WritingSelfTests {
 
   private static func geometryFailures(_ failures: inout [String]) {
     let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
-    let size = CGSize(width: 480, height: 360)
+    let size = CGSize(width: 460, height: 360)
     let chatBox = CGRect(x: 300, y: 40, width: 700, height: 60)
     let above = ComposePanelGeometry.frame(size: size, anchor: chatBox, visibleFrame: screen)
     check(above.minY > chatBox.maxY && above.minX == chatBox.minX,
@@ -279,16 +279,6 @@ enum WritingSelfTests {
     let edgeField = CGRect(x: 1300, y: 40, width: 120, height: 30)
     let clamped = ComposePanelGeometry.frame(size: size, anchor: edgeField, visibleFrame: screen)
     check(screen.contains(clamped), "the pop-up should stay on screen beside a field at the edge", &failures)
-
-    // Switching between reading and writing keeps the header where it was.
-    let reading = CGRect(x: 400, y: 300, width: 480, height: 440)
-    let writing = PopupHandOffGeometry.frame(size: size, replacing: reading, visibleFrame: screen)
-    check(writing.minX == reading.minX && writing.maxY == reading.maxY && writing.size == size,
-      "switching to writing should keep the pop-up's top-left corner", &failures)
-    let low = CGRect(x: 400, y: 20, width: 480, height: 360)
-    let taller = PopupHandOffGeometry.frame(size: CGSize(width: 480, height: 440), replacing: low, visibleFrame: screen)
-    check(screen.contains(taller) && taller.minX == low.minX,
-      "a taller state near the bottom of the screen should stay on screen", &failures)
   }
 
   private static func check(_ condition: @autoclosure () -> Bool, _ message: String, _ failures: inout [String]) {

@@ -46,9 +46,6 @@ final class ComposeModel: ObservableObject {
   @Published private(set) var sessionID = UUID()
 
   let settingsStore: SettingsStore
-  /// Switches the pop-up to reading, on the same text. Set by the app model,
-  /// which owns the reading state.
-  var requestReading: (@MainActor () -> Void)?
   private let client = TranslationClient()
   private let accessibility = AccessibilityService()
   private var capture: ComposeCapture?
@@ -61,9 +58,6 @@ final class ComposeModel: ObservableObject {
   /// Whether there is a draft on screen, as opposed to only a reason there is not.
   var hasDraft: Bool { capture != nil }
   var applicationName: String? { capture?.target.applicationName }
-  /// Where the draft was read from, for a switch to reading that can still
-  /// write its answer back there.
-  var writeBackTarget: InsertionTarget? { capture?.target }
   var currentAction: TranslationAction? { actions.first { $0.id == style.actionID } }
   var showsTones: Bool { currentAction?.usesTone == true && !tones.isEmpty }
   var showsLanguages: Bool { currentAction?.usesTargetLanguage == true }
@@ -107,7 +101,9 @@ final class ComposeModel: ObservableObject {
     }
     SelectionPanelCoordinator.shared.close()
     guard !actions.isEmpty else {
-      fail(message: Self.noActionsMessage)
+      fail(message: L10n.isChinese
+        ? "还没有写作时可用的动作。在“动作”里选一个动作，打开“写作时可用”。"
+        : "No action is set up for writing. In Actions, pick one and turn on “Use when writing”.")
       return
     }
     let processIdentifier =
@@ -126,55 +122,6 @@ final class ComposeModel: ObservableObject {
     }
   }
 
-  /// The lookup shortcut pressed in a text field with nothing selected: the
-  /// pop-up opens in its writing state on the whole field. Anything short of
-  /// a readable field with text in it stays as quiet as an empty selection
-  /// always has, and no keys are sent to find out: ⌘A in the wrong place
-  /// would select a whole page.
-  func beginIfEditable(sourceProcessIdentifier: pid_t?, actions: [TranslationAction]) async {
-    guard !actions.isEmpty,
-      let capture = try? await accessibility.composeCapture(
-        from: sourceProcessIdentifier,
-        allowCopyFallback: false
-      )
-    else { return }
-    SelectionPanelCoordinator.shared.close()
-    begin(with: capture, actions: actions)
-  }
-
-  /// The switch from reading to writing: the selection the pop-up was
-  /// reading becomes the draft, and its answer replaces that selection.
-  /// `frame` is the pop-up being replaced, so this one takes its place.
-  func write(over target: InsertionTarget, actions: [TranslationAction], replacing frame: CGRect?) {
-    guard !actions.isEmpty else {
-      fail(message: Self.noActionsMessage)
-      return
-    }
-    let capture = ComposeCapture(
-      target: target,
-      scope: .selection,
-      bundleIdentifier: NSRunningApplication(processIdentifier: target.processIdentifier)?.bundleIdentifier,
-      anchorRect: nil
-    )
-    begin(with: capture, actions: actions, replacing: frame)
-  }
-
-  /// Takes the pop-up down for the switch to reading, which shows the same
-  /// text in its place: no exit animation, and nothing is written.
-  func endForHandOff() {
-    cancelRequests()
-    capture = nil
-    replacesWhenFinished = false
-    sessionID = UUID()
-    ComposePanelCoordinator.shared.close(animated: false)
-  }
-
-  private static var noActionsMessage: String {
-    L10n.isChinese
-      ? "还没有写作时可用的动作。在“动作”里选一个动作，打开“写作时可用”。"
-      : "No action is set up for writing. In Actions, pick one and turn on “Use when writing”."
-  }
-
   /// Escape, the close button, or a click elsewhere: nothing is written.
   func cancel() {
     cancelRequests()
@@ -184,7 +131,7 @@ final class ComposeModel: ObservableObject {
     ComposePanelCoordinator.shared.close()
   }
 
-  private func begin(with capture: ComposeCapture, actions: [TranslationAction], replacing frame: CGRect? = nil) {
+  private func begin(with capture: ComposeCapture, actions: [TranslationAction]) {
     cancelRequests()
     let settings = settingsStore.settings
     self.capture = capture
@@ -207,7 +154,7 @@ final class ComposeModel: ObservableObject {
     replacesWhenFinished = false
     sessionID = UUID()
     request(style)
-    ComposePanelCoordinator.shared.show(model: self, anchor: capture.anchorRect, replacing: frame)
+    ComposePanelCoordinator.shared.show(model: self, anchor: capture.anchorRect)
   }
 
   /// Nothing to work on. Saying so beats a shortcut that silently does

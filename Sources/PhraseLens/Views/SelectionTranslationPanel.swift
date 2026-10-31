@@ -36,13 +36,8 @@ final class SelectionPanelCoordinator {
   private init() {}
 
   var isVisible: Bool { panel != nil }
-  /// Where the pop-up is, for the writing state to take its place.
-  var currentFrame: CGRect? { panel?.frame }
 
-  /// Opens the pop-up for `model`'s lookup. With `replacing`, the frame of
-  /// the writing pop-up this one switches from, it takes that one's place and
-  /// appears at once, so the switch reads as one window changing state.
-  func show(model: AppModel, replacing replaced: CGRect? = nil) {
+  func show(model: AppModel) {
     // A pop-up that is already on screen for this model just shows the new
     // lookup: its view observes the model, so the content updates in place.
     // Rebuilding it would replay the entrance for a window that never left,
@@ -106,42 +101,34 @@ final class SelectionPanelCoordinator {
     /// grows from its own centre there instead of out of a corner the cursor
     /// is nowhere near.
     var growsFromPointer = true
-    if let replaced {
-      targetFrame = PopupHandOffGeometry.frame(
+    switch settings.selectionPanelPlacement {
+    case .nearPointer:
+      let visibleFrame = Self.screen(containing: pointer)?.visibleFrame ?? Self.fallbackVisibleFrame
+      targetFrame = SelectionPanelGeometry.frameNearPointer(
         size: contentSize,
-        replacing: replaced,
-        visibleFrame: ComposePanelCoordinator.visibleFrame(containing: replaced)
+        pointer: pointer,
+        visibleFrame: visibleFrame
       )
-    } else {
-      switch settings.selectionPanelPlacement {
-      case .nearPointer:
+    case .fixed:
+      if let remembered = settings.selectionPanelPosition {
+        let origin = CGPoint(x: remembered.x, y: remembered.y)
+        let intendedFrame = NSRect(origin: origin, size: contentSize)
+        let visibleFrame = Self.screen(intersecting: intendedFrame)?.visibleFrame
+          ?? NSScreen.main?.visibleFrame
+          ?? Self.fallbackVisibleFrame
+        targetFrame = SelectionPanelGeometry.frameAtRememberedOrigin(
+          size: contentSize,
+          origin: origin,
+          visibleFrame: visibleFrame
+        )
+        growsFromPointer = false
+      } else {
         let visibleFrame = Self.screen(containing: pointer)?.visibleFrame ?? Self.fallbackVisibleFrame
         targetFrame = SelectionPanelGeometry.frameNearPointer(
           size: contentSize,
           pointer: pointer,
           visibleFrame: visibleFrame
         )
-      case .fixed:
-        if let remembered = settings.selectionPanelPosition {
-          let origin = CGPoint(x: remembered.x, y: remembered.y)
-          let intendedFrame = NSRect(origin: origin, size: contentSize)
-          let visibleFrame = Self.screen(intersecting: intendedFrame)?.visibleFrame
-            ?? NSScreen.main?.visibleFrame
-            ?? Self.fallbackVisibleFrame
-          targetFrame = SelectionPanelGeometry.frameAtRememberedOrigin(
-            size: contentSize,
-            origin: origin,
-            visibleFrame: visibleFrame
-          )
-          growsFromPointer = false
-        } else {
-          let visibleFrame = Self.screen(containing: pointer)?.visibleFrame ?? Self.fallbackVisibleFrame
-          targetFrame = SelectionPanelGeometry.frameNearPointer(
-            size: contentSize,
-            pointer: pointer,
-            visibleFrame: visibleFrame
-          )
-        }
       }
     }
     panel.setFrame(targetFrame, display: false)
@@ -155,12 +142,6 @@ final class SelectionPanelCoordinator {
     }
 
     NSApp.setActivationPolicy(settings.showDockIcon ? .regular : .accessory)
-    guard replaced == nil else {
-      panel.alphaValue = 1
-      panel.hasShadow = true
-      panel.makeKeyAndOrderFront(nil)
-      return
-    }
     present(
       panel,
       anchor: PanelMotion.anchor(
@@ -618,20 +599,10 @@ private struct SelectionPanelBody: View {
       AppLogo(size: 20)
         .allowsHitTesting(false)
 
-      // Reading and writing are one pop-up's two states. Writing needs a
-      // field to put its answer in, so it is offered only for a selection
-      // made in one.
-      PopupStateSwitch(
-        mode: .reading,
-        shortcuts: settingsStore.settings.shortcuts,
-        unavailableReason: model.writableSource == nil
-          ? (L10n.isChinese
-            ? "这段文字不在输入框里，改写后没有地方放回去。在输入框里按 \(settingsStore.settings.shortcuts.writing) 写作。"
-            : "This text is not in a text field, so there is nowhere to put a rewrite. Press \(settingsStore.settings.shortcuts.writing) in a text field to write.")
-          : nil
-      ) {
-        model.switchToWriting()
-      }
+      Text(L10n.isChinese ? "划选翻译" : "Selection")
+        .font(AppFont.bodyMedium)
+        .foregroundStyle(palette.foreground)
+        .allowsHitTesting(false)
 
       // A term the reader keeps coming back to says so where they are reading
       // it, which is the moment knowing it helps.

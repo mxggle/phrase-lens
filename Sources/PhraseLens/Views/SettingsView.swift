@@ -1178,8 +1178,8 @@ private struct ShortcutSettingsPane: View {
         shortcutRow(
           L10n.isChinese ? "划选翻译" : "Translate selection",
           detail: L10n.isChinese
-            ? "在浮窗里解释选中的文字。光标在输入框里、没选文字时，浮窗直接进入写作。"
-            : "Look up the selected text in the pop-up. In a text field with nothing selected, the pop-up opens for writing instead.",
+            ? "无需打开完整工作区即可翻译选中的文字。"
+            : "Translate selected text without opening the full workspace.",
           value: $settingsStore.settings.shortcuts.translateSelection
         )
         Hairline()
@@ -1202,8 +1202,8 @@ private struct ShortcutSettingsPane: View {
         shortcutRow(
           L10n.isChinese ? "写作" : "Writing",
           detail: L10n.isChinese
-            ? "在输入框里写好内容后按下，用写作翻译、润色等动作处理它，再替换回去。浮窗开着时按下，在划词和写作之间切换。"
-            : "Run Compose, Polish, or another writing action on what you wrote in the focused field, then put the result in its place. With the pop-up open, it switches between reading and writing.",
+            ? "在输入框里写好内容后按下，用写作翻译、润色等动作处理它，再替换回去。"
+            : "Run Compose, Polish, or another writing action on what you wrote in the focused field, then put the result in its place.",
           value: $settingsStore.settings.shortcuts.writing
         )
       }
