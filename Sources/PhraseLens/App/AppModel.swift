@@ -57,9 +57,15 @@ final class AppModel: ObservableObject {
   }
   @Published private(set) var translatorFocusToken = UUID()
   @Published private(set) var actionsFocusToken = UUID()
+  /// Changes whenever something asks for the study section, carrying the term
+  /// to open there, if any.
+  @Published private(set) var learningFocusToken = UUID()
   @Published var outputText = ""
   @Published private(set) var outputRendering: OutputRendering = .plain
   @Published var selectedActionID = TranslationAction.builtIns[0].id
+  /// The app the current selection was read from, so an option picked
+  /// there is remembered for that app.
+  @Published private(set) var selectionBundleIdentifier: String?
   @Published var selectionContext: String?
   /// What the last selection capture managed to read. Drives the context
   /// badge, and gives a reader reporting "it did not pick up the sentence"
@@ -107,6 +113,10 @@ final class AppModel: ObservableObject {
   let settingsStore: SettingsStore
   let modelCatalog = ModelCatalogStore()
   let speech = SpeechService()
+  let learning: LearningModel
+  /// The writing shortcut's pop-up, which keeps its own state so a message
+  /// being written never touches the translator's.
+  let compose: ComposeModel
 
   private let client = TranslationClient()
   private let tagger = VocabularyTagger()
@@ -131,6 +141,8 @@ final class AppModel: ObservableObject {
        integrateWithSystem: Bool = true) {
     self.settingsStore = settingsStore
     self.library = library
+    learning = LearningModel(library: library, settingsStore: settingsStore)
+    compose = ComposeModel(settingsStore: settingsStore)
     isActionLibraryLoaded = !integrateWithSystem
     isAccessibilityTrusted = integrateWithSystem && accessibility.isTrusted()
     selectedActionID =
@@ -161,9 +173,48 @@ final class AppModel: ObservableObject {
       }
       .store(in: &cancellables)
     observeRuntimeSettings()
+    connectLearning()
     if integrateWithSystem {
       Task { await loadLibrary() }
       configureHotKeys()
+    }
+  }
+
+  /// Gives the study record what it needs from the rest of the app: the
+  /// history it was filed from, and a way to save a word to Vocabulary.
+  private func connectLearning() {
+    learning.historyProvider = { [weak self] in self?.history ?? [] }
+    learning.isCollected = { [weak self] term in
+      guard let self else { return true }
+      return self.vocabularyEntry(matching: term.display) != nil
+        || self.vocabularyEntry(matching: term.headword) != nil
+    }
+    learning.onCollect = { [weak self] term, explanation in
+      self?.collectFromLearning(term, explanation: explanation)
+    }
+  }
+
+  /// Saves a term the reader keeps looking up to Vocabulary, filed like any
+  /// other collected word.
+  private func collectFromLearning(_ term: LearningTerm, explanation: String) {
+    let entry = VocabularyEntry(
+      word: term.headword,
+      explanation: explanation,
+      sourceLanguage: term.language,
+      targetLanguage: settingsStore.settings.targetLanguage
+    )
+    guard !vocabulary.contains(where: { $0.matchesIdentity(of: entry) }) else { return }
+    Task {
+      do {
+        try await library.addVocabulary(entry)
+        vocabulary.insert(entry, at: 0)
+        statusMessage = L10n.isChinese
+          ? "反复查询的“\(term.headword)”已加入生词本"
+          : "“\(term.headword)” keeps coming back, so it was added to Vocabulary"
+        tagVocabulary([entry], announcing: false)
+      } catch {
+        // Unattended: the next sitting with this term tries again.
+      }
     }
   }
 
@@ -183,6 +234,33 @@ final class AppModel: ObservableObject {
       customActions: customActions,
       includingHidden: false
     )
+  }
+
+  /// The option picked under the selected action, for the text on screen.
+  var selectedOption: ActionOption? {
+    selectedAction.flatMap { settingsStore.settings.chosenOption(for: $0, inApp: optionApp) }
+  }
+
+  /// Where an option choice is filed: the app a selection came from, or
+  /// nowhere in particular for text typed or pasted into the window.
+  private var optionApp: String? {
+    inputSource == .selection ? selectionBundleIdentifier : nil
+  }
+
+  /// Clicking an option under the selected action picks it, and clicking the
+  /// picked one takes it off. Either way the text on screen is asked again
+  /// when `retranslate` says so, as picking another action does.
+  func toggleOption(_ id: UUID, retranslate: Bool = true) {
+    guard let action = selectedAction, action.availableOptions.contains(where: { $0.id == id }) else {
+      return
+    }
+    let next = selectedOption?.id == id ? nil : id
+    if !settingsStore.settings.remembersOption(next, for: action.id, inApp: optionApp) {
+      settingsStore.settings.rememberOption(next, for: action.id, inApp: optionApp)
+    }
+    if retranslate, !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      translate()
+    }
   }
 
   var selectedAction: TranslationAction? {
@@ -300,12 +378,15 @@ final class AppModel: ObservableObject {
     let target = settings.targetLanguage
     outputRendering = PromptBuilder.expectsMarkdown(action, text: text) ? .markdown : .plain
     let context = selectionContext
+    let option = settings.chosenOption(for: action, inApp: optionApp)
     let prompt = PromptBuilder.build(
       text: text,
       source: source,
       target: target,
       action: action,
-      selectionContext: context
+      selectionContext: context,
+      option: option,
+      memory: learning.memory(for: text, language: source)
     )
     let connection: AIConnection
     let configuration: ProviderConfiguration
@@ -314,7 +395,7 @@ final class AppModel: ObservableObject {
     statusMessage = L10n.isChinese
       ? "正在连接 \(connection.name)…"
       : "Connecting to \(connection.name)…"
-    let resultRoute = ResultRoute(connectionID: connection.id, configuration: configuration, credentialRevision: connection.credentialRevision, proxy: settings.proxy, action: action, source: source, target: target, text: text, selectionContext: context)
+    let resultRoute = ResultRoute(connectionID: connection.id, configuration: configuration, credentialRevision: connection.credentialRevision, proxy: settings.proxy, action: action, source: source, target: target, text: text, selectionContext: context, option: option)
     currentResultRoute = resultRoute
     let proxy = settings.proxy
 
@@ -410,6 +491,7 @@ final class AppModel: ObservableObject {
     try await library.addHistory(entry)
     history.insert(entry, at: 0)
     currentHistoryID = entry.id
+    learning.record(entry)
   }
 
   /// Calls off everything the translator is running, the follow-up thread
@@ -621,8 +703,9 @@ final class AppModel: ObservableObject {
   var followUpSuggestions: [FollowUpSuggestion] {
     guard canAskFollowUp else { return [] }
     let asked = Set(followUps.map(\.question))
-    return FollowUpSuggestion.suggestions(for: inputText, mode: selectedAction?.mode)
+    let suggestions = FollowUpSuggestion.suggestions(for: inputText, mode: selectedAction?.mode)
       .filter { !asked.contains($0.question) }
+    return learning.ranked(suggestions, forTerm: FollowUpSuggestion.isShortPhrase(inputText))
   }
 
   /// Total streamed text in the result pane. The pane follows its own tail
@@ -652,7 +735,11 @@ final class AppModel: ObservableObject {
     }
     let prompt = PromptBuilder.followUp(
       question: question,
-      base: PromptBuilder.build(text: route.text, source: route.source, target: route.target, action: route.action, selectionContext: route.selectionContext),
+      base: PromptBuilder.build(
+        text: route.text, source: route.source, target: route.target, action: route.action,
+        selectionContext: route.selectionContext,
+        option: route.option
+      ),
       answer: outputText, turns: followUps, target: route.target
     )
 
@@ -861,6 +948,7 @@ final class AppModel: ObservableObject {
     let answered = followUps.filter { !$0.answer.isEmpty }
     history[index].followUps = answered.isEmpty ? nil : answered
     let updated = history[index]
+    learning.recordFollowUps(for: updated)
     do {
       try await library.updateHistory(updated)
     } catch {
@@ -987,6 +1075,28 @@ final class AppModel: ObservableObject {
     WindowCoordinator.showMain()
   }
 
+  /// Opens the study section, on one term when given.
+  func openLearning(termID: UUID? = nil, tab: LearningTab? = nil) {
+    if let termID {
+      learning.selectedTermID = termID
+      learning.tab = .terms
+    }
+    if let tab { learning.tab = tab }
+    learningFocusToken = UUID()
+    WindowCoordinator.showMain()
+  }
+
+  /// The language the text in the source box is read as, worked out the way a
+  /// translation of it would work it out.
+  var currentSourceLanguage: LanguageCode {
+    TranslationSourceResolver.resolve(
+      inputText,
+      configuredSource: settingsStore.settings.sourceLanguage,
+      inputSource: inputSource,
+      restoredSource: restoredSourceLanguage
+    )
+  }
+
   func openTranslator() {
     translatorFocusToken = UUID()
     WindowCoordinator.showMain()
@@ -1007,6 +1117,7 @@ final class AppModel: ObservableObject {
 
   func deleteHistory(ids: Set<UUID>) {
     history.removeAll { ids.contains($0.id) }
+    learning.forget(historyIDs: ids)
     Task {
       do {
         try await library.removeHistory(ids: ids)
@@ -1326,6 +1437,19 @@ final class AppModel: ObservableObject {
       .store(in: &cancellables)
 
     settingsStore.$settings
+      .map(\.learningEnabled)
+      .removeDuplicates()
+      .dropFirst()
+      .filter { $0 }
+      .sink { [weak self] _ in
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          await self.learning.backfillIfNeeded(history: self.history)
+        }
+      }
+      .store(in: &cancellables)
+
+    settingsStore.$settings
       .map(\.appLanguage)
       .removeDuplicates()
       .dropFirst()
@@ -1350,7 +1474,14 @@ final class AppModel: ObservableObject {
     case .screenshotOCR:
       captureOCR()
     case .writing:
-      translateFocusedInput()
+      if settingsStore.settings.writingShowsPreview {
+        compose.toggle(
+          sourceProcessIdentifier: sourceProcessIdentifier,
+          actions: settingsStore.settings.writingActions(customActions: customActions)
+        )
+      } else {
+        translateFocusedInput(sourceProcessIdentifier: sourceProcessIdentifier)
+      }
     }
   }
 
@@ -1379,6 +1510,8 @@ final class AppModel: ObservableObject {
     // before, so fall back to that instead of inspecting ourselves.
     let sourceApplication =
       sourceProcessIdentifier ?? ActiveApplicationTracker.shared.lastExternalProcessIdentifier
+    selectionBundleIdentifier = sourceApplication
+      .flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
 
     Task {
       do {
@@ -1460,25 +1593,34 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func translateFocusedInput() {
-    guard settingsStore.settings.resolvedBuiltInActions.contains(where: { $0.mode == .translate }) else {
+  /// The writing shortcut with the pop-up turned off: the action, language,
+  /// and option the pop-up would open with in this app run straight away, and
+  /// the answer replaces the text in the field.
+  func translateFocusedInput(sourceProcessIdentifier: pid_t? = nil) {
+    let settings = settingsStore.settings
+    let actions = settings.writingActions(customActions: customActions)
+    guard !actions.isEmpty else {
       errorMessage = L10n.isChinese
-        ? "请先在动作配置中从预置模板添加“翻译”，再使用写作翻译。"
-        : "Add Translate from the action templates before using writing translation."
+        ? "请先在动作配置里给一个动作打开“写作时可用”，再使用写作快捷键。"
+        : "Turn on “Use when writing” for an action in Actions before using the writing shortcut."
       return
     }
+    let bundleIdentifier = (sourceProcessIdentifier ?? ActiveApplicationTracker.shared.lastExternalProcessIdentifier)
+      .flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+    let style = settings.writingStyle(forApp: bundleIdentifier)
+    let action = actions.first { $0.id == style.actionID } ?? actions[0]
+    let option = settings.chosenOption(for: action, inApp: bundleIdentifier)
     Task {
       do {
         let original = try accessibility.currentEditableText()
-        let settings = settingsStore.settings
         let source = LanguageDetector.detect(original)
-        guard let action = settings.resolvedBuiltInActions.first(where: { $0.mode == .translate }) else { return }
         let prompt = PromptBuilder.build(
           text: original,
           source: source,
-          target: settings.writingTargetLanguage,
+          target: style.language,
           action: action,
-          writing: true
+          writing: true,
+          option: option
         )
         let (connection, configuration) = try settingsStore.resolve(action)
         let (key, accountId) = try await settingsStore.validCredentials(for: connection, proxy: settings.proxy)
@@ -1571,6 +1713,7 @@ final class AppModel: ObservableObject {
       reconcileActionSelection(preferDefault: true)
       history = try await loadedHistory
       vocabulary = try await loadedVocabulary
+      await learning.load(history: history)
     } catch {
       errorMessage = L10n.isChinese
         ? "无法载入本地资料库：\(error.localizedDescription)"

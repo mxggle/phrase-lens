@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-11-01
+
+### Added
+
+- give each action its own options, with Compose and Polish in the ⌥W pop-up (#18).
+
+### Changed
+
+- give the ⌥W compose pop-up a section of its own (#17).
+
+## [0.15.0] — 2026-10-31
+
+### Added
+
+- write messages in Japanese or English from any chat box, with a register to pick (#16).
+
+## [0.14.1] — 2026-10-19
+
+### Fixed
+
+- lay out rendered Markdown in a plain stack to stop a main-thread hang (#15).
+
+## [0.14.0] — 2026-10-18
+
+### Added
+
+- study center that learns from your lookups, with review and an assistant (#14).
+
+## [0.13.0] — 2026-10-15
+
+### Added
+
+- PhraseLens for iOS with a Share sheet lookup action (#9).
+
+### Fixed
+
+- stop sending temperature to models that reject it (#11).
+- stage each architecture's release build before lipo (#12).
+- never send temperature to Claude models (#13).
+
 ## [0.12.1] — 2026-10-14
 
 ### Fixed
@@ -465,7 +505,12 @@ themselves, so an unrecognized value costs that value and not the collection.
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/mxggle/phrase-lens/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/mxggle/phrase-lens/compare/v0.14.1...v0.15.0
+[0.14.1]: https://github.com/mxggle/phrase-lens/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/mxggle/phrase-lens/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/mxggle/phrase-lens/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/mxggle/phrase-lens/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/mxggle/phrase-lens/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/mxggle/phrase-lens/compare/v0.10.1...v0.11.0

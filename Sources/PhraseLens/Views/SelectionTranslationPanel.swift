@@ -56,6 +56,7 @@ final class SelectionPanelCoordinator {
     let rootView = SelectionTranslationPanelView()
       .environmentObject(model)
       .environmentObject(model.settingsStore)
+      .environmentObject(model.learning)
       .frame(width: contentSize.width, height: contentSize.height)
     let hostingController = NSHostingController(rootView: rootView)
     let panel = SelectionPopoverPanel(
@@ -551,6 +552,17 @@ private struct SelectionPanelBody: View {
         // The strip sizes to its content now, so pin it to the leading edge
         // rather than letting the stack centre a half-width track.
         .frame(maxWidth: .infinity, alignment: .leading)
+        if let options = model.selectedAction?.availableOptions, !options.isEmpty {
+          ActionOptionsBar(
+            options: options,
+            selectedID: model.selectedOption?.id,
+            language: model.selectedAction?.usesTargetLanguage == true
+              ? settingsStore.settings.targetLanguage : nil,
+            toggle: { model.toggleOption($0) }
+          )
+          .frame(height: AppMetrics.controlHeightSmall)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
         sourceSummary
       }
       .padding(.horizontal, AppSpacing.md)
@@ -602,6 +614,10 @@ private struct SelectionPanelBody: View {
         .font(AppFont.bodyMedium)
         .foregroundStyle(palette.foreground)
         .allowsHitTesting(false)
+
+      // A term the reader keeps coming back to says so where they are reading
+      // it, which is the moment knowing it helps.
+      LearningLookupBadge()
 
       Spacer(minLength: AppSpacing.sm)
 

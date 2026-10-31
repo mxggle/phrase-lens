@@ -1101,6 +1101,80 @@ struct ChipToggleStyle: ToggleStyle {
   }
 }
 
+// MARK: - Action options
+
+/// The options under an action, such as Compose's Friends, Coworkers and
+/// Boss, as a row of chips: at most one picked, and clicking the picked one
+/// takes it off. Shown only for an action that has options, in every place
+/// that runs actions, so the rule is the same everywhere.
+struct ActionOptionsBar: View {
+  let options: [ActionOption]
+  let selectedID: UUID?
+  /// The language being written into, for the grammar a shipped option
+  /// names beside itself (タメ口, 敬語). Nil leaves it out.
+  var language: LanguageCode?
+  /// Whether Tab cycles the options where the bar is shown.
+  var showsTabHint = false
+  let toggle: (UUID) -> Void
+
+  @Environment(\.palette) private var palette
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    // A long list scrolls rather than pushing what sits beside it off the edge.
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: AppSpacing.xs) {
+        ForEach(options) { option in
+          chip(option)
+        }
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(L10n.isChinese ? "选项" : "Options")
+  }
+
+  private func chip(_ option: ActionOption) -> some View {
+    let isOn = option.id == selectedID
+    let styleName = language.flatMap { option.styleName(in: $0) }
+    let label = [option.displayName, styleName].compactMap { $0 }.joined(separator: " · ")
+    var tooltip = [label, option.instruction.trimmingCharacters(in: .whitespacesAndNewlines)]
+    tooltip.append(
+      isOn
+        ? (L10n.isChinese ? "再点一下取消" : "Click again to turn it off")
+        : (showsTabHint ? (L10n.isChinese ? "⇥ 切换选项" : "Tab to switch") : "")
+    )
+    return Button {
+      toggle(option.id)
+    } label: {
+      HStack(spacing: AppSpacing.xs + 1) {
+        Text(option.displayName)
+          .font(AppFont.label)
+          .foregroundStyle(isOn ? palette.foreground : palette.secondaryForeground)
+        if let styleName {
+          Text(styleName)
+            .font(AppFont.caption)
+            .foregroundStyle(palette.mutedForeground)
+        }
+      }
+      .lineLimit(1)
+      .fixedSize()
+      .padding(.horizontal, AppSpacing.sm + 1)
+      .frame(height: AppMetrics.controlHeightSmall)
+      .background(isOn ? palette.accentSoft : Color.clear, in: Capsule(style: .continuous))
+      .overlay {
+        Capsule(style: .continuous)
+          .strokeBorder(isOn ? palette.accent.opacity(0.35) : palette.border, lineWidth: 1)
+      }
+      .contentShape(Capsule(style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .help(tooltip.filter { !$0.isEmpty }.joined(separator: "\n"))
+    .accessibilityLabel(label)
+    .accessibilityAddTraits(isOn ? [.isSelected] : [])
+    .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isOn)
+  }
+}
+
 // MARK: - Tabs
 
 /// Segmented switcher: a muted track with one raised pill on the armed option.

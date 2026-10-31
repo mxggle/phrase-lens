@@ -19,6 +19,15 @@ struct PhraseLensApp: App {
       Darwin.exit(EXIT_FAILURE)
     }
     #if DEBUG
+    if CommandLine.arguments.contains("--learning-probe") {
+      let application = NSApplication.shared
+      application.setActivationPolicy(.prohibited)
+      Task { @MainActor in
+        let status = await LearningProbe.run(arguments: CommandLine.arguments)
+        Darwin.exit(status)
+      }
+      application.run()
+    }
     if CommandLine.arguments.contains("--write-back-probe") {
       let application = NSApplication.shared
       application.setActivationPolicy(.accessory)
@@ -95,6 +104,7 @@ struct PhraseLensApp: App {
         .environmentObject(model)
         .environmentObject(model.settingsStore)
         .environmentObject(model.modelCatalog)
+        .environmentObject(model.learning)
         .frame(minWidth: AppMetrics.windowMinWidth, minHeight: AppMetrics.windowMinHeight)
         .onAppear {
           #if DEBUG
@@ -175,6 +185,7 @@ struct PhraseLensApp: App {
         .environmentObject(model)
         .environmentObject(model.settingsStore)
         .environmentObject(model.modelCatalog)
+        .environmentObject(model.learning)
     }
 
     MenuBarExtra("PhraseLens", systemImage: "character.bubble") {

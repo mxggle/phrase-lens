@@ -32,6 +32,29 @@ enum InsertionPlacement: Sendable {
   case after
 }
 
+/// What the writing shortcut read out of the focused control, and how to put
+/// the translation back in its place.
+struct ComposeCapture: Sendable {
+  enum Scope: Sendable {
+    /// Part of the text was selected: only that part is translated and replaced.
+    case selection
+    /// Nothing was selected: the control's whole text is the draft.
+    case wholeField
+    /// The control could not be read, so its text was selected with ⌘A and
+    /// copied. Writing it back selects it the same way.
+    case selectedAll
+  }
+
+  let target: InsertionTarget
+  let scope: Scope
+  let bundleIdentifier: String?
+  /// Where the control is on screen in AppKit coordinates, for placing the
+  /// pop-up beside the text it is about to replace.
+  let anchorRect: CGRect?
+
+  var text: String { target.selectedText }
+}
+
 /// How an answer reached the source application.
 enum InsertionMethod: Sendable {
   /// Written into the control directly; the clipboard was never touched.
@@ -670,31 +693,7 @@ struct AccessibilityService: Sendable {
     placement: InsertionPlacement,
     into target: InsertionTarget
   ) async throws -> InsertionMethod {
-    guard isTrusted() else { throw TranslationError.accessibilityPermissionRequired }
-    guard
-      target.isEditable,
-      !target.selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    else { throw TranslationError.focusedInputUnavailable }
-    let appName = target.applicationName ?? (L10n.isChinese ? "原应用" : "the source app")
-    guard
-      let application = NSRunningApplication(processIdentifier: target.processIdentifier),
-      !application.isTerminated
-    else {
-      throw TranslationError.provider(
-        L10n.isChinese ? "\(appName) 已退出。" : "\(appName) is no longer running."
-      )
-    }
-
-    // While the reader clicks, the pop-up or the main window holds key focus.
-    // The source application has to take it back before its control will
-    // accept a paste, and a held modifier would turn ⌘V into something else.
-    await waitForShortcutModifiersToLift()
-    guard await bringToFront(application) else {
-      throw TranslationError.provider(
-        L10n.isChinese ? "无法切换回 \(appName)。" : "Could not bring \(appName) back to the front."
-      )
-    }
-
+    try await prepareToWrite(into: target)
     let plan = try writePlan(for: text, placement: placement, target: target)
     if let element = target.element, let range = plan.range {
       if plan.payload == plan.replacedText { return .accessibility }
@@ -727,6 +726,35 @@ struct AccessibilityService: Sendable {
       return stringAttribute(kAXValueAttribute, from: element) != valueBefore
     }
     return .paste
+  }
+
+  /// Hands focus back to the application being written into.
+  ///
+  /// While the reader clicks, the pop-up or the main window holds key focus.
+  /// The source application has to take it back before its control will
+  /// accept a paste, and a held modifier would turn ⌘V into something else.
+  @MainActor
+  private func prepareToWrite(into target: InsertionTarget) async throws {
+    guard isTrusted() else { throw TranslationError.accessibilityPermissionRequired }
+    guard
+      target.isEditable,
+      !target.selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { throw TranslationError.focusedInputUnavailable }
+    let appName = target.applicationName ?? (L10n.isChinese ? "原应用" : "the source app")
+    guard
+      let application = NSRunningApplication(processIdentifier: target.processIdentifier),
+      !application.isTerminated
+    else {
+      throw TranslationError.provider(
+        L10n.isChinese ? "\(appName) 已退出。" : "\(appName) is no longer running."
+      )
+    }
+    await waitForShortcutModifiersToLift()
+    guard await bringToFront(application) else {
+      throw TranslationError.provider(
+        L10n.isChinese ? "无法切换回 \(appName)。" : "Could not bring \(appName) back to the front."
+      )
+    }
   }
 
   private static var selectionChanged: TranslationError {
@@ -1423,6 +1451,214 @@ struct AccessibilityService: Sendable {
       return ""
     }
     return nsValue.substring(with: NSRange(location: range.location, length: range.length))
+  }
+}
+
+// MARK: - Compose
+
+extension AccessibilityService {
+  /// How long a draft read with ⌘A may be. Anything longer is a document the
+  /// shortcut selected by mistake, not a message.
+  private static let maximumSelectedAllLength = 4_000
+  /// A control taller than this is a document rather than a chat box, and the
+  /// pop-up goes by the caret instead of by the control.
+  private static let maximumAnchorFieldHeight: CGFloat = 200
+
+  private static let textControlRoles: Set<String> = [
+    kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole, "AXSearchField",
+  ]
+
+  /// Reads the draft the writing shortcut is about to translate: the
+  /// selection in the focused control if there is one, otherwise all of its
+  /// text.
+  ///
+  /// Chromium-based apps build their accessibility tree only once asked, so
+  /// the first read after launch can find no readable control; a few short
+  /// retries cover that. A text control that still cannot be read, or an app
+  /// with no accessibility at all, is selected and copied with ⌘A ⌘C instead,
+  /// with the reader's clipboard put back.
+  @MainActor
+  func composeCapture(from processIdentifier: pid_t?, allowCopyFallback: Bool) async throws -> ComposeCapture {
+    guard isTrusted() else { throw TranslationError.accessibilityPermissionRequired }
+    guard
+      let processIdentifier = processIdentifier ?? NSWorkspace.shared.frontmostApplication?.processIdentifier,
+      processIdentifier != ProcessInfo.processInfo.processIdentifier
+    else { throw TranslationError.focusedInputUnavailable }
+    let runningApplication = NSRunningApplication(processIdentifier: processIdentifier)
+    let applicationName = runningApplication?.localizedName
+    let bundleIdentifier = runningApplication?.bundleIdentifier
+    let application = prepared(AXUIElementCreateApplication(processIdentifier))
+
+    var element = try? focusedElement(in: application)
+    var attempts = 0
+    while attempts < 4, element.flatMap({ stringAttribute(kAXValueAttribute, from: $0) }) == nil {
+      attempts += 1
+      try? await Task.sleep(for: .milliseconds(60))
+      element = try? focusedElement(in: application)
+    }
+
+    if let element {
+      guard !isWithinSecureTextElement(element) else {
+        throw TranslationError.provider(
+          L10n.isChinese ? "不能翻译或替换安全文本字段中的内容。" : "Secure text fields cannot be translated or replaced."
+        )
+      }
+      if let value = stringAttribute(kAXValueAttribute, from: element) {
+        guard isWritable(element) else { throw TranslationError.focusedInputUnavailable }
+        let range = selectedRange(from: element)
+        let selected = stringAttribute(kAXSelectedTextAttribute, from: element)
+          ?? range.map { substring(value, range: $0) }
+          ?? ""
+        let isWebContent = isWithinWebArea(element)
+        func target(range: CFRange, text: String) -> InsertionTarget {
+          InsertionTarget(
+            processIdentifier: processIdentifier,
+            applicationName: applicationName,
+            element: element,
+            selectedRange: range,
+            selectedText: text,
+            isEditable: true,
+            isWebContent: isWebContent
+          )
+        }
+        if let range, range.length > 0, !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          return ComposeCapture(
+            target: target(range: range, text: selected),
+            scope: .selection,
+            bundleIdentifier: bundleIdentifier,
+            anchorRect: composeAnchor(for: element, caret: range)
+          )
+        }
+        // An empty control can report its placeholder as its value.
+        guard
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          value != stringAttribute("AXPlaceholderValue", from: element)
+        else { throw TranslationError.noInput }
+        let length = (value as NSString).length
+        return ComposeCapture(
+          target: target(range: CFRange(location: 0, length: length), text: value),
+          scope: .wholeField,
+          bundleIdentifier: bundleIdentifier,
+          anchorRect: composeAnchor(for: element, caret: CFRange(location: max(0, length - 1), length: min(1, length)))
+        )
+      }
+      // A control that is not text — a button, a list, a page — has nothing
+      // to write, and ⌘A there would select far more than a message.
+      guard stringAttribute(kAXRoleAttribute, from: element).map({ Self.textControlRoles.contains($0) }) ?? true else {
+        throw TranslationError.focusedInputUnavailable
+      }
+    }
+
+    guard allowCopyFallback else { throw TranslationError.focusedInputUnavailable }
+    await waitForShortcutModifiersToLift()
+    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == processIdentifier else {
+      throw TranslationError.focusedInputUnavailable
+    }
+    await postKey(KeyboardLayoutKeys.keyCode(for: "a", fallback: 0), flags: .maskCommand, to: processIdentifier)
+    guard let copied = await copiedSelectionPreservingClipboard(from: processIdentifier) else {
+      throw TranslationError.noInput
+    }
+    guard copied.count <= Self.maximumSelectedAllLength else { throw TranslationError.focusedInputUnavailable }
+    return ComposeCapture(
+      target: InsertionTarget(
+        processIdentifier: processIdentifier,
+        applicationName: applicationName,
+        element: nil,
+        selectedRange: nil,
+        selectedText: copied,
+        isEditable: true,
+        isWebContent: false
+      ),
+      scope: .selectedAll,
+      bundleIdentifier: bundleIdentifier,
+      anchorRect: element.flatMap { composeAnchor(for: $0, caret: nil) }
+    )
+  }
+
+  /// Puts the finished translation where the draft was.
+  ///
+  /// A selection is replaced the way Replace replaces one. A whole field is
+  /// first checked against the draft that was read, so a field that changed
+  /// meanwhile is left alone. Native controls take the text through
+  /// accessibility; web content is always pasted over ⌘A, because a web
+  /// editor that is handed a value directly shows it without its own state
+  /// ever learning about it, and then sends the old text.
+  @MainActor
+  func replaceComposed(_ text: String, in capture: ComposeCapture) async throws -> InsertionMethod {
+    let target = capture.target
+    if capture.scope == .selection {
+      return try await write(text, placement: .replace, into: target)
+    }
+    try await prepareToWrite(into: target)
+    let payload = WriteBackComposer.replacement(for: text, over: target.selectedText)
+
+    let valueBefore = target.element.flatMap { stringAttribute(kAXValueAttribute, from: $0) }
+    if let valueBefore,
+      SelectionContextMatcher.normalize(valueBefore) != SelectionContextMatcher.normalize(target.selectedText)
+    {
+      throw TranslationError.provider(
+        L10n.isChinese
+          ? "输入框里的文字已经变了，没有写入。请重新按快捷键。"
+          : "The text in the field changed since it was read, so nothing was written. Press the shortcut again."
+      )
+    }
+    // A draft that needed no change — Japanese that was already right — is
+    // done, and both routes below would read the unchanged value as a failure.
+    if let valueBefore, valueBefore == payload { return .accessibility }
+
+    var selectsAllWithKeyboard = true
+    if let element = target.element, !target.isWebContent, let valueBefore {
+      let whole = CFRange(location: 0, length: (valueBefore as NSString).length)
+      if writeThroughAccessibility(payload, over: whole, in: element) { return .accessibility }
+      selectsAllWithKeyboard = !select(whole, in: element)
+    }
+    if selectsAllWithKeyboard {
+      await postKey(KeyboardLayoutKeys.keyCode(for: "a", fallback: 0), flags: .maskCommand, to: target.processIdentifier)
+    }
+    try await paste(payload, to: target.processIdentifier, caretKeys: []) {
+      guard let element = target.element, let valueBefore else { return true }
+      return stringAttribute(kAXValueAttribute, from: element) != valueBefore
+    }
+    return .paste
+  }
+
+  /// Where the pop-up should sit: by the control, or by the caret in a
+  /// control too tall to be a chat box.
+  @MainActor
+  private func composeAnchor(for element: AXUIElement, caret: CFRange?) -> CGRect? {
+    guard let frame = screenFrame(of: element) else { return nil }
+    if frame.height > Self.maximumAnchorFieldHeight,
+      let caret, caret.length > 0,
+      let caretRect = bounds(for: caret, from: element)
+    {
+      return Self.appKitRect(fromAccessibility: caretRect)
+    }
+    return Self.appKitRect(fromAccessibility: frame)
+  }
+
+  private func screenFrame(of element: AXUIElement) -> CGRect? {
+    guard
+      let positionValue = attribute(kAXPositionAttribute, from: element),
+      let sizeValue = attribute(kAXSizeAttribute, from: element),
+      CFGetTypeID(positionValue) == AXValueGetTypeID(),
+      CFGetTypeID(sizeValue) == AXValueGetTypeID()
+    else { return nil }
+    var origin = CGPoint.zero
+    var size = CGSize.zero
+    guard
+      AXValueGetValue(unsafeDowncast(positionValue, to: AXValue.self), .cgPoint, &origin),
+      AXValueGetValue(unsafeDowncast(sizeValue, to: AXValue.self), .cgSize, &size),
+      size.width > 0, size.height > 0
+    else { return nil }
+    return CGRect(origin: origin, size: size)
+  }
+
+  /// Accessibility measures from the top of the main display, downwards;
+  /// AppKit from its bottom, upwards.
+  @MainActor
+  private static func appKitRect(fromAccessibility rect: CGRect) -> CGRect? {
+    guard let mainHeight = NSScreen.screens.first?.frame.height else { return nil }
+    return CGRect(x: rect.minX, y: mainHeight - rect.maxY, width: rect.width, height: rect.height)
   }
 }
 

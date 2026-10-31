@@ -12,12 +12,17 @@ This file maps the original desktop behaviors to their native implementation.
 | Compact selection preview | Native SwiftUI preview with speech and explicit Edit actions |
 | Selection pop-up | Compact translation panel near the selected text, with its own compact action tab strip and a pin that keeps it open when you click elsewhere |
 | Screenshot OCR | Interactive `screencapture` region plus Vision recognition |
-| Writing replacement | Accessibility read, streaming translation, and focused-control replacement |
+| Writing pop-up | `ComposeModel` reads the focused field (or its selection) through Accessibility, runs one of the actions in `writingActionIDs` (Compose and Polish by default) through `PromptBuilder.build(writing: true, option:)`, and writes the edited result back with `AccessibilityService.replaceComposed` — through Accessibility in native controls, pasted over ⌘A in web editors. An action's `options` (Compose ships Friends, Coworkers, Boss) show as a chip row under it in both pop-ups and the main window; the picked option's instruction is appended to the system prompt, and clicking it again takes it off. The language switch shows only for actions that use `${targetLang}`. Action and language are remembered per app in `writingStylesByApp`, the option per app and action in `actionOptionChoices` |
 | Result buttons | Per-action Copy, Replace, and Insert with a chosen primary button; Replace and Insert write back to the selection's own app through Accessibility or a verified paste — [design](result-commands.md) |
 | TTS | `AVSpeechSynthesizer` with source-text autoplay, manual source and result playback in each pane's own language, and cancellation |
 | Pronunciation readings | `PronunciationGuide` per language, applied by `PromptBuilder` to the looked-up term and to short translations |
 | History | Atomic JSON storage, search, restore, favorites, delete |
 | Vocabulary | Atomic JSON storage, deduplication, search, delete |
+| Study record | `LearningLedger` files lookups into `learning.json`: repeats, sentences, senses, follow-ups — [design](learning-assistant.md) |
+| Learner memory | `PromptBuilder.applyingLearnerMemory` hands the record to explanations; follow-up chips ordered by habit |
+| Related terms and cards | Local candidates (`LearningRelations`) judged by `LearningAnnotator`; memory cards and weekly diagnosis by `LearningCoach` |
+| Review | `ReviewScheduler` spaced repetition, with a re-lookup counted as a lapse |
+| Study assistant | Tool-using chat over the record (`AgentClient`, `LearningTools`), native for Anthropic and OpenAI-compatible connections |
 | Custom actions | Editable prompts with source, target, and text variables |
 | Global shortcuts | Carbon hot-key registration with conflict reporting |
 | Menu bar | `MenuBarExtra` actions and quit/settings access |

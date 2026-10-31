@@ -667,7 +667,8 @@ enum SelfTestRunner {
       )
       check(
         migrated.actionOrder == TranslationAction.defaultOrder
-          && migrated.hiddenActionIDs.isEmpty
+          // Compose arrives with the writing pop-up, kept off the lookup one.
+          && migrated.hiddenActionIDs == AppSettings.writingOnlyActionIDs
           && migrated.builtInActionOverrides.isEmpty
           && migrated.selectionPanelPlacement == .nearPointer
           && migrated.selectionPanelPosition == nil,
@@ -1631,6 +1632,58 @@ enum SelfTestRunner {
         "TranslationClient Kimi K3 request creation failed",
         failures: &failures
       )
+      // Claude answers a request carrying temperature with a 400, and Opus 4.7
+      // and later reject a thinking budget too; older models still want one.
+      func claudeBody(_ model: String, thinking: Bool) throws -> [String: Any]? {
+        let request = try client.makeRequest(
+          prompt: testPrompt,
+          configuration: ProviderConfiguration(
+            provider: .anthropic,
+            endpoint: ProviderKind.anthropic.defaultEndpoint,
+            model: model,
+            extendedThinking: thinking
+          ),
+          apiKey: "mock-key"
+        )
+        return try JSONSerialization.jsonObject(with: request.httpBody!) as? [String: Any]
+      }
+      let sonnet45 = try claudeBody("claude-sonnet-4-5", thinking: false)
+      let haiku45Thinking = try claudeBody("claude-haiku-4-5-20251001", thinking: true)
+      let opus46Thinking = try claudeBody("claude-opus-4-6", thinking: true)
+      let opus48 = try claudeBody("claude-opus-4-8", thinking: false)
+      let opus48Thinking = try claudeBody("claude-opus-4-8", thinking: true)
+      let opus55 = try claudeBody("claude-opus-5-5", thinking: false)
+      let thirdParty = try claudeBody("MiniMax-M2.7", thinking: false)
+      check(
+        sonnet45?["temperature"] == nil
+          && sonnet45?["thinking"] == nil
+          && (haiku45Thinking?["thinking"] as? [String: Any])?["budget_tokens"] as? Int == 4_000
+          && haiku45Thinking?["temperature"] == nil
+          && (opus46Thinking?["thinking"] as? [String: Any])?["type"] as? String == "adaptive"
+          && opus48?["temperature"] == nil
+          && opus48?["thinking"] == nil
+          && opus48?["max_tokens"] as? Int == 4_096
+          && opus48Thinking?["temperature"] == nil
+          && (opus48Thinking?["thinking"] as? [String: Any])?["type"] as? String == "adaptive"
+          && opus55?["temperature"] == nil
+          && opus55?["thinking"] == nil
+          && (opus55?["output_config"] as? [String: Any])?["effort"] as? String == "low"
+          && opus55?["max_tokens"] as? Int == 8_096
+          && thirdParty?["temperature"] as? Double == 0.2,
+        "TranslationClient Claude request sent a parameter the model rejects",
+        failures: &failures
+      )
+      check(
+        ClaudeGeneration(model: "claude-sonnet-4-20250514").version == 40
+          && ClaudeGeneration(model: "claude-3-5-sonnet-20241022").version == 30
+          && ClaudeGeneration(model: "anthropic.claude-opus-4-8").version == 48
+          && ClaudeGeneration(model: "claude-opus-4-5@20251101").version == 45
+          && ClaudeGeneration(model: "claude-fable-5-1").version == 51
+          && ClaudeGeneration(model: "claude-next").alwaysThinks
+          && !ClaudeGeneration(model: "MiniMax-M2.7").isClaude,
+        "ClaudeGeneration misread a Claude model ID",
+        failures: &failures
+      )
     } catch {
       failures.append("TranslationClient Codex OAuth request creation threw: \(error)")
     }
@@ -1960,6 +2013,8 @@ enum SelfTestRunner {
     }
 
     failures += resultCommandFailures()
+    failures += LearningSelfTests.run()
+    failures += WritingSelfTests.run()
 
     return failures
   }

@@ -7,6 +7,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
   case provider
   case shortcuts
   case speech
+  case learning
   case network
   case setup
   case about
@@ -18,7 +19,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case .general: L10n.isChinese ? "常规" : "General"
     case .provider: L10n.isChinese ? "AI 连接" : "AI Connections"
     case .shortcuts: L10n.isChinese ? "快捷键" : "Shortcuts"
-    case .speech: L10n.isChinese ? "语音朗读" : "Speech"
+    case .speech: L10n.isChinese ? "朗读与写作" : "Speech & Writing"
+    case .learning: L10n.isChinese ? "学习助手" : "Study"
     case .network: L10n.isChinese ? "网络代理" : "Network"
     case .setup: L10n.isChinese ? "新手引导" : "Getting Started"
     case .about: L10n.isChinese ? "关于" : "About"
@@ -31,6 +33,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case .provider: "cpu"
     case .shortcuts: "keyboard"
     case .speech: "speaker.wave.2"
+    case .learning: "graduationcap"
     case .network: "network"
     case .setup: "checklist"
     case .about: "info.circle"
@@ -42,7 +45,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case .general: L10n.isChinese ? "界面语言、翻译行为与窗口外观" : "Languages, translation behavior, and the window"
     case .provider: L10n.isChinese ? "应答模型及 API 密钥配置" : "Which model answers, and the credential it uses"
     case .shortcuts: L10n.isChinese ? "全局快捷键与系统权限" : "Global keys and the permission they need"
-    case .speech: L10n.isChinese ? "语音播放引擎与朗读参数" : "Voice playback and writing replacement"
+    case .speech: L10n.isChinese ? "语音播放引擎、朗读参数与写作" : "Voice playback and writing"
+    case .learning: L10n.isChinese ? "学习记录、后台分析与复习" : "The study record, background analysis, and review"
     case .network: L10n.isChinese ? "代理服务器与直连白名单" : "Proxy configuration"
     case .setup: L10n.isChinese ? "连接服务商、启用快捷键并体验首次翻译" : "Connect a provider, enable shortcuts, and try a translation"
     case .about: L10n.isChinese ? "版本、软件更新与开源许可协议" : "Version, software updates, and licensing"
@@ -240,6 +244,7 @@ private struct SettingsShell: View {
               case .provider: ProviderSettingsPane()
               case .shortcuts: ShortcutSettingsPane()
               case .speech: SpeechWritingSettingsPane()
+              case .learning: LearningSettingsPane()
               case .network: NetworkSettingsPane()
               case .about: AboutSettingsPane()
               case .setup: EmptyView()
@@ -1195,10 +1200,10 @@ private struct ShortcutSettingsPane: View {
         )
         Hairline()
         shortcutRow(
-          L10n.isChinese ? "原地文本润色替换" : "Writing replacement",
+          L10n.isChinese ? "写作" : "Writing",
           detail: L10n.isChinese
-            ? "在当前获得焦点的输入框中翻译并替换文本。"
-            : "Replace text in the focused editable control.",
+            ? "在输入框里写好内容后按下，用写作翻译、润色等动作处理它，再替换回去。"
+            : "Run Compose, Polish, or another writing action on what you wrote in the focused field, then put the result in its place.",
           value: $settingsStore.settings.shortcuts.writing
         )
       }
@@ -1206,8 +1211,8 @@ private struct ShortcutSettingsPane: View {
       SettingsCard(
         L10n.isChinese ? "系统权限" : "Permissions",
         caption: L10n.isChinese
-          ? "划选读取与原地文本润色替换需要 macOS 辅助功能权限。"
-          : "Selection lookup and writing replacement need macOS Accessibility permission."
+          ? "划选读取与写作需要 macOS 辅助功能权限。"
+          : "Selection lookup and writing need macOS Accessibility permission."
       ) {
         SettingsRow(
           L10n.isChinese ? "辅助功能权限" : "Accessibility permission",
@@ -1338,15 +1343,47 @@ private struct SpeechWritingSettingsPane: View {
       }
 
       SettingsCard(
-        L10n.isChinese ? "原地文本润色替换" : "Writing replacement",
+        L10n.isChinese ? "写作" : "Writing",
         caption: L10n.isChinese
-          ? "在可编辑输入框获得焦点时按下写作快捷键。应用将翻译该文本并通过辅助功能 API 进行替换。"
-          : "Press the writing shortcut while an editable control is focused. The app "
-            + "translates its text and replaces it through the Accessibility API."
+          ? "在任何输入框里写好内容，按 \(settingsStore.settings.shortcuts.writing)：浮窗里用下面这些动作处理它，"
+            + "可以直接修改，回车替换原文。浮窗会按应用记住上次用的动作、语言和选项。"
+          : "Write in any text field, then press \(settingsStore.settings.shortcuts.writing). The pop-up runs "
+            + "one of the actions below on what you wrote; edit the result if you like, and Return puts it "
+            + "in place. It remembers the action, language, and option you used last in each app."
       ) {
-        SettingsRow(L10n.isChinese ? "替换目标语言" : "Writing target language") {
+        SettingsRow(
+          L10n.isChinese ? "写作时可用的动作" : "Actions when writing",
+          detail: L10n.isChinese
+            ? "在“动作”里打开或关闭某个动作的“写作时可用”，也可以在那里修改它们的提示词。"
+            : "Turn “Use when writing” on or off for an action in Actions, where its prompts can be edited too."
+        ) {
+          Text(writingActionNames)
+            .font(AppFont.body)
+            .foregroundStyle(palette.secondaryForeground)
+            .lineLimit(2)
+            .multilineTextAlignment(.trailing)
+        }
+        Hairline()
+        SettingsRow(
+          L10n.isChinese ? "先预览再替换" : "Preview before replacing",
+          detail: L10n.isChinese
+            ? "关闭后，快捷键会直接用上次的动作处理输入框里的文字并替换。"
+            : "When off, the shortcut runs the action used last and replaces the text straight away."
+        ) {
+          Toggle("", isOn: $settingsStore.settings.writingShowsPreview)
+            .toggleStyle(AppSwitchStyle())
+            .labelsHidden()
+            .accessibilityLabel(L10n.isChinese ? "先预览再替换" : "Preview before replacing")
+        }
+        Hairline()
+        SettingsRow(
+          L10n.isChinese ? "目标语言" : "Write in",
+          detail: L10n.isChinese
+            ? "提示词里的 ${targetLang}。浮窗里按 ⌘L 切换。"
+            : "What ${targetLang} becomes. Press ⌘L in the pop-up to switch."
+        ) {
           AppSelect(
-            title: L10n.isChinese ? "替换目标语言" : "Writing target language",
+            title: L10n.isChinese ? "目标语言" : "Write in",
             selection: $settingsStore.settings.writingTargetLanguage,
             options: LanguageCode.allCases.filter { $0 != .auto },
             label: { $0.displayName }
@@ -1354,6 +1391,13 @@ private struct SpeechWritingSettingsPane: View {
         }
       }
     }
+  }
+
+  /// The actions the writing pop-up offers, by name, in its order.
+  private var writingActionNames: String {
+    let names = settingsStore.settings.writingActions(customActions: model.customActions).map(\.name)
+    guard !names.isEmpty else { return L10n.isChinese ? "还没有" : "None yet" }
+    return names.joined(separator: L10n.isChinese ? "、" : ", ")
   }
 }
 
