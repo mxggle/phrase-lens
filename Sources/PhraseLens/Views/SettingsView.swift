@@ -1346,10 +1346,10 @@ private struct SpeechWritingSettingsPane: View {
         L10n.isChinese ? "写作" : "Writing",
         caption: L10n.isChinese
           ? "在任何输入框里写好内容，按 \(settingsStore.settings.shortcuts.writing)：浮窗里用下面这些动作处理它，"
-            + "可以直接修改，回车替换原文。浮窗会按应用记住上次用的动作、语言和语体。"
+            + "可以直接修改，回车替换原文。浮窗会按应用记住上次用的动作、语言和选项。"
           : "Write in any text field, then press \(settingsStore.settings.shortcuts.writing). The pop-up runs "
             + "one of the actions below on what you wrote; edit the result if you like, and Return puts it "
-            + "in place. It remembers the action, language, and tone you used last in each app."
+            + "in place. It remembers the action, language, and option you used last in each app."
       ) {
         SettingsRow(
           L10n.isChinese ? "写作时可用的动作" : "Actions when writing",
@@ -1389,28 +1389,7 @@ private struct SpeechWritingSettingsPane: View {
             label: { $0.displayName }
           )
         }
-        if !settingsStore.settings.writingTones.isEmpty {
-          Hairline()
-          SettingsRow(
-            L10n.isChinese ? "默认语体" : "Default tone",
-            detail: L10n.isChinese
-              ? "在没用过的应用里先用这个。浮窗里按 ⇥ 随时切换。"
-              : "Used in apps you have not written in yet. Press Tab in the pop-up to switch."
-          ) {
-            AppSelect(
-              title: L10n.isChinese ? "默认语体" : "Default tone",
-              selection: Binding(
-                get: { settingsStore.settings.writingTone(settingsStore.settings.writingToneID)?.id ?? settingsStore.settings.writingToneID },
-                set: { settingsStore.settings.writingToneID = $0 }
-              ),
-              options: settingsStore.settings.writingTones.map(\.id),
-              label: { id in settingsStore.settings.writingTones.first { $0.id == id }?.displayName ?? "" }
-            )
-          }
-        }
       }
-
-      WritingTonesCard()
     }
   }
 
@@ -1419,151 +1398,6 @@ private struct SpeechWritingSettingsPane: View {
     let names = settingsStore.settings.writingActions(customActions: model.customActions).map(\.name)
     guard !names.isEmpty else { return L10n.isChinese ? "还没有" : "None yet" }
     return names.joined(separator: L10n.isChinese ? "、" : ", ")
-  }
-}
-
-/// The tones the writing pop-up offers, each a name and what `${tone}`
-/// becomes when it is picked.
-private struct WritingTonesCard: View {
-  @EnvironmentObject private var settingsStore: SettingsStore
-  @Environment(\.palette) private var palette
-
-  private var tones: [WritingTone] { settingsStore.settings.writingTones }
-
-  var body: some View {
-    SettingsCard(
-      L10n.isChinese ? "语体" : "Tones",
-      caption: L10n.isChinese
-        ? "写作浮窗里按“发给谁”切换的语体。提示词里用到 ${tone} 的动作才会显示它们，${tone} 会换成所选语体的说明。"
-        : "Who the message is for, picked in the writing pop-up. Only actions whose prompt uses ${tone} show them, "
-          + "and ${tone} becomes the picked tone's instruction."
-    ) {
-      ForEach(Array(tones.enumerated()), id: \.element.id) { index, tone in
-        if index > 0 { Hairline() }
-        toneEditor(tone, index: index)
-      }
-      Hairline()
-      HStack(spacing: AppSpacing.sm) {
-        Button {
-          addTone()
-        } label: {
-          Label(L10n.isChinese ? "添加语体" : "Add Tone", systemImage: "plus")
-        }
-        .appButton(.outline, size: .sm)
-        Spacer(minLength: 0)
-        Button(L10n.isChinese ? "恢复默认语体" : "Restore Default Tones") {
-          restoreDefaults()
-        }
-        .appButton(.ghost, size: .sm)
-        .disabled(tones == WritingTone.defaults)
-      }
-      .padding(.vertical, AppSpacing.xs)
-    }
-  }
-
-  private func toneEditor(_ tone: WritingTone, index: Int) -> some View {
-    VStack(alignment: .leading, spacing: AppSpacing.xs + 2) {
-      HStack(spacing: AppSpacing.sm) {
-        AppTextField(
-          placeholder: L10n.isChinese ? "名称，例如：客户" : "Name, such as Clients",
-          text: field(tone.id, name: true),
-          size: .sm
-        )
-        .frame(maxWidth: 200)
-        if tone.id == settingsStore.settings.writingToneID {
-          Badge(text: L10n.isChinese ? "默认" : "Default", variant: .neutral)
-        }
-        Spacer(minLength: 0)
-        IconButton(
-          title: L10n.isChinese ? "上移" : "Move Up",
-          symbol: "chevron.up",
-          isDisabled: index == 0
-        ) {
-          move(tone.id, by: -1)
-        }
-        IconButton(
-          title: L10n.isChinese ? "下移" : "Move Down",
-          symbol: "chevron.down",
-          isDisabled: index == tones.count - 1
-        ) {
-          move(tone.id, by: 1)
-        }
-        IconButton(
-          title: L10n.isChinese ? "删除语体" : "Delete Tone",
-          symbol: "trash",
-          // The pop-up always has a tone to start from.
-          isDisabled: tones.count == 1
-        ) {
-          delete(tone.id)
-        }
-      }
-      AppTextEditor(
-        text: field(tone.id, name: false),
-        placeholder: L10n.isChinese
-          ? "${tone} 换成的说明，例如：polite and warm, to a client"
-          : "What ${tone} becomes, such as: polite and warm, to a client",
-        minHeight: 52,
-        monospaced: false
-      )
-    }
-    .padding(.vertical, AppSpacing.sm)
-  }
-
-  /// A tone's name or instruction, found by identifier so a deletion
-  /// elsewhere in the list cannot point an editor at the wrong tone. A
-  /// shipped name reads in the interface language until it is edited.
-  private func field(_ id: UUID, name: Bool) -> Binding<String> {
-    Binding(
-      get: {
-        guard let tone = tones.first(where: { $0.id == id }) else { return "" }
-        return name ? tone.displayName : tone.instruction
-      },
-      set: { value in
-        guard let index = tones.firstIndex(where: { $0.id == id }) else { return }
-        var tone = tones[index]
-        if name {
-          guard value != tone.displayName else { return }
-          tone.name = value
-        } else {
-          guard value != tone.instruction else { return }
-          tone.instruction = value
-        }
-        settingsStore.settings.writingTones[index] = tone
-      }
-    )
-  }
-
-  private func addTone() {
-    settingsStore.settings.writingTones.append(
-      WritingTone(name: L10n.isChinese ? "新语体" : "New Tone", instruction: "")
-    )
-  }
-
-  private func move(_ id: UUID, by offset: Int) {
-    var list = tones
-    guard let index = list.firstIndex(where: { $0.id == id }),
-      list.indices.contains(index + offset) else { return }
-    list.swapAt(index, index + offset)
-    settingsStore.settings.writingTones = list
-  }
-
-  private func delete(_ id: UUID) {
-    guard tones.count > 1 else { return }
-    var settings = settingsStore.settings
-    settings.writingTones.removeAll { $0.id == id }
-    if settings.writingToneID == id, let first = settings.writingTones.first {
-      settings.writingToneID = first.id
-    }
-    settingsStore.settings = settings
-  }
-
-  private func restoreDefaults() {
-    var settings = settingsStore.settings
-    settings.writingTones = WritingTone.defaults
-    if !settings.writingTones.contains(where: { $0.id == settings.writingToneID }) {
-      settings.writingToneID = WritingTone.coworkersID
-    }
-    settingsStore.settings = settings
   }
 }
 

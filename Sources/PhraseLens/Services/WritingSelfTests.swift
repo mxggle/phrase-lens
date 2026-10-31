@@ -1,15 +1,15 @@
 import CoreGraphics
 import Foundation
 
-/// Self tests for the writing shortcut's pop-up: the actions it runs, the
-/// tones `${tone}` stands for, the styles it remembers per app, settings
-/// saved before any of that was editable, and where it opens. All pure, so
-/// they run without another application to write into.
+/// Self tests for the writing shortcut's pop-up and for action options: the
+/// actions it runs, the options under them and how they reach the prompt,
+/// what each app remembers, settings saved by 0.15, and where the pop-up
+/// opens. All pure, so they run without another application to write into.
 enum WritingSelfTests {
   static func run() -> [String] {
     var failures: [String] = []
     promptFailures(&failures)
-    toneFailures(&failures)
+    optionFailures(&failures)
     settingsFailures(&failures)
     migrationFailures(&failures)
     geometryFailures(&failures)
@@ -20,8 +20,8 @@ enum WritingSelfTests {
   private static let polish = TranslationAction.builtIn(for: .polishing)
   private static let translate = TranslationAction.builtIn(for: .translate)
 
-  private static func tone(_ id: UUID) -> WritingTone {
-    WritingTone.defaults.first { $0.id == id }!
+  private static func option(_ id: UUID) -> ActionOption {
+    ActionOption.composeDefaults.first { $0.id == id }!
   }
 
   // MARK: - Prompts
@@ -31,16 +31,18 @@ enum WritingSelfTests {
     let japanese = LanguageCode.japanese.displayName
 
     func writing(_ action: TranslationAction, _ text: String = draft, target: LanguageCode = .japanese,
-      tone: String?) -> TranslationPrompt
+      option: ActionOption?) -> TranslationPrompt
     {
-      PromptBuilder.build(text: text, source: .auto, target: target, action: action, writing: true, tone: tone)
+      PromptBuilder.build(text: text, source: .auto, target: target, action: action, writing: true, option: option)
     }
 
-    let boss = writing(compose, tone: tone(WritingTone.bossID).instruction)
+    let boss = writing(compose, option: option(ActionOption.bossID))
     check(boss.user == "Draft:\n\n明天的会议我可能会晚到十分钟，你能帮我跟大家说一下吗？",
       "Compose should send the draft trimmed and unescaped, as the message to rewrite", &failures)
     check(boss.system.contains(japanese) && boss.system.contains("敬語"),
       "Compose for the boss should name the language and ask for keigo", &failures)
+    check(boss.system.hasSuffix(option(ActionOption.bossID).instruction),
+      "the picked option should be the last thing the system prompt says", &failures)
     check(boss.system.contains("never answer it"),
       "a draft that asks a question must be rewritten, not answered", &failures)
     check(boss.system.contains("no readings"),
@@ -49,81 +51,111 @@ enum WritingSelfTests {
       "Compose left a template variable unsubstituted", &failures)
     check(boss.priorTurns.isEmpty, "the writing prompt should be a single turn", &failures)
 
-    let friend = writing(compose, tone: tone(WritingTone.friendsID).instruction)
+    let friend = writing(compose, option: option(ActionOption.friendsID))
     check(friend.system.contains("タメ口") && !friend.system.contains("敬語"),
       "Compose for a friend should ask for タメ口 only", &failures)
-    let english = writing(compose, "收到，谢谢", target: .english, tone: tone(WritingTone.bossID).instruction)
+    let english = writing(compose, "收到，谢谢", target: .english, option: option(ActionOption.bossID))
     check(english.system.contains(LanguageCode.english.displayName) && !english.system.contains(japanese),
       "an English message should name English only", &failures)
 
-    for missing in [nil, "  \n"] as [String?] {
-      let neutral = writing(compose, tone: missing)
-      check(neutral.system.contains(WritingTone.neutralInstruction),
-        "a missing or blank tone should fall back to the neutral instruction", &failures)
-    }
+    let plain = writing(compose, option: nil)
+    check(!plain.system.contains("Additional instruction") && boss.system.hasPrefix(plain.system),
+      "with no option picked, the prompt should be the action's own, with nothing added", &failures)
+
+    // An option with no instruction still says something: its name.
+    let formal = ActionOption(name: "Formal", instruction: "  \n")
+    check(writing(compose, option: formal).system.hasSuffix("Additional instruction for this answer: Formal"),
+      "an option left without an instruction should add its name", &failures)
 
     // Compose is its template and nothing else: an edit is exactly what is sent.
     var edited = compose
-    edited.rolePrompt = "Write to ${tone} in ${targetLang}. Keep it short."
+    edited.rolePrompt = "Write in ${targetLang}. Keep it short."
     edited.commandPrompt = "${text}"
-    let editedPrompt = writing(edited, tone: "my client")
-    check(editedPrompt.system == "Write to my client in \(japanese). Keep it short."
+    let editedPrompt = writing(edited, option: nil)
+    check(editedPrompt.system == "Write in \(japanese). Keep it short."
         && editedPrompt.user == draft.trimmingCharacters(in: .whitespacesAndNewlines),
       "an edited Compose prompt was not sent as written", &failures)
 
-    let polished = writing(polish, "これはテストのです", tone: tone(WritingTone.bossID).instruction)
+    let polished = writing(polish, "これはテストのです", option: nil)
     check(polished.user.contains("これはテストのです") && !polished.user.contains("${")
-        && !polished.system.contains("${") && !polished.system.contains("敬語"),
-      "Polish in the writing pop-up should polish the draft and ignore the tone", &failures)
+        && !polished.system.contains("${") && !polished.system.contains("Additional instruction"),
+      "Polish in the writing pop-up should polish the draft as it is", &failures)
 
-    let custom = TranslationAction(
-      name: "Reply to client",
-      rolePrompt: "You write emails. Tone: ${tone}.",
-      commandPrompt: "${text}"
+    // Any action can have options, and a lookup sends the picked one too.
+    let rigorous = ActionOption(name: "Rigorous", instruction: "Keep terms exact; do not paraphrase.")
+    let lookup = PromptBuilder.build(
+      text: "hello", source: .english, target: .japanese, action: translate, option: rigorous
     )
-    let customPrompt = writing(custom, "${tone} is literal here", tone: "warm")
-    check(customPrompt.system == "You write emails. Tone: warm."
-        && customPrompt.user == "${tone} is literal here",
-      "a custom action should get ${tone}, and the draft should not be scanned for it", &failures)
-    let lookup = PromptBuilder.build(text: "hello", source: .english, target: .japanese, action: custom)
-    check(lookup.system.contains(WritingTone.neutralInstruction),
-      "an action using ${tone} outside the writing pop-up should get the neutral tone", &failures)
+    check(lookup.system.hasSuffix("Keep terms exact; do not paraphrase."),
+      "a translation with an option should end its system prompt with the option", &failures)
+    check(PromptBuilder.build(text: "hello", source: .english, target: .japanese, action: translate).system
+        == PromptBuilder.build(text: "hello", source: .english, target: .japanese, action: translate, option: nil).system,
+      "a translation without an option should be unchanged", &failures)
+    let custom = TranslationAction(name: "Email", rolePrompt: "", commandPrompt: "${text}")
+    check(PromptBuilder.build(text: "hi", source: .english, target: .japanese, action: custom, option: rigorous)
+        .system == "Additional instruction for this answer: Keep terms exact; do not paraphrase.",
+      "an action with no system prompt should get the option alone", &failures)
 
-    check(compose.usesTone && compose.usesTargetLanguage,
-      "Compose should show the tone chips and the language switch", &failures)
-    check(!polish.usesTone && !polish.usesTargetLanguage,
-      "Polish keeps the draft's language and tone, so it should show neither switch", &failures)
-    check(translate.usesTargetLanguage && !translate.usesTone,
-      "Translate should show the language switch only", &failures)
-    check(custom.usesTone && !custom.usesTargetLanguage,
-      "a custom action should show the switches its prompt asks for", &failures)
+    check(compose.usesTargetLanguage && !polish.usesTargetLanguage && translate.usesTargetLanguage,
+      "only the actions that write into a language should show the language switch", &failures)
     check(ResultCommand.defaults(for: .compose).first == .replace,
       "Compose's answer should be written back first", &failures)
   }
 
-  // MARK: - Tones
+  // MARK: - Options
 
-  private static func toneFailures(_ failures: inout [String]) {
-    check(WritingTone.defaults.map(\.id) == [WritingTone.friendsID, WritingTone.coworkersID, WritingTone.bossID],
-      "the shipped tones should be friends, coworkers, and boss, in that order", &failures)
-    let boss = tone(WritingTone.bossID)
+  private static func optionFailures(_ failures: inout [String]) {
+    check(compose.availableOptions.map(\.id)
+        == [ActionOption.friendsID, ActionOption.coworkersID, ActionOption.bossID]
+        && compose.defaultOption?.id == ActionOption.coworkersID,
+      "Compose should ship with friends, coworkers, and boss, coworkers picked", &failures)
+    check(TranslationAction.builtIns.filter { $0.mode != .compose }.allSatisfy {
+      $0.availableOptions.isEmpty && $0.defaultOption == nil
+    }, "every other built-in should start with no options", &failures)
+
+    let boss = option(ActionOption.bossID)
     check(["上司", "Boss"].contains(boss.displayName),
-      "a shipped tone should be named in the interface language", &failures)
+      "a shipped option should be named in the interface language", &failures)
     var renamed = boss
     renamed.name = "部長"
-    check(renamed.displayName == "部長", "a renamed tone should keep its new name", &failures)
+    check(renamed.displayName == "部長", "a renamed option should keep its new name", &failures)
     check(boss.styleName(in: .japanese) == "敬語"
-        && tone(WritingTone.coworkersID).styleName(in: .english) == "Professional",
-      "shipped tones should be named in the language being written", &failures)
+        && option(ActionOption.coworkersID).styleName(in: .english) == "Professional",
+      "shipped options should name their grammar in the language being written", &failures)
     var reworded = boss
     reworded.instruction = "very polite"
-    check(reworded.styleName(in: .japanese) == nil && renamed.styleName(in: .japanese) == "敬語",
-      "only an edited instruction should drop the grammar name", &failures)
-    check(WritingTone.toneID(forLegacyRegister: "casual") == WritingTone.friendsID
-        && WritingTone.toneID(forLegacyRegister: "polite") == WritingTone.coworkersID
-        && WritingTone.toneID(forLegacyRegister: "formal") == WritingTone.bossID
-        && WritingTone.toneID(forLegacyRegister: "royal") == nil,
-      "0.15 registers should map onto the shipped tones", &failures)
+    check(reworded.styleName(in: .japanese) == nil && renamed.styleName(in: .japanese) == "敬語"
+        && ActionOption(name: "Formal", instruction: "").styleName(in: .japanese) == nil,
+      "only a shipped, unedited instruction should name its grammar", &failures)
+    check(ActionOption.id(forLegacyRegister: "casual") == ActionOption.friendsID
+        && ActionOption.id(forLegacyRegister: "polite") == ActionOption.coworkersID
+        && ActionOption.id(forLegacyRegister: "formal") == ActionOption.bossID
+        && ActionOption.id(forLegacyRegister: "royal") == nil,
+      "0.15 registers should map onto Compose's options", &failures)
+
+    // Options are part of the action, so they are saved and restored with it.
+    do {
+      var custom = TranslationAction(name: "Translate formally", commandPrompt: "${text}")
+      custom.options = [ActionOption(name: "Formal", instruction: "Use formal written language.")]
+      custom.defaultOptionID = custom.options?.first?.id
+      let decoded = try JSONDecoder().decode(TranslationAction.self, from: JSONEncoder().encode(custom))
+      check(decoded == custom, "an action's options did not survive a round trip", &failures)
+      // An action saved before options existed has none.
+      var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(translate)) as! [String: Any]
+      legacy.removeValue(forKey: "options")
+      legacy.removeValue(forKey: "defaultOptionID")
+      let old = try JSONDecoder().decode(
+        TranslationAction.self, from: JSONSerialization.data(withJSONObject: legacy)
+      )
+      check(old.availableOptions.isEmpty && old.defaultOption == nil,
+        "an action saved before options should open with none", &failures)
+    } catch {
+      failures.append("action options coding threw: \(error)")
+    }
+
+    var gone = compose
+    gone.defaultOptionID = UUID()
+    check(gone.defaultOption == nil, "a default option that was deleted should count as none", &failures)
 
     check(WritingStyle.languageOptions(including: [.english, .japanese]) == [.japanese, .english],
       "the pop-up should offer Japanese and English", &failures)
@@ -136,22 +168,22 @@ enum WritingSelfTests {
   private static func settingsFailures(_ failures: inout [String]) {
     var settings = AppSettings()
     check(settings.writingShowsPreview, "the writing shortcut should preview by default", &failures)
-    check(settings.writingActionIDs == [compose.id, polish.id] && settings.writingTones == WritingTone.defaults,
-      "the pop-up should start with Compose, Polish, and the shipped tones", &failures)
+    check(settings.writingActionIDs == [compose.id, polish.id],
+      "the pop-up should start with Compose and Polish", &failures)
     check(settings.installedBuiltInActionIDs.contains(compose.id) && settings.hiddenActionIDs == [compose.id],
       "Compose should come installed, and off the lookup pop-up", &failures)
     check(settings.writingActions(customActions: []).map(\.id) == [compose.id, polish.id],
       "the writing pop-up should open its tabs on Compose", &failures)
     check(settings.writingStyle(forApp: "com.tinyspeck.slackmacgap")
-        == WritingStyle(actionID: compose.id, language: .english, toneID: WritingTone.coworkersID),
-      "an unseen app should open on Compose, in English, for coworkers", &failures)
+        == WritingStyle(actionID: compose.id, language: .english),
+      "an unseen app should open on Compose, in English", &failures)
 
-    let custom = TranslationAction(name: "Email", rolePrompt: "${tone}", commandPrompt: "${text}")
+    let custom = TranslationAction(name: "Email", rolePrompt: "", commandPrompt: "${text}")
     settings.writingActionIDs.insert(custom.id)
     check(settings.writingActions(customActions: [custom]).map(\.id) == [compose.id, polish.id, custom.id],
       "a custom action switched on for writing should join the pop-up", &failures)
 
-    let line = WritingStyle(actionID: compose.id, language: .japanese, toneID: WritingTone.friendsID)
+    let line = WritingStyle(actionID: compose.id, language: .japanese)
     check(!settings.remembersWritingStyle(line, forApp: "jp.naver.line.mac"),
       "a style never used should not count as remembered", &failures)
     settings.rememberWritingStyle(line, forApp: "jp.naver.line.mac")
@@ -161,25 +193,45 @@ enum WritingSelfTests {
       "an app should reopen with the style last used in it", &failures)
     check(settings.writingStyle(forApp: "com.tinyspeck.slackmacgap") == line,
       "an unseen app should fall back to the style used last anywhere", &failures)
-    let slack = WritingStyle(actionID: polish.id, language: .japanese, toneID: WritingTone.bossID)
+    let slack = WritingStyle(actionID: polish.id, language: .japanese)
     settings.rememberWritingStyle(slack, forApp: "com.tinyspeck.slackmacgap")
     check(settings.writingStyle(forApp: "jp.naver.line.mac") == line,
       "a style chosen in one app should not change another app's", &failures)
     check(settings.writingStyle(forApp: "com.tinyspeck.slackmacgap").actionID == polish.id,
       "an app should reopen on the action last used in it", &failures)
-    check(!settings.remembersWritingStyle(slack, forApp: "com.apple.MobileSMS"),
-      "an app that was never used should still need its style filed", &failures)
     check(settings.writingStyle(forApp: nil) == slack,
       "an app without a bundle identifier should use the style used last", &failures)
 
-    let client = WritingTone(name: "Clients", instruction: "warm and formal, to a client")
-    settings.writingTones.append(client)
-    check(settings.writingTone(client.id) == client, "an added tone should be found by its identifier", &failures)
-    check(settings.writingTone(UUID())?.id == WritingTone.friendsID,
-      "a deleted tone should give way to the first one", &failures)
-    settings.writingToneID = WritingTone.bossID
-    check(settings.lastWritingToneInstruction == tone(WritingTone.bossID).instruction,
-      "lookups should get the tone used last", &failures)
+    // The option picked under each action, per app.
+    let lineApp = "jp.naver.line.mac"
+    let slackApp = "com.tinyspeck.slackmacgap"
+    check(settings.chosenOption(for: compose, inApp: lineApp)?.id == ActionOption.coworkersID,
+      "an action should start on its default option", &failures)
+    check(settings.chosenOption(for: translate, inApp: lineApp) == nil,
+      "an action without options should have none picked", &failures)
+    check(!settings.remembersOption(ActionOption.friendsID, for: compose.id, inApp: lineApp),
+      "an option never picked should not count as remembered", &failures)
+    settings.rememberOption(ActionOption.friendsID, for: compose.id, inApp: lineApp)
+    check(settings.remembersOption(ActionOption.friendsID, for: compose.id, inApp: lineApp),
+      "an option just picked should count as remembered, so it is not written again", &failures)
+    check(settings.chosenOption(for: compose, inApp: lineApp)?.id == ActionOption.friendsID,
+      "an app should reopen on the option last picked in it", &failures)
+    check(settings.chosenOption(for: compose, inApp: slackApp)?.id == ActionOption.friendsID,
+      "an app with no choice of its own should take the one picked last anywhere", &failures)
+    settings.rememberOption(ActionOption.bossID, for: compose.id, inApp: slackApp)
+    check(settings.chosenOption(for: compose, inApp: lineApp)?.id == ActionOption.friendsID
+        && settings.chosenOption(for: compose, inApp: slackApp)?.id == ActionOption.bossID,
+      "an option picked in one app should not change another app's", &failures)
+    settings.rememberOption(nil, for: compose.id, inApp: slackApp)
+    check(settings.chosenOption(for: compose, inApp: slackApp) == nil
+        && settings.chosenOption(for: compose, inApp: nil) == nil,
+      "taking an option off should be remembered as none picked", &failures)
+    check(settings.chosenOption(for: polish, inApp: slackApp) == nil,
+      "a choice for one action should not touch another", &failures)
+    var trimmed = compose
+    trimmed.options = trimmed.options?.filter { $0.id != ActionOption.friendsID }
+    check(settings.chosenOption(for: trimmed, inApp: lineApp)?.id == ActionOption.coworkersID,
+      "an option deleted since it was picked should give way to the default", &failures)
 
     do {
       let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
@@ -201,6 +253,14 @@ enum WritingSelfTests {
     readded.addActionTemplates([compose.id], customActions: [])
     check(readded.installedBuiltInActionIDs.contains(compose.id) && readded.hiddenActionIDs == [compose.id],
       "Compose added back from the templates should stay off the lookup pop-up", &failures)
+
+    // A built-in whose options were edited is saved as an override.
+    var edited = AppSettings()
+    var formalTranslate = translate
+    formalTranslate.options = [ActionOption(name: "Formal", instruction: "Formal and written.")]
+    edited.builtInActionOverrides = [formalTranslate]
+    check(edited.resolvedBuiltInActions.first { $0.id == translate.id }?.availableOptions.map(\.name) == ["Formal"],
+      "options added to a built-in should be kept as its override", &failures)
   }
 
   // MARK: - Settings from 0.15
@@ -209,7 +269,7 @@ enum WritingSelfTests {
     do {
       // 0.15 had a fixed register and no Compose action.
       var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(AppSettings())) as! [String: Any]
-      for key in ["writingActionIDs", "writingTones", "writingActionID", "writingToneID"] {
+      for key in ["writingActionIDs", "writingActionID", "actionOptionChoices"] {
         legacy.removeValue(forKey: key)
       }
       legacy["writingRegister"] = "formal"
@@ -222,19 +282,27 @@ enum WritingSelfTests {
         AppSettings.self,
         from: JSONSerialization.data(withJSONObject: legacy)
       )
-      check(migrated.writingToneID == WritingTone.bossID && migrated.writingActionID == compose.id,
-        "0.15's register should become the matching tone, on Compose", &failures)
-      check(migrated.writingStylesByApp["jp.naver.line.mac"]
-          == WritingStyle(actionID: compose.id, language: .japanese, toneID: WritingTone.friendsID),
-        "a register 0.15 remembered for an app should become the matching tone", &failures)
+      check(migrated.chosenOption(for: compose, inApp: "com.tinyspeck.slackmacgap")?.id == ActionOption.bossID
+          && migrated.writingActionID == compose.id,
+        "0.15's register should become Compose's matching option", &failures)
+      check(migrated.chosenOption(for: compose, inApp: "jp.naver.line.mac")?.id == ActionOption.friendsID
+          && migrated.writingStylesByApp["jp.naver.line.mac"]
+            == WritingStyle(actionID: compose.id, language: .japanese),
+        "a register 0.15 remembered for an app should become that app's option", &failures)
       check(migrated.installedBuiltInActionIDs.contains(compose.id) && migrated.hiddenActionIDs == [compose.id],
         "upgrading should install Compose for the writing shortcut, off the lookup pop-up", &failures)
       check(migrated.orderedActions(customActions: []).map(\.id)
           == [translate.id, TranslationAction.builtIn(for: .definition).id, compose.id, polish.id],
         "Compose should join the action list beside Polish", &failures)
-      check(migrated.writingActions(customActions: []).map(\.id) == [compose.id, polish.id]
-          && migrated.writingTones == WritingTone.defaults,
-        "upgrading should give the pop-up Compose, Polish, and the shipped tones", &failures)
+      check(migrated.writingActions(customActions: []).map(\.id) == [compose.id, polish.id],
+        "upgrading should give the pop-up Compose and Polish", &failures)
+
+      // Once saved, the migrated choices are the choices: a later pick wins.
+      var picked = migrated
+      picked.rememberOption(nil, for: compose.id, inApp: "jp.naver.line.mac")
+      let reread = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(picked))
+      check(reread.chosenOption(for: compose, inApp: "jp.naver.line.mac") == nil,
+        "a register from 0.15 should not override a choice made since", &failures)
 
       // Compose deleted after the upgrade stays deleted.
       var deleted = migrated
@@ -248,14 +316,14 @@ enum WritingSelfTests {
 
       // Settings from before the compose pop-up open it with its defaults.
       var older = try JSONSerialization.jsonObject(with: JSONEncoder().encode(AppSettings())) as! [String: Any]
-      for key in ["writingActionIDs", "writingTones", "writingActionID", "writingToneID",
-        "writingStylesByApp", "writingShowsPreview"]
+      for key in ["writingActionIDs", "writingActionID", "writingStylesByApp", "writingShowsPreview",
+        "actionOptionChoices"]
       {
         older.removeValue(forKey: key)
       }
       let fresh = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: older))
-      check(fresh.writingToneID == WritingTone.coworkersID && fresh.writingStylesByApp.isEmpty
-          && fresh.writingShowsPreview,
+      check(fresh.actionOptionChoices.isEmpty && fresh.writingStylesByApp.isEmpty && fresh.writingShowsPreview
+          && fresh.chosenOption(for: compose, inApp: nil)?.id == ActionOption.coworkersID,
         "settings saved before the compose pop-up should open it with its defaults", &failures)
     } catch {
       failures.append("writing settings migration threw: \(error)")
@@ -266,7 +334,7 @@ enum WritingSelfTests {
 
   private static func geometryFailures(_ failures: inout [String]) {
     let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
-    let size = CGSize(width: 460, height: 360)
+    let size = CGSize(width: 480, height: 360)
     let chatBox = CGRect(x: 300, y: 40, width: 700, height: 60)
     let above = ComposePanelGeometry.frame(size: size, anchor: chatBox, visibleFrame: screen)
     check(above.minY > chatBox.maxY && above.minX == chatBox.minX,

@@ -8,13 +8,21 @@ struct ComposeDraft: Equatable, Sendable {
   var error: String?
 }
 
+/// What one answer was asked for: an action, a language when the action
+/// writes into one, and the option picked under it.
+struct ComposeRequestKey: Hashable, Sendable {
+  var actionID: UUID
+  var language: LanguageCode
+  var optionID: UUID?
+}
+
 /// The writing shortcut's pop-up: the message drafted in another app, an
 /// action's answer for it, and the write back over the draft.
 ///
 /// The actions are the reader's own, from the action list: Compose and
 /// Polish to begin with, and any other action switched on for writing. An
-/// action that uses `${tone}` gets the tone chips, and one that uses
-/// `${targetLang}` gets the language switch.
+/// action with options gets a row of them, and one that uses `${targetLang}`
+/// gets the language switch.
 ///
 /// Kept apart from the translator's own model on purpose. Writing a message
 /// must not clear what the main window is showing, and a lookup must not
@@ -23,12 +31,14 @@ struct ComposeDraft: Equatable, Sendable {
 final class ComposeModel: ObservableObject {
   @Published private(set) var sourceText = ""
   @Published private(set) var style = WritingStyle(language: .japanese)
-  /// Every action and style tried on this draft, so switching back to one is instant.
-  @Published private(set) var drafts: [WritingStyle: ComposeDraft] = [:]
+  /// The option picked under the current action, or nil for none.
+  @Published private(set) var currentOption: ActionOption?
+  /// Every action, language and option tried on this draft, so switching
+  /// back to one is instant.
+  @Published private(set) var drafts: [ComposeRequestKey: ComposeDraft] = [:]
   /// The actions on offer, read once per draft so a settings change cannot
   /// pull the tab that is on screen out from under the reader.
   @Published private(set) var actions: [TranslationAction] = []
-  @Published private(set) var tones: [WritingTone] = []
   /// Fixed when the draft is read, so picking Japanese does not take away a
   /// third language the pop-up opened with.
   @Published private(set) var languageOptions = WritingStyle.languageOptions(including: [])
@@ -49,7 +59,7 @@ final class ComposeModel: ObservableObject {
   private let client = TranslationClient()
   private let accessibility = AccessibilityService()
   private var capture: ComposeCapture?
-  private var tasks: [WritingStyle: Task<Void, Never>] = [:]
+  private var tasks: [ComposeRequestKey: Task<Void, Never>] = [:]
 
   init(settingsStore: SettingsStore) {
     self.settingsStore = settingsStore
@@ -59,9 +69,11 @@ final class ComposeModel: ObservableObject {
   var hasDraft: Bool { capture != nil }
   var applicationName: String? { capture?.target.applicationName }
   var currentAction: TranslationAction? { actions.first { $0.id == style.actionID } }
-  var showsTones: Bool { currentAction?.usesTone == true && !tones.isEmpty }
+  /// The current action's options, shown as a row under the tabs.
+  var options: [ActionOption] { currentAction?.availableOptions ?? [] }
   var showsLanguages: Bool { currentAction?.usesTargetLanguage == true }
-  var currentDraft: ComposeDraft? { drafts[requestKey(for: style)] }
+  var currentDraft: ComposeDraft? { drafts[currentKey] }
+  private var currentKey: ComposeRequestKey { requestKey(for: style, option: currentOption) }
   var isStreaming: Bool { currentDraft?.isStreaming == true }
 
   /// The answer in the current style, as the reader has edited it. Edits
@@ -69,7 +81,7 @@ final class ComposeModel: ObservableObject {
   var translation: String {
     get { currentDraft?.text ?? "" }
     set {
-      let key = requestKey(for: style)
+      let key = currentKey
       guard var draft = drafts[key], !draft.isStreaming, draft.text != newValue else { return }
       draft.text = newValue
       drafts[key] = draft
@@ -136,14 +148,13 @@ final class ComposeModel: ObservableObject {
     let settings = settingsStore.settings
     self.capture = capture
     self.actions = actions
-    tones = settings.writingTones
     sourceText = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
     var style = settings.writingStyle(forApp: capture.bundleIdentifier)
-    // An action or tone deleted since this app last used it gives way to
-    // the first one, rather than to a pop-up with nothing chosen.
+    // An action deleted since this app last used it gives way to the first
+    // one, rather than to a pop-up with nothing chosen.
     if !actions.contains(where: { $0.id == style.actionID }) { style.actionID = actions[0].id }
-    if let tone = settings.writingTone(style.toneID) { style.toneID = tone.id }
     self.style = style
+    currentOption = chosenOption(for: style.actionID)
     languageOptions = WritingStyle.languageOptions(
       including: [settings.writingTargetLanguage, style.language]
     )
@@ -153,7 +164,7 @@ final class ComposeModel: ObservableObject {
     isAccessibilityPermissionMissing = false
     replacesWhenFinished = false
     sessionID = UUID()
-    request(style)
+    request(style, option: currentOption)
     ComposePanelCoordinator.shared.show(model: self, anchor: capture.anchorRect)
   }
 
@@ -204,19 +215,19 @@ final class ComposeModel: ObservableObject {
   func select(action id: UUID) {
     var next = style
     next.actionID = id
-    choose(next)
+    choose(next, option: chosenOption(for: id))
   }
 
-  func select(tone id: UUID) {
-    var next = style
-    next.toneID = id
-    choose(next)
+  /// Clicking an option picks it; clicking the picked one again takes it off.
+  func toggle(option id: UUID) {
+    guard capture != nil, let option = options.first(where: { $0.id == id }) else { return }
+    pick(currentOption?.id == id ? nil : option)
   }
 
   func select(_ language: LanguageCode) {
     var next = style
     next.language = language
-    choose(next)
+    choose(next, option: currentOption)
   }
 
   /// The action at a position in the tab row, for ⌘1 to ⌘9.
@@ -230,10 +241,15 @@ final class ComposeModel: ObservableObject {
     select(action: actions[Self.wrapped(index, backwards: backwards, count: actions.count)].id)
   }
 
-  func cycleTone(backwards: Bool = false) {
-    guard showsTones else { return }
-    let index = tones.firstIndex { $0.id == style.toneID } ?? 0
-    select(tone: tones[Self.wrapped(index, backwards: backwards, count: tones.count)].id)
+  /// Tab and ⇧Tab: the next option along, starting from the first when
+  /// none is picked.
+  func cycleOption(backwards: Bool = false) {
+    guard capture != nil, !options.isEmpty else { return }
+    guard let index = options.firstIndex(where: { $0.id == currentOption?.id }) else {
+      pick(backwards ? options[options.count - 1] : options[0])
+      return
+    }
+    pick(options[Self.wrapped(index, backwards: backwards, count: options.count)])
   }
 
   func cycleLanguage() {
@@ -249,18 +265,34 @@ final class ComposeModel: ObservableObject {
   /// Asks again for the current style, for a different wording.
   func regenerate() {
     guard capture != nil, !isStreaming else { return }
-    drafts[requestKey(for: style)] = nil
-    request(style)
+    drafts[currentKey] = nil
+    request(style, option: currentOption)
   }
 
-  private func choose(_ next: WritingStyle) {
-    guard capture != nil, next != style else { return }
+  private func choose(_ next: WritingStyle, option: ActionOption?) {
+    guard capture != nil, next != style || option != currentOption else { return }
     style = next
+    currentOption = option
     // Pressed Enter early, then changed the style: the wait was for the
     // answer that is no longer on screen.
     replacesWhenFinished = false
     remember(next)
-    request(next)
+    request(next, option: option)
+  }
+
+  private func pick(_ option: ActionOption?) {
+    guard option != currentOption else { return }
+    let app = capture?.bundleIdentifier
+    if !settingsStore.settings.remembersOption(option?.id, for: style.actionID, inApp: app) {
+      settingsStore.settings.rememberOption(option?.id, for: style.actionID, inApp: app)
+    }
+    choose(style, option: option)
+  }
+
+  /// The option an action starts on in the app being written in.
+  private func chosenOption(for actionID: UUID) -> ActionOption? {
+    guard let action = actions.first(where: { $0.id == actionID }) else { return nil }
+    return settingsStore.settings.chosenOption(for: action, inApp: capture?.bundleIdentifier)
   }
 
   /// Files a style as the one used in this app. Settings are only written
@@ -271,20 +303,21 @@ final class ComposeModel: ObservableObject {
     settingsStore.settings.rememberWritingStyle(style, forApp: app)
   }
 
-  /// The style with whatever the action ignores taken out, so Polish asked
-  /// for the boss and Polish asked for a friend are the same request.
-  private func requestKey(for style: WritingStyle) -> WritingStyle {
-    guard let action = actions.first(where: { $0.id == style.actionID }) else { return style }
-    var key = style
-    if !action.usesTone || tones.isEmpty { key.toneID = WritingTone.coworkersID }
-    if !action.usesTargetLanguage { key.language = .auto }
-    return key
+  /// The request with whatever the action ignores taken out, so Polish
+  /// asked in Japanese and Polish asked in English are the same request.
+  private func requestKey(for style: WritingStyle, option: ActionOption?) -> ComposeRequestKey {
+    let action = actions.first { $0.id == style.actionID }
+    return ComposeRequestKey(
+      actionID: style.actionID,
+      language: action?.usesTargetLanguage == false ? .auto : style.language,
+      optionID: option?.id
+    )
   }
 
   // MARK: - Asking
 
-  private func request(_ style: WritingStyle) {
-    let key = requestKey(for: style)
+  private func request(_ style: WritingStyle, option: ActionOption?) {
+    let key = requestKey(for: style, option: option)
     if let draft = drafts[key], draft.error == nil { return }
     guard let action = actions.first(where: { $0.id == style.actionID }) else { return }
     tasks[key]?.cancel()
@@ -298,7 +331,7 @@ final class ComposeModel: ObservableObject {
       target: style.language,
       action: action,
       writing: true,
-      tone: tones.first { $0.id == style.toneID }?.instruction
+      option: option
     )
     let session = sessionID
 
@@ -333,14 +366,14 @@ final class ComposeModel: ObservableObject {
         let text = WriteBackComposer.clean(streamed)
         guard !text.isEmpty else { throw TranslationError.invalidResponse }
         drafts[key] = ComposeDraft(text: text, isStreaming: false)
-        if key == requestKey(for: self.style), replacesWhenFinished {
+        if key == currentKey, replacesWhenFinished {
           replacesWhenFinished = false
           replace()
         }
       } catch {
         guard sessionID == session, !Task.isCancelled else { return }
         drafts[key] = ComposeDraft(text: streamed, isStreaming: false, error: error.localizedDescription)
-        if key == requestKey(for: self.style) { replacesWhenFinished = false }
+        if key == currentKey { replacesWhenFinished = false }
       }
     }
   }

@@ -261,7 +261,7 @@ private struct ComposePanelBody: View {
           ActionTabBar(actions: model.actions, selection: actionSelection, size: .compact)
             .frame(maxWidth: .infinity, alignment: .leading)
           sourceLine
-          if model.showsTones || model.showsLanguages {
+          if !model.options.isEmpty || model.showsLanguages {
             optionsRow
           }
         }
@@ -345,7 +345,7 @@ private struct ComposePanelBody: View {
     .accessibilityHidden(true)
   }
 
-  // MARK: - Draft, tone and language
+  // MARK: - Draft, options and language
 
   private var sourceLine: some View {
     HStack(alignment: .top, spacing: AppSpacing.sm) {
@@ -368,16 +368,14 @@ private struct ComposePanelBody: View {
 
   private var optionsRow: some View {
     HStack(spacing: AppSpacing.sm) {
-      if model.showsTones {
-        // A long list of tones scrolls rather than pushing the language
-        // switch off the edge.
-        ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: AppSpacing.xs) {
-            ForEach(model.tones) { tone in
-              toneChip(tone)
-            }
-          }
-        }
+      if !model.options.isEmpty {
+        ActionOptionsBar(
+          options: model.options,
+          selectedID: model.currentOption?.id,
+          language: model.showsLanguages ? model.style.language : nil,
+          showsTabHint: true,
+          toggle: { model.toggle(option: $0) }
+        )
       }
       Spacer(minLength: 0)
       if model.showsLanguages {
@@ -385,41 +383,6 @@ private struct ComposePanelBody: View {
       }
     }
     .frame(height: AppMetrics.controlHeightSmall)
-  }
-
-  private func toneChip(_ tone: WritingTone) -> some View {
-    let isOn = tone.id == model.style.toneID
-    let styleName = tone.styleName(in: model.style.language)
-    let label = [tone.displayName, styleName].compactMap { $0 }.joined(separator: " · ")
-    return Button {
-      model.select(tone: tone.id)
-    } label: {
-      HStack(spacing: AppSpacing.xs + 1) {
-        Text(tone.displayName)
-          .font(AppFont.label)
-          .foregroundStyle(isOn ? palette.foreground : palette.secondaryForeground)
-        if let styleName {
-          Text(styleName)
-            .font(AppFont.caption)
-            .foregroundStyle(palette.mutedForeground)
-        }
-      }
-      .lineLimit(1)
-      .fixedSize()
-      .padding(.horizontal, AppSpacing.sm + 1)
-      .frame(height: AppMetrics.controlHeightSmall)
-      .background(isOn ? palette.accentSoft : Color.clear, in: Capsule(style: .continuous))
-      .overlay {
-        Capsule(style: .continuous)
-          .strokeBorder(isOn ? palette.accent.opacity(0.35) : palette.border, lineWidth: 1)
-      }
-      .contentShape(Capsule(style: .continuous))
-    }
-    .buttonStyle(.plain)
-    .help("\(label)\n\(tone.instruction)\n\(L10n.isChinese ? "⇥ 切换语体" : "Tab to switch")")
-    .accessibilityLabel(label)
-    .accessibilityAddTraits(isOn ? [.isSelected] : [])
-    .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isOn)
   }
 
   private var languagePicker: some View {
@@ -483,9 +446,9 @@ private struct ComposePanelBody: View {
         }
         .onKeyPress(keys: [.tab], phases: .down) { press in
           // A tab character has no place in a chat message, so Tab is only
-          // ever the tone switch, and does nothing for an action without one.
+          // ever the option switch, and does nothing for an action without any.
           guard !isComposingText else { return .ignored }
-          model.cycleTone(backwards: press.modifiers.contains(.shift))
+          model.cycleOption(backwards: press.modifiers.contains(.shift))
           return .handled
         }
         .onKeyPress(keys: [.escape], phases: .down) { _ in
@@ -548,7 +511,7 @@ private struct ComposePanelBody: View {
   /// when the footer runs out of room.
   private var keyHints: [String] {
     var hints = [L10n.isChinese ? "↩ 替换" : "↩ replace"]
-    if model.showsTones { hints.append(L10n.isChinese ? "⇥ 语体" : "⇥ tone") }
+    if !model.options.isEmpty { hints.append(L10n.isChinese ? "⇥ 选项" : "⇥ option") }
     if model.showsLanguages { hints.append(L10n.isChinese ? "⌘L 语言" : "⌘L language") }
     if model.actions.count > 1 {
       let last = min(model.actions.count, 9)

@@ -63,6 +63,9 @@ final class AppModel: ObservableObject {
   @Published var outputText = ""
   @Published private(set) var outputRendering: OutputRendering = .plain
   @Published var selectedActionID = TranslationAction.builtIns[0].id
+  /// The app the current selection was read from, so an option picked
+  /// there is remembered for that app.
+  @Published private(set) var selectionBundleIdentifier: String?
   @Published var selectionContext: String?
   /// What the last selection capture managed to read. Drives the context
   /// badge, and gives a reader reporting "it did not pick up the sentence"
@@ -233,6 +236,33 @@ final class AppModel: ObservableObject {
     )
   }
 
+  /// The option picked under the selected action, for the text on screen.
+  var selectedOption: ActionOption? {
+    selectedAction.flatMap { settingsStore.settings.chosenOption(for: $0, inApp: optionApp) }
+  }
+
+  /// Where an option choice is filed: the app a selection came from, or
+  /// nowhere in particular for text typed or pasted into the window.
+  private var optionApp: String? {
+    inputSource == .selection ? selectionBundleIdentifier : nil
+  }
+
+  /// Clicking an option under the selected action picks it, and clicking the
+  /// picked one takes it off. Either way the text on screen is asked again
+  /// when `retranslate` says so, as picking another action does.
+  func toggleOption(_ id: UUID, retranslate: Bool = true) {
+    guard let action = selectedAction, action.availableOptions.contains(where: { $0.id == id }) else {
+      return
+    }
+    let next = selectedOption?.id == id ? nil : id
+    if !settingsStore.settings.remembersOption(next, for: action.id, inApp: optionApp) {
+      settingsStore.settings.rememberOption(next, for: action.id, inApp: optionApp)
+    }
+    if retranslate, !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      translate()
+    }
+  }
+
   var selectedAction: TranslationAction? {
     visibleActions.first(where: { $0.id == selectedActionID })
       ?? settingsStore.settings.resolvedDefaultAction(customActions: customActions)
@@ -348,13 +378,14 @@ final class AppModel: ObservableObject {
     let target = settings.targetLanguage
     outputRendering = PromptBuilder.expectsMarkdown(action, text: text) ? .markdown : .plain
     let context = selectionContext
+    let option = settings.chosenOption(for: action, inApp: optionApp)
     let prompt = PromptBuilder.build(
       text: text,
       source: source,
       target: target,
       action: action,
       selectionContext: context,
-      tone: settings.lastWritingToneInstruction,
+      option: option,
       memory: learning.memory(for: text, language: source)
     )
     let connection: AIConnection
@@ -364,7 +395,7 @@ final class AppModel: ObservableObject {
     statusMessage = L10n.isChinese
       ? "正在连接 \(connection.name)…"
       : "Connecting to \(connection.name)…"
-    let resultRoute = ResultRoute(connectionID: connection.id, configuration: configuration, credentialRevision: connection.credentialRevision, proxy: settings.proxy, action: action, source: source, target: target, text: text, selectionContext: context)
+    let resultRoute = ResultRoute(connectionID: connection.id, configuration: configuration, credentialRevision: connection.credentialRevision, proxy: settings.proxy, action: action, source: source, target: target, text: text, selectionContext: context, option: option)
     currentResultRoute = resultRoute
     let proxy = settings.proxy
 
@@ -707,7 +738,7 @@ final class AppModel: ObservableObject {
       base: PromptBuilder.build(
         text: route.text, source: route.source, target: route.target, action: route.action,
         selectionContext: route.selectionContext,
-        tone: settingsStore.settings.lastWritingToneInstruction
+        option: route.option
       ),
       answer: outputText, turns: followUps, target: route.target
     )
@@ -1479,6 +1510,8 @@ final class AppModel: ObservableObject {
     // before, so fall back to that instead of inspecting ourselves.
     let sourceApplication =
       sourceProcessIdentifier ?? ActiveApplicationTracker.shared.lastExternalProcessIdentifier
+    selectionBundleIdentifier = sourceApplication
+      .flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
 
     Task {
       do {
@@ -1561,7 +1594,7 @@ final class AppModel: ObservableObject {
   }
 
   /// The writing shortcut with the pop-up turned off: the action, language,
-  /// and tone the pop-up would open with in this app run straight away, and
+  /// and option the pop-up would open with in this app run straight away, and
   /// the answer replaces the text in the field.
   func translateFocusedInput(sourceProcessIdentifier: pid_t? = nil) {
     let settings = settingsStore.settings
@@ -1576,7 +1609,7 @@ final class AppModel: ObservableObject {
       .flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
     let style = settings.writingStyle(forApp: bundleIdentifier)
     let action = actions.first { $0.id == style.actionID } ?? actions[0]
-    let tone = settings.writingTone(style.toneID)?.instruction
+    let option = settings.chosenOption(for: action, inApp: bundleIdentifier)
     Task {
       do {
         let original = try accessibility.currentEditableText()
@@ -1587,7 +1620,7 @@ final class AppModel: ObservableObject {
           target: style.language,
           action: action,
           writing: true,
-          tone: tone
+          option: option
         )
         let (connection, configuration) = try settingsStore.resolve(action)
         let (key, accountId) = try await settingsStore.validCredentials(for: connection, proxy: settings.proxy)

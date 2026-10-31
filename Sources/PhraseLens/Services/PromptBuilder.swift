@@ -4,6 +4,9 @@ import Foundation
 enum PromptBuilder {
   static let maximumSelectionContextLength = 1_600
 
+  /// The request for one action on one text. `option` is the choice picked
+  /// under the action in a pop-up, such as Compose's Boss; its instruction
+  /// goes at the end of the system prompt, whatever the prompt says.
   static func build(
     text: String,
     source: LanguageCode,
@@ -11,17 +14,48 @@ enum PromptBuilder {
     action: TranslationAction,
     selectionContext: String? = nil,
     writing: Bool = false,
-    tone: String? = nil,
+    option: ActionOption? = nil,
     memory: LearnerMemory? = nil
+  ) -> TranslationPrompt {
+    appending(
+      option,
+      to: prompt(
+        text: text,
+        source: source,
+        target: target,
+        action: action,
+        selectionContext: selectionContext,
+        writing: writing,
+        memory: memory
+      )
+    )
+  }
+
+  /// The option's instruction after everything else the system prompt says,
+  /// so it is the last word on how to answer.
+  static func appending(_ option: ActionOption?, to prompt: TranslationPrompt) -> TranslationPrompt {
+    guard let instruction = option?.promptText, !instruction.isEmpty else { return prompt }
+    let note = "Additional instruction for this answer: \(instruction)"
+    return TranslationPrompt(
+      system: prompt.system.isEmpty ? note : "\(prompt.system)\n\n\(note)",
+      user: prompt.user,
+      priorTurns: prompt.priorTurns
+    )
+  }
+
+  private static func prompt(
+    text: String,
+    source: LanguageCode,
+    target: LanguageCode,
+    action: TranslationAction,
+    selectionContext: String?,
+    writing: Bool,
+    memory: LearnerMemory?
   ) -> TranslationPrompt {
     let sourceName = source == .auto ? "the detected source language" : source.displayName
     let targetName = target.displayName
     let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let context = boundedContext(selectionContext ?? "", around: cleanText)
-    // A tone left blank in Settings would leave the prompt asking for
-    // "this tone:" and nothing after it.
-    let tone = tone.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-      ?? WritingTone.neutralInstruction
 
     // Compose is its template and nothing else, so what Settings shows is
     // exactly what is sent, edited or not.
@@ -31,16 +65,14 @@ enum PromptBuilder {
         source: sourceName,
         target: targetName,
         text: cleanText,
-        context: context,
-        tone: tone
+        context: context
       )
       var command = substitute(
         action.commandPrompt,
         source: sourceName,
         target: targetName,
         text: cleanText,
-        context: context,
-        tone: tone
+        context: context
       )
       if action.outputMarkdown {
         command = "Return valid Markdown.\n\n\(command)"
@@ -84,14 +116,13 @@ enum PromptBuilder {
     let role = action.rolePrompt == factory.rolePrompt
       ? defaultPrompt.system
       : substitute(
-        action.rolePrompt, source: sourceName, target: targetName, text: cleanText, context: context,
-        tone: tone
+        action.rolePrompt, source: sourceName, target: targetName, text: cleanText, context: context
       )
     var command = action.commandPrompt == factory.commandPrompt
       ? defaultPrompt.user
       : substitute(
         action.commandPrompt, source: sourceName, target: targetName, text: cleanText,
-        context: context, tone: tone
+        context: context
       )
     if action.outputMarkdown
       && (action.commandPrompt != factory.commandPrompt
@@ -475,14 +506,9 @@ enum PromptBuilder {
     source: String,
     target: String,
     text: String,
-    context: String = "",
-    tone: String = WritingTone.neutralInstruction
+    context: String = ""
   ) -> String {
-    // The tone goes first, so a tone written in terms of `${targetLang}` has
-    // the language filled in too, and selected text that happens to contain
-    // `${tone}` is left as it is.
     template
-      .replacingOccurrences(of: "${tone}", with: tone)
       .replacingOccurrences(of: "${sourceLang}", with: source)
       .replacingOccurrences(of: "${targetLang}", with: target)
       .replacingOccurrences(of: "${text}", with: text)
