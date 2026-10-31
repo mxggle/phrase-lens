@@ -111,6 +111,9 @@ final class AppModel: ObservableObject {
   let modelCatalog = ModelCatalogStore()
   let speech = SpeechService()
   let learning: LearningModel
+  /// The writing shortcut's pop-up, which keeps its own state so a message
+  /// being written never touches the translator's.
+  let compose: ComposeModel
 
   private let client = TranslationClient()
   private let tagger = VocabularyTagger()
@@ -136,6 +139,7 @@ final class AppModel: ObservableObject {
     self.settingsStore = settingsStore
     self.library = library
     learning = LearningModel(library: library, settingsStore: settingsStore)
+    compose = ComposeModel(settingsStore: settingsStore)
     isActionLibraryLoaded = !integrateWithSystem
     isAccessibilityTrusted = integrateWithSystem && accessibility.isTrusted()
     selectedActionID =
@@ -1434,7 +1438,11 @@ final class AppModel: ObservableObject {
     case .screenshotOCR:
       captureOCR()
     case .writing:
-      translateFocusedInput()
+      if settingsStore.settings.writingShowsPreview {
+        compose.toggle(sourceProcessIdentifier: sourceProcessIdentifier)
+      } else {
+        translateFocusedInput()
+      }
     }
   }
 

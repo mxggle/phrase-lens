@@ -925,6 +925,63 @@ struct SelectionPanelPosition: Codable, Equatable, Sendable {
   var y: Double
 }
 
+/// How formal a message written through the compose pop-up is, named for who
+/// it is going to rather than for the grammar: a reader who cannot yet write
+/// 敬語 knows perfectly well that the message is for their boss.
+enum WritingRegister: String, Codable, CaseIterable, Identifiable, Sendable {
+  case casual
+  case polite
+  case formal
+
+  var id: String { rawValue }
+
+  /// Who the register is for — the label a reader picks by.
+  var audience: String {
+    switch self {
+    case .casual: L10n.isChinese ? "朋友" : "Friends"
+    case .polite: L10n.isChinese ? "同事" : "Coworkers"
+    case .formal: L10n.isChinese ? "上司" : "Boss"
+    }
+  }
+
+  /// The register's own name in the language being written, shown under the
+  /// audience so the reader also learns what they are choosing.
+  func styleName(in language: LanguageCode) -> String {
+    switch (self, language) {
+    case (.casual, .japanese): "タメ口"
+    case (.polite, .japanese): "です・ます"
+    case (.formal, .japanese): "敬語"
+    case (.casual, _): "Casual"
+    case (.polite, _): "Professional"
+    case (.formal, _): "Formal"
+    }
+  }
+
+  /// The neighbouring registers, wrapping, for Tab and ⇧Tab in the compose pop-up.
+  var next: WritingRegister { offset(by: 1) }
+  var previous: WritingRegister { offset(by: -1) }
+
+  private func offset(by step: Int) -> WritingRegister {
+    let all = Self.allCases
+    return all[(all.firstIndex(of: self)! + step + all.count) % all.count]
+  }
+}
+
+/// What the compose pop-up writes: a language and how formal to be in it.
+struct WritingStyle: Codable, Hashable, Sendable {
+  var language: LanguageCode
+  var register: WritingRegister
+
+  /// The languages the pop-up offers. Japanese and English are what it is
+  /// for; a different language chosen in Settings joins them rather than
+  /// replacing either.
+  static func languageOptions(including current: LanguageCode) -> [LanguageCode] {
+    var options: [LanguageCode] = [.japanese, .english]
+    if current != .auto, !options.contains(current) { options.append(current) }
+    return options
+  }
+}
+
 struct ShortcutSettings: Codable, Equatable, Sendable {
   var translateSelection = "⌥F"
   var showWindow = "⌥⇧F"
@@ -979,7 +1036,16 @@ struct AppSettings: Codable, Equatable, Sendable {
   var speechRate = 0.48
   var speechVolume = 1.0
   var ttsProvider: TTSProvider?
+  /// The language the writing shortcut writes into — the one used last.
   var writingTargetLanguage: LanguageCode = .english
+  /// The register used last, for an app the pop-up has no memory of.
+  var writingRegister: WritingRegister = .polite
+  /// The style last used in each app, by bundle identifier: a chat with
+  /// friends and a workplace chat each keep their own.
+  var writingStylesByApp: [String: WritingStyle] = [:]
+  /// Shows the translation in a pop-up to adjust before it replaces the
+  /// text. Off, the shortcut replaces the text straight away.
+  var writingShowsPreview = true
   var shortcuts = ShortcutSettings()
   var proxy = ProxySettings()
   /// Keeps the study record the learning assistant reads.
@@ -1027,6 +1093,9 @@ struct AppSettings: Codable, Equatable, Sendable {
     case speechVolume
     case ttsProvider
     case writingTargetLanguage
+    case writingRegister
+    case writingStylesByApp
+    case writingShowsPreview
     case shortcuts
     case proxy
     case learningEnabled
@@ -1099,6 +1168,12 @@ struct AppSettings: Codable, Equatable, Sendable {
     writingTargetLanguage =
       try container.decodeIfPresent(LanguageCode.self, forKey: .writingTargetLanguage)
       ?? .english
+    writingRegister =
+      try container.decodeIfPresent(WritingRegister.self, forKey: .writingRegister) ?? .polite
+    writingStylesByApp =
+      (try? container.decodeIfPresent([String: WritingStyle].self, forKey: .writingStylesByApp)) ?? [:]
+    writingShowsPreview =
+      try container.decodeIfPresent(Bool.self, forKey: .writingShowsPreview) ?? true
     shortcuts = try container.decodeIfPresent(ShortcutSettings.self, forKey: .shortcuts) ?? .init()
     proxy = try container.decodeIfPresent(ProxySettings.self, forKey: .proxy) ?? .init()
     learningEnabled = try container.decodeIfPresent(Bool.self, forKey: .learningEnabled) ?? true
@@ -1195,6 +1270,23 @@ struct AppSettings: Codable, Equatable, Sendable {
   mutating func setDefaultAction(_ id: UUID) {
     defaultActionID = id
     hiddenActionIDs.remove(id)
+  }
+
+  /// The style the compose pop-up opens with in an app: what was used there
+  /// last, or what was used anywhere last for an app it has not seen.
+  func writingStyle(forApp bundleIdentifier: String?) -> WritingStyle {
+    if let bundleIdentifier, let remembered = writingStylesByApp[bundleIdentifier] {
+      return remembered
+    }
+    return WritingStyle(language: writingTargetLanguage, register: writingRegister)
+  }
+
+  /// Remembers a style chosen in the pop-up, for this app and as the
+  /// fallback for every app it has not seen.
+  mutating func rememberWritingStyle(_ style: WritingStyle, forApp bundleIdentifier: String?) {
+    writingTargetLanguage = style.language
+    writingRegister = style.register
+    if let bundleIdentifier { writingStylesByApp[bundleIdentifier] = style }
   }
 
   /// Adds only missing templates. Existing prompts, routes, visibility, order,
