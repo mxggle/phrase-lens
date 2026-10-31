@@ -15,7 +15,7 @@ enum HotKeyAction: UInt32, CaseIterable, Sendable {
     case .translateSelection: L10n.isChinese ? "划选翻译浮窗" : "Selection pop-up"
     case .showWindow: L10n.isChinese ? "切换主窗口" : "Toggle main window"
     case .screenshotOCR: L10n.isChinese ? "截屏文字识别" : "Screenshot OCR"
-    case .writing: L10n.isChinese ? "写作翻译" : "Compose in another language"
+    case .writing: L10n.isChinese ? "写作" : "Writing"
     }
   }
 }

@@ -55,6 +55,22 @@ struct TranslatorView: View {
           .background(palette.warning.opacity(0.07))
           Hairline()
         }
+        // An action with options shows them above both panes: they change
+        // what is asked, as the action itself does.
+        if let options = model.selectedAction?.availableOptions, !options.isEmpty {
+          ActionOptionsBar(
+            options: options,
+            selectedID: model.selectedOption?.id,
+            language: model.selectedAction?.usesTargetLanguage == true
+              ? settingsStore.settings.targetLanguage : nil,
+            toggle: { model.toggleOption($0, retranslate: settingsStore.settings.autoTranslate) }
+          )
+          .frame(height: AppMetrics.controlHeightSmall)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, AppSpacing.lg)
+          .padding(.vertical, AppSpacing.sm)
+          Hairline()
+        }
         // The two panes share the content panel and one hairline between them,
         // the way a sheet of paper is folded rather than two cards laid side by
         // side: the source and its translation are one piece of work.

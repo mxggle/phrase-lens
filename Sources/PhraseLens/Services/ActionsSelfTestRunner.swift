@@ -23,8 +23,14 @@ enum ActionsSelfTestRunner {
     let translate = TranslationAction.builtIn(for: .translate)
     let definition = TranslationAction.builtIn(for: .definition)
     let polish = TranslationAction.builtIn(for: .polishing)
-    check(model.orderedActions.map(\.id) == [translate.id, definition.id, polish.id],
-      "new installations did not start with three actions")
+    let compose = TranslationAction.builtIn(for: .compose)
+    // Compose comes too, for the writing shortcut, but stays off the lookup surfaces.
+    check(model.orderedActions.map(\.id) == [translate.id, definition.id, compose.id, polish.id],
+      "new installations did not start with the three lookup actions and Compose")
+    check(model.visibleActions.map(\.id) == [translate.id, definition.id, polish.id],
+      "Compose showed up among the lookup actions of a new installation")
+    check(store.settings.writingActions(customActions: model.customActions).map(\.id) == [compose.id, polish.id],
+      "the writing pop-up did not start with Compose and Polish")
 
     do {
       // Legacy documents keep the full collection and all user configuration.
@@ -113,7 +119,7 @@ enum ActionsSelfTestRunner {
         "empty collection attempted translation")
       model.translateFocusedInput()
       check(model.errorMessage != nil && !model.isTranslating,
-        "writing shortcut did not explain the missing Translate template")
+        "writing shortcut did not explain that no action is set up for writing")
       model.errorMessage = nil
       let empty = SettingsStore(defaults: defaults, credentials: credentials, loadStoredCredentials: false)
       check(empty.settings.resolvedBuiltInActions.isEmpty, "empty collection was reseeded on reload")

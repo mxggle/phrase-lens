@@ -667,7 +667,8 @@ enum SelfTestRunner {
       )
       check(
         migrated.actionOrder == TranslationAction.defaultOrder
-          && migrated.hiddenActionIDs.isEmpty
+          // Compose arrives with the writing pop-up, kept off the lookup one.
+          && migrated.hiddenActionIDs == AppSettings.writingOnlyActionIDs
           && migrated.builtInActionOverrides.isEmpty
           && migrated.selectionPanelPlacement == .nearPointer
           && migrated.selectionPanelPosition == nil,

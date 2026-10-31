@@ -55,7 +55,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | 🖥️ **Full Language Workspace** | Dedicated multi-tab workspace for translation, polishing, summarization, usage and context explanation, synonym comparison, and code analysis. |
 | 💬 **Follow-Up Questions** | Keep asking about a result — examples, nuance, collocations, grammar — with one-tap suggested questions. The thread is saved with the result and reopens with it from History. |
 | 📸 **Vision Screenshot OCR** | Snip any region on your screen to extract, recognize, and translate text instantly via Apple's Vision framework. |
-| ✍️ **Compose in Japanese or English** | Write your message in Chinese in any chat box and press <kbd>⌥</kbd> <kbd>W</kbd>: a pop-up shows the translation, switches between friends (タメ口), coworkers (です・ます), and your boss (敬語) with <kbd>Tab</kbd>, lets you edit it, and <kbd>Return</kbd> puts it in place of what you wrote. It remembers the language and register you used last in each app. |
+| ✍️ **Compose in Japanese or English** | Write your message in Chinese in any chat box and press <kbd>⌥</kbd> <kbd>W</kbd>: a pop-up shows the translation, switches between friends (タメ口), coworkers (です・ます), and your boss (敬語) with <kbd>Tab</kbd>, lets you edit it, and <kbd>Return</kbd> puts it in place of what you wrote. The same pop-up runs Polish, or any action you turn on for writing, with <kbd>⌘</kbd> <kbd>1</kbd>–<kbd>9</kbd>. Compose is an ordinary action: its prompt and its options (friends, coworkers, boss) are edited together under Actions, and any other action can have options of its own, such as formal or concise for Translate, shown as a row under it in both pop-ups. It remembers the action, language, and option you used last in each app. |
 | 🗣️ **Dual Speech Synthesizers** | Read the source text *or the translation* aloud — each in its own language's voice — using high-fidelity **Microsoft Edge Neural TTS** or offline native **macOS System Voices**. |
 | 🈁 **Readings You Can Pronounce** | Words and short phrases come back with a reading: furigana for Japanese (`垂直な（すいちょくな）`), pinyin for Chinese (`词语（cíyǔ）`) — on the term you looked up and on the translation you have to say. |
 | 🌐 **English & Simplified Chinese** | Choose English or 简体中文 in Settings, or follow your macOS language. The setup guide, menus, settings, accessibility labels, errors, and website are localized. |
@@ -72,7 +72,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | **Translate Selected Text** *(Compact Pop-up)* | <kbd>⌥</kbd> <kbd>F</kbd> | macOS Accessibility |
 | **Toggle Full Workspace** | <kbd>⌥</kbd> <kbd>⇧</kbd> <kbd>F</kbd> | None |
 | **Screenshot OCR** | <kbd>⌥</kbd> <kbd>S</kbd> | Screen Recording |
-| **Compose in Another Language** *(focused field)* | <kbd>⌥</kbd> <kbd>W</kbd> | macOS Accessibility |
+| **Writing** *(focused field)* | <kbd>⌥</kbd> <kbd>W</kbd> | macOS Accessibility |
 | **Ask a Follow-Up** *(in-app)* | <kbd>⌘</kbd> <kbd>L</kbd> | None |
 | **Switch Action** *(in-app)* | <kbd>⌘</kbd> <kbd>1</kbd>…<kbd>9</kbd> | None |
 | **Next / Previous Action** *(in-app)* | <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>]</kbd> / <kbd>[</kbd> | None |

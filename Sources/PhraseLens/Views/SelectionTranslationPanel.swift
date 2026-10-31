@@ -552,6 +552,17 @@ private struct SelectionPanelBody: View {
         // The strip sizes to its content now, so pin it to the leading edge
         // rather than letting the stack centre a half-width track.
         .frame(maxWidth: .infinity, alignment: .leading)
+        if let options = model.selectedAction?.availableOptions, !options.isEmpty {
+          ActionOptionsBar(
+            options: options,
+            selectedID: model.selectedOption?.id,
+            language: model.selectedAction?.usesTargetLanguage == true
+              ? settingsStore.settings.targetLanguage : nil,
+            toggle: { model.toggleOption($0) }
+          )
+          .frame(height: AppMetrics.controlHeightSmall)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
         sourceSummary
       }
       .padding(.horizontal, AppSpacing.md)

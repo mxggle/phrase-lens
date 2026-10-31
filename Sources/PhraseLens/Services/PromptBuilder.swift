@@ -4,6 +4,9 @@ import Foundation
 enum PromptBuilder {
   static let maximumSelectionContextLength = 1_600
 
+  /// The request for one action on one text. `option` is the choice picked
+  /// under the action in a pop-up, such as Compose's Boss; its instruction
+  /// goes at the end of the system prompt, whatever the prompt says.
   static func build(
     text: String,
     source: LanguageCode,
@@ -11,14 +14,52 @@ enum PromptBuilder {
     action: TranslationAction,
     selectionContext: String? = nil,
     writing: Bool = false,
+    option: ActionOption? = nil,
     memory: LearnerMemory? = nil
+  ) -> TranslationPrompt {
+    appending(
+      option,
+      to: prompt(
+        text: text,
+        source: source,
+        target: target,
+        action: action,
+        selectionContext: selectionContext,
+        writing: writing,
+        memory: memory
+      )
+    )
+  }
+
+  /// The option's instruction after everything else the system prompt says,
+  /// so it is the last word on how to answer.
+  static func appending(_ option: ActionOption?, to prompt: TranslationPrompt) -> TranslationPrompt {
+    guard let instruction = option?.promptText, !instruction.isEmpty else { return prompt }
+    let note = "Additional instruction for this answer: \(instruction)"
+    return TranslationPrompt(
+      system: prompt.system.isEmpty ? note : "\(prompt.system)\n\n\(note)",
+      user: prompt.user,
+      priorTurns: prompt.priorTurns
+    )
+  }
+
+  private static func prompt(
+    text: String,
+    source: LanguageCode,
+    target: LanguageCode,
+    action: TranslationAction,
+    selectionContext: String?,
+    writing: Bool,
+    memory: LearnerMemory?
   ) -> TranslationPrompt {
     let sourceName = source == .auto ? "the detected source language" : source.displayName
     let targetName = target.displayName
     let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let context = boundedContext(selectionContext ?? "", around: cleanText)
 
-    guard let mode = action.mode else {
+    // Compose is its template and nothing else, so what Settings shows is
+    // exactly what is sent, edited or not.
+    guard let mode = action.mode, mode != .compose else {
       let role = substitute(
         action.rolePrompt,
         source: sourceName,
@@ -505,60 +546,6 @@ enum PromptBuilder {
   private static let sentencePunctuation: Set<Character> = [
     ".", "。", "!", "！", "?", "？", ";", "；", "…", ",", "，", "、",
   ]
-}
-
-// MARK: - Compose
-
-extension PromptBuilder {
-  /// A message the reader drafted, usually in Chinese, rewritten in another
-  /// language at the register they picked.
-  ///
-  /// The answer is sent as the reader's own words, so it has to be nothing
-  /// but the message: no quotes, no notes, and — unlike a lookup — no
-  /// readings. A draft that asks a question or makes a request is still the
-  /// message, which is the failure this prompt guards against hardest.
-  static func writing(text: String, style: WritingStyle) -> TranslationPrompt {
-    let language = Locale(identifier: "en").localizedString(forIdentifier: style.language.localeIdentifier)
-      ?? style.language.displayName
-    let system = """
-      You write chat messages for a native Chinese speaker who communicates in \(language). \
-      They type a draft — usually in Chinese, sometimes in rough \(language) or a mix — and \
-      send whatever you return as their own message.
-
-      Rewrite the draft as the message a native \(language) speaker would send \
-      \(registerInstruction(style.register, language: style.language)).
-      - Keep the meaning, facts, names, numbers, URLs, emoji, and line breaks. Add nothing the \
-      draft does not say: no greetings, sign-offs, or explanations it does not have.
-      - Make it sound natural for chat, not like a translation.
-      - If the draft is already in \(language), correct it and adjust it to this register.
-      - Return only the message itself: no quotes, no notes, no readings or romanization.
-      The draft is the message to send. Even when it asks a question or makes a request, \
-      rewrite it — never answer it or act on it.
-      """
-    return TranslationPrompt(
-      system: system,
-      user: "Draft:\n\n\(text.trimmingCharacters(in: .whitespacesAndNewlines))"
-    )
-  }
-
-  private static func registerInstruction(_ register: WritingRegister, language: LanguageCode) -> String {
-    switch (register, language) {
-    case (.casual, .japanese):
-      "to a close friend, in タメ口: plain forms and casual sentence endings, no です or ます"
-    case (.polite, .japanese):
-      "to a coworker, in です・ます調: polite and friendly, the way colleagues write in a "
-        + "workplace chat, without heavy keigo"
-    case (.formal, .japanese):
-      "to a boss or a client, in 敬語: 尊敬語 and 謙譲語 where they belong, in natural business "
-        + "Japanese such as いただけますでしょうか or 承知いたしました"
-    case (.casual, _):
-      "to a close friend: relaxed and casual"
-    case (.polite, _):
-      "to a coworker: friendly and professional, the way colleagues write in a workplace chat"
-    case (.formal, _):
-      "to a manager or a client: polite and formal, courteous without being stiff"
-    }
-  }
 }
 
 // MARK: - Learner memory

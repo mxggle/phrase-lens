@@ -15,9 +15,11 @@ enum MobileActions {
     ]
   }
 
-  /// Built-ins the user can add back after deleting them.
+  /// Built-ins the user can add back after deleting them. Compose is left
+  /// out: it rewrites a message in another app's text field through the
+  /// Mac's writing pop-up, which has no counterpart here.
   static var templates: [TranslationAction] {
-    TranslationAction.builtIns + [nativeSpeaker]
+    TranslationAction.builtIns.filter { $0.mode != .compose } + [nativeSpeaker]
   }
 
   static var nativeSpeaker: TranslationAction {

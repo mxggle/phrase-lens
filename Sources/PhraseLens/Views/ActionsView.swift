@@ -209,6 +209,7 @@ struct ActionsView: View {
           isSelected: action.id == selectedID,
           isHidden: isHidden,
           isDefault: settingsStore.settings.defaultActionID == action.id,
+          isWriting: settingsStore.settings.writingActionIDs.contains(action.id),
           canHide: isHidden || visibleActionCount > 1,
           onSelect: {
             selectedID = action.id
@@ -406,6 +407,32 @@ struct ActionsView: View {
       }
       Hairline()
       SettingsRow(
+        L10n.isChinese ? "写作时可用" : "Use when writing",
+        detail: L10n.isChinese
+          ? "在输入框里按 \(settingsStore.settings.shortcuts.writing) 时，出现在写作浮窗里，处理输入框里写好的文字，回车替换原文。"
+          : "Offered in the pop-up that \(settingsStore.settings.shortcuts.writing) opens on a text field, working on what you wrote there. Return puts the result in its place."
+      ) {
+        Toggle(
+          "",
+          isOn: Binding(
+            get: { settingsStore.settings.writingActionIDs.contains(action.wrappedValue.id) },
+            set: { isOn in
+              let id = action.wrappedValue.id
+              guard settingsStore.settings.writingActionIDs.contains(id) != isOn else { return }
+              if isOn {
+                settingsStore.settings.writingActionIDs.insert(id)
+              } else {
+                settingsStore.settings.writingActionIDs.remove(id)
+              }
+            }
+          )
+        )
+        .toggleStyle(AppSwitchStyle())
+        .labelsHidden()
+        .accessibilityLabel(L10n.isChinese ? "写作时可用" : "Use when writing")
+      }
+      Hairline()
+      SettingsRow(
         L10n.isChinese ? "默认动作" : "Default action",
         detail: L10n.isChinese ? "新翻译开始时默认使用此动作。" : "Use this action when a new translation starts."
       ) {
@@ -456,7 +483,8 @@ struct ActionsView: View {
           minHeight: 140
         )
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
-          HStack(spacing: AppSpacing.xs + 2) {
+          // Wraps, so a new variable never pushes the row past a narrow editor.
+          FlowLayout(spacing: AppSpacing.xs + 2, lineSpacing: AppSpacing.xs) {
             Text(L10n.isChinese ? "可用变量：" : "Available variables:")
               .font(AppFont.caption)
               .foregroundStyle(palette.mutedForeground)
@@ -489,6 +517,8 @@ struct ActionsView: View {
       }
     }
 
+    optionsEditor(action)
+
     HStack(spacing: AppSpacing.sm) {
       Button(L10n.isChinese ? "恢复此动作默认提示词" : "Reset to default prompt") {
         restoreAction(action.wrappedValue.id)
@@ -504,11 +534,170 @@ struct ActionsView: View {
 
       Text(
         isBuiltIn
-          ? (L10n.isChinese ? "恢复预置提示词与显示选项，保留模型选择。" : "Restore preset prompts and display options, keeping the model choice.")
+          ? (L10n.isChinese ? "恢复预置的提示词、选项和显示设置，保留模型选择。" : "Restore the preset prompts, options, and display settings, keeping the model choice.")
           : (L10n.isChinese ? "恢复自定义动作模板。" : "Restores the custom action template.")
       )
       .font(AppFont.caption)
       .foregroundStyle(palette.mutedForeground)
+    }
+  }
+
+  // MARK: - Options
+
+  /// The choices shown under this action in the pop-ups. Each is a name and
+  /// what is added to the end of the prompt when it is picked.
+  @ViewBuilder
+  private func optionsEditor(_ action: Binding<TranslationAction>) -> some View {
+    let options = action.wrappedValue.availableOptions
+    SettingsCard(
+      L10n.isChinese ? "选项" : "Options",
+      caption: L10n.isChinese
+        ? "浮窗里显示在这个动作下面的一排。点一个，就把它的要求加到提示词最后；再点一下取消。没有选项，就不显示这一排。"
+        : "A row under this action in the pop-ups. Clicking one adds its instruction to the end of the prompt; "
+          + "clicking it again takes it off. With no options, there is no row."
+    ) {
+      if options.isEmpty {
+        HStack(spacing: AppSpacing.sm) {
+          Text(L10n.isChinese ? "这个动作还没有选项。" : "This action has no options yet.")
+            .font(AppFont.body)
+            .foregroundStyle(palette.mutedForeground)
+          Spacer(minLength: 0)
+          addOptionButton(action)
+        }
+        .padding(.vertical, AppSpacing.sm)
+      } else {
+        ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+          if index > 0 { Hairline() }
+          optionEditor(action, option: option, index: index, count: options.count)
+        }
+        Hairline()
+        HStack(spacing: AppSpacing.sm) {
+          addOptionButton(action)
+          Spacer(minLength: 0)
+          Text(L10n.isChinese ? "每个应用会记住上次选的选项。" : "Each app remembers the option picked last.")
+            .font(AppFont.caption)
+            .foregroundStyle(palette.mutedForeground)
+        }
+        .padding(.vertical, AppSpacing.xs)
+      }
+    }
+  }
+
+  private func optionEditor(
+    _ action: Binding<TranslationAction>,
+    option: ActionOption,
+    index: Int,
+    count: Int
+  ) -> some View {
+    VStack(alignment: .leading, spacing: AppSpacing.xs + 2) {
+      HStack(spacing: AppSpacing.sm) {
+        AppTextField(
+          placeholder: L10n.isChinese ? "名称，例如：正式" : "Name, such as Formal",
+          text: optionField(action, option.id, name: true),
+          size: .sm
+        )
+        .frame(maxWidth: 200)
+        Toggle(
+          L10n.isChinese ? "默认" : "Default",
+          isOn: Binding(
+            get: { action.wrappedValue.defaultOptionID == option.id },
+            set: { isOn in
+              if isOn {
+                action.wrappedValue.defaultOptionID = option.id
+              } else if action.wrappedValue.defaultOptionID == option.id {
+                action.wrappedValue.defaultOptionID = nil
+              }
+            }
+          )
+        )
+        .toggleStyle(ChipToggleStyle())
+        .help(
+          L10n.isChinese
+            ? "没选过的应用里先选中它。都不设为默认，就默认都不选。"
+            : "Picked to begin with in apps where nothing was picked yet. With no default, nothing is."
+        )
+        Spacer(minLength: 0)
+        IconButton(
+          title: L10n.isChinese ? "上移" : "Move Up",
+          symbol: "chevron.up",
+          isDisabled: index == 0
+        ) {
+          moveOption(action, option.id, by: -1)
+        }
+        IconButton(
+          title: L10n.isChinese ? "下移" : "Move Down",
+          symbol: "chevron.down",
+          isDisabled: index == count - 1
+        ) {
+          moveOption(action, option.id, by: 1)
+        }
+        IconButton(
+          title: L10n.isChinese ? "删除选项" : "Delete Option",
+          symbol: "trash"
+        ) {
+          deleteOption(action, option.id)
+        }
+      }
+      AppTextEditor(
+        text: optionField(action, option.id, name: false),
+        placeholder: L10n.isChinese
+          ? "要求，会加到提示词最后。例如：用书面、正式的说法，适合邮件。"
+          : "The instruction added to the end of the prompt, such as: formal and written, fit for email.",
+        minHeight: 52,
+        monospaced: false
+      )
+    }
+    .padding(.vertical, AppSpacing.sm)
+  }
+
+  private func addOptionButton(_ action: Binding<TranslationAction>) -> some View {
+    Button {
+      action.wrappedValue.options = action.wrappedValue.availableOptions + [
+        ActionOption(name: L10n.isChinese ? "新选项" : "New Option", instruction: "")
+      ]
+    } label: {
+      Label(L10n.isChinese ? "添加选项" : "Add Option", systemImage: "plus")
+    }
+    .appButton(.outline, size: .sm)
+  }
+
+  /// An option's name or instruction, found by identifier so a deletion
+  /// elsewhere in the list cannot point an editor at the wrong option. A
+  /// shipped name reads in the interface language until it is edited.
+  private func optionField(_ action: Binding<TranslationAction>, _ id: UUID, name: Bool) -> Binding<String> {
+    Binding(
+      get: {
+        guard let option = action.wrappedValue.availableOptions.first(where: { $0.id == id }) else { return "" }
+        return name ? option.displayName : option.instruction
+      },
+      set: { value in
+        var options = action.wrappedValue.availableOptions
+        guard let index = options.firstIndex(where: { $0.id == id }) else { return }
+        if name {
+          guard value != options[index].displayName else { return }
+          options[index].name = value
+        } else {
+          guard value != options[index].instruction else { return }
+          options[index].instruction = value
+        }
+        action.wrappedValue.options = options
+      }
+    )
+  }
+
+  private func moveOption(_ action: Binding<TranslationAction>, _ id: UUID, by offset: Int) {
+    var options = action.wrappedValue.availableOptions
+    guard let index = options.firstIndex(where: { $0.id == id }),
+      options.indices.contains(index + offset) else { return }
+    options.swapAt(index, index + offset)
+    action.wrappedValue.options = options
+  }
+
+  private func deleteOption(_ action: Binding<TranslationAction>, _ id: UUID) {
+    let options = action.wrappedValue.availableOptions.filter { $0.id != id }
+    action.wrappedValue.options = options.isEmpty ? nil : options
+    if action.wrappedValue.defaultOptionID == id {
+      action.wrappedValue.defaultOptionID = nil
     }
   }
 
@@ -782,7 +971,9 @@ struct ActionsView: View {
       commandPrompt: action.commandPrompt,
       outputMarkdown: action.outputMarkdown,
       resultCommands: action.resultCommands,
-      modelOverrides: action.modelOverrides, route: action.route
+      modelOverrides: action.modelOverrides, route: action.route,
+      options: action.options,
+      defaultOptionID: action.defaultOptionID
     )
     draftActions.append(copy)
     var order = settingsStore.settings.actionOrder
@@ -855,6 +1046,8 @@ private struct ActionListRow: View {
   let isSelected: Bool
   let isHidden: Bool
   let isDefault: Bool
+  /// Offered in the writing pop-up.
+  let isWriting: Bool
   let canHide: Bool
   let onSelect: () -> Void
   let onToggleVisibility: () -> Void
@@ -901,6 +1094,12 @@ private struct ActionListRow: View {
             HStack(spacing: AppSpacing.xs) {
               Text(isHidden ? (L10n.isChinese ? "\(kind) · 已隐藏" : "\(kind) · Hidden") : kind)
                 .foregroundStyle(palette.mutedForeground)
+              if isWriting {
+                Text("·").foregroundStyle(palette.faintForeground)
+                Text(L10n.isChinese ? "写作" : "Writing")
+                  .foregroundStyle(palette.mutedForeground)
+                  .help(L10n.isChinese ? "出现在写作浮窗里" : "Offered in the writing pop-up")
+              }
               if isDefault {
                 Text("·").foregroundStyle(palette.faintForeground)
                 Text(L10n.isChinese ? "默认" : "Default")

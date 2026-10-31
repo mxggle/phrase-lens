@@ -21,9 +21,9 @@ private final class ComposePanelWindow: NSPanel {
 final class ComposePanelCoordinator {
   static let shared = ComposePanelCoordinator()
 
-  static let contentSize = CGSize(width: 460, height: 320)
+  static let contentSize = CGSize(width: 460, height: 360)
   /// Only a reason there is nothing to translate, and a way out.
-  static let noticeSize = CGSize(width: 380, height: 132)
+  static let noticeSize = CGSize(width: 380, height: 140)
 
   private var panel: ComposePanelWindow?
   private weak var model: ComposeModel?
@@ -56,7 +56,7 @@ final class ComposePanelCoordinator {
     panel.hasShadow = false
     panel.setAccessibilityRole(NSAccessibility.Role.window)
     panel.setAccessibilitySubrole(NSAccessibility.Subrole.floatingWindow)
-    panel.setAccessibilityLabel(L10n.isChinese ? "写作翻译" : "Compose")
+    panel.setAccessibilityLabel(ComposePanelBody.title)
     panel.isMovableByWindowBackground = false
     panel.isReleasedWhenClosed = false
     panel.isFloatingPanel = true
@@ -235,6 +235,11 @@ private struct ComposePanelView: View {
   }
 }
 
+/// Laid out like the selection pop-up, so the two read as one family: the
+/// window's name in the header, the actions as tabs above the captured text,
+/// the answer, and the commands in the footer. What is particular to writing
+/// sits on one row under the text: who the message is for, and the language
+/// it goes out in — each only when the action's prompt asks for it.
 private struct ComposePanelBody: View {
   @EnvironmentObject private var model: ComposeModel
   @EnvironmentObject private var settingsStore: SettingsStore
@@ -245,17 +250,25 @@ private struct ComposePanelBody: View {
   @State private var didCopy = false
   @State private var copyResetTask: Task<Void, Never>?
 
+  static var title: String { L10n.isChinese ? "写作" : "Writing" }
+
   var body: some View {
     VStack(spacing: 0) {
       header
       Hairline()
       if model.hasDraft {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+        VStack(spacing: AppSpacing.sm) {
+          ActionTabBar(actions: model.actions, selection: actionSelection, size: .compact)
+            .frame(maxWidth: .infinity, alignment: .leading)
           sourceLine
-          registerPicker
+          if !model.options.isEmpty || model.showsLanguages {
+            optionsRow
+          }
         }
         .padding(.horizontal, AppSpacing.md)
-        .padding(.vertical, AppSpacing.sm)
+        .padding(.top, AppSpacing.sm + 2)
+        .padding(.bottom, AppSpacing.sm)
+        .background { actionShortcuts }
         Hairline()
         if let error = model.errorMessage ?? model.currentDraft?.error {
           failureNotice(error)
@@ -274,8 +287,9 @@ private struct ComposePanelBody: View {
     .onChange(of: model.sessionID) { _, _ in focusEditor() }
     .onDisappear { copyResetTask?.cancel() }
     .animation(AppMotion.state(reduceMotion: reduceMotion), value: model.currentDraft?.error)
+    .animation(AppMotion.state(reduceMotion: reduceMotion), value: model.style.actionID)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel(L10n.isChinese ? "写作翻译" : "Compose")
+    .accessibilityLabel(Self.title)
   }
 
   private func focusEditor() {
@@ -296,61 +310,42 @@ private struct ComposePanelBody: View {
     HStack(spacing: AppSpacing.sm) {
       AppLogo(size: 20)
         .allowsHitTesting(false)
-      Text(L10n.isChinese ? "写作翻译" : "Compose")
+      Text(Self.title)
         .font(AppFont.bodyMedium)
         .foregroundStyle(palette.foreground)
         .allowsHitTesting(false)
+      Spacer(minLength: AppSpacing.sm)
       if model.isStreaming {
         Spinner(size: 12, isLive: true)
-      }
-      Spacer(minLength: AppSpacing.sm)
-      if model.hasDraft {
-        languagePicker
       }
       IconButton(title: L10n.isChinese ? "取消 (Esc)" : "Cancel (Escape)", symbol: "xmark", size: .iconSmall) {
         model.cancel()
       }
     }
     .padding(.horizontal, AppSpacing.md)
-    .frame(height: 40)
+    .frame(height: AppMetrics.paneHeaderHeight)
     .background(WindowDragArea())
   }
 
-  private var languagePicker: some View {
-    HStack(spacing: 2) {
-      ForEach(model.languageOptions) { language in
-        let isOn = language == model.style.language
-        Button {
-          model.select(language)
-        } label: {
-          Text(language.displayName)
-            .font(AppFont.label)
-            .foregroundStyle(isOn ? palette.foreground : palette.mutedForeground)
-            .padding(.horizontal, AppSpacing.sm)
-            .frame(height: 22)
-            .background(
-              isOn ? palette.surfaceElevated : Color.clear,
-              in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(L10n.isChinese ? "写成\(language.displayName) (⌘L 切换)" : "Write in \(language.displayName) (⌘L to switch)")
-        .accessibilityAddTraits(isOn ? [.isSelected] : [])
-      }
-    }
-    .padding(2)
-    .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
-    .background {
-      // ⌘L steps through the languages from anywhere in the pop-up.
-      Button("") { model.cycleLanguage() }
-        .keyboardShortcut("l", modifiers: [.command])
-        .opacity(0)
-        .accessibilityHidden(true)
-    }
+  // MARK: - Actions
+
+  private var actionSelection: Binding<UUID> {
+    Binding(get: { model.style.actionID }, set: { model.select(action: $0) })
   }
 
-  // MARK: - Draft and register
+  /// ⌘1 to ⌘9 pick the tabs in order, as in a browser.
+  private var actionShortcuts: some View {
+    ZStack {
+      ForEach(Array(model.actions.prefix(9).enumerated()), id: \.element.id) { index, _ in
+        Button("") { model.selectAction(at: index) }
+          .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: [.command])
+      }
+    }
+    .opacity(0)
+    .accessibilityHidden(true)
+  }
+
+  // MARK: - Draft, options and language
 
   private var sourceLine: some View {
     HStack(alignment: .top, spacing: AppSpacing.sm) {
@@ -371,56 +366,63 @@ private struct ComposePanelBody: View {
     .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
   }
 
-  private var registerPicker: some View {
-    HStack(spacing: AppSpacing.xs) {
-      ForEach(Array(WritingRegister.allCases.enumerated()), id: \.element) { index, register in
-        registerChip(register, number: index + 1)
+  private var optionsRow: some View {
+    HStack(spacing: AppSpacing.sm) {
+      if !model.options.isEmpty {
+        ActionOptionsBar(
+          options: model.options,
+          selectedID: model.currentOption?.id,
+          language: model.showsLanguages ? model.style.language : nil,
+          showsTabHint: true,
+          toggle: { model.toggle(option: $0) }
+        )
       }
-      Spacer(minLength: AppSpacing.xs)
-      IconButton(
-        title: L10n.isChinese ? "换个说法 (⌘R)" : "Try another wording (⌘R)",
-        symbol: "arrow.clockwise",
-        isDisabled: model.isStreaming || model.currentDraft == nil
-      ) {
-        model.regenerate()
+      Spacer(minLength: 0)
+      if model.showsLanguages {
+        languagePicker
       }
-      .keyboardShortcut("r", modifiers: [.command])
+    }
+    .frame(height: AppMetrics.controlHeightSmall)
+  }
+
+  private var languagePicker: some View {
+    HStack(spacing: 2) {
+      ForEach(model.languageOptions) { language in
+        let isOn = language == model.style.language
+        Button {
+          model.select(language)
+        } label: {
+          Text(language.displayName)
+            .font(AppFont.label)
+            .foregroundStyle(isOn ? palette.foreground : palette.mutedForeground)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, AppSpacing.sm)
+            .frame(height: 22)
+            .background(
+              isOn ? palette.surfaceElevated : Color.clear,
+              in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(L10n.isChinese ? "写成\(language.displayName) (⌘L 切换)" : "Write in \(language.displayName) (⌘L to switch)")
+        .accessibilityAddTraits(isOn ? [.isSelected] : [])
+      }
+    }
+    .padding(2)
+    .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+    .fixedSize()
+    .background {
+      // ⌘L steps through the languages from anywhere in the pop-up.
+      Button("") { model.cycleLanguage() }
+        .keyboardShortcut("l", modifiers: [.command])
+        .opacity(0)
+        .accessibilityHidden(true)
     }
   }
 
-  private func registerChip(_ register: WritingRegister, number: Int) -> some View {
-    let isOn = register == model.style.register
-    let styleName = register.styleName(in: model.style.language)
-    return Button {
-      model.select(register)
-    } label: {
-      HStack(spacing: AppSpacing.xs + 1) {
-        Text(register.audience)
-          .font(AppFont.label)
-          .foregroundStyle(isOn ? palette.foreground : palette.secondaryForeground)
-        Text(styleName)
-          .font(AppFont.caption)
-          .foregroundStyle(palette.mutedForeground)
-      }
-      .lineLimit(1)
-      .padding(.horizontal, AppSpacing.sm + 1)
-      .frame(height: AppMetrics.controlHeightSmall)
-      .background(isOn ? palette.accentSoft : Color.clear, in: Capsule(style: .continuous))
-      .overlay {
-        Capsule(style: .continuous)
-          .strokeBorder(isOn ? palette.accent.opacity(0.35) : palette.border, lineWidth: 1)
-      }
-      .contentShape(Capsule(style: .continuous))
-    }
-    .buttonStyle(.plain)
-    .keyboardShortcut(KeyEquivalent(Character(String(number))), modifiers: [.command])
-    .help("\(register.audience) · \(styleName) (⌘\(number))")
-    .accessibilityLabel("\(register.audience), \(styleName)")
-    .accessibilityAddTraits(isOn ? [.isSelected] : [])
-    .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isOn)
-  }
-
-  // MARK: - Translation
+  // MARK: - Answer
 
   private var translationBinding: Binding<String> {
     Binding(get: { model.translation }, set: { model.translation = $0 })
@@ -443,8 +445,10 @@ private struct ComposePanelBody: View {
           return .handled
         }
         .onKeyPress(keys: [.tab], phases: .down) { press in
+          // A tab character has no place in a chat message, so Tab is only
+          // ever the option switch, and does nothing for an action without any.
           guard !isComposingText else { return .ignored }
-          model.cycleRegister(backwards: press.modifiers.contains(.shift))
+          model.cycleOption(backwards: press.modifiers.contains(.shift))
           return .handled
         }
         .onKeyPress(keys: [.escape], phases: .down) { _ in
@@ -452,12 +456,12 @@ private struct ComposePanelBody: View {
           model.cancel()
           return .handled
         }
-        .accessibilityLabel(L10n.isChinese ? "译文，可修改" : "Translation, editable")
+        .accessibilityLabel(L10n.isChinese ? "结果，可修改" : "Result, editable")
         .padding(.horizontal, AppSpacing.md - 5)
         .padding(.vertical, AppSpacing.sm)
 
       if model.translation.isEmpty, model.isStreaming {
-        Text(L10n.isChinese ? "正在翻译…" : "Translating…")
+        Text(L10n.isChinese ? "正在写…" : "Writing…")
           .font(.system(size: settingsStore.settings.fontSize))
           .foregroundStyle(palette.mutedForeground)
           .padding(.horizontal, AppSpacing.md)
@@ -478,7 +482,7 @@ private struct ComposePanelBody: View {
         .help(error)
       HStack(spacing: AppSpacing.sm) {
         if model.copiedAfterFailure {
-          Text(L10n.isChinese ? "译文已拷贝，可以按 ⌘V 手动粘贴。" : "The translation is on the clipboard — press ⌘V to paste it.")
+          Text(L10n.isChinese ? "结果已拷贝，可以按 ⌘V 手动粘贴。" : "The result is on the clipboard — press ⌘V to paste it.")
             .font(AppFont.caption)
             .foregroundStyle(palette.mutedForeground)
         } else if model.currentDraft?.error != nil {
@@ -502,23 +506,48 @@ private struct ComposePanelBody: View {
 
   // MARK: - Footer
 
+  /// The keys worth knowing, most useful first. Only the ones that do
+  /// something for the current action are listed, and the tail is dropped
+  /// when the footer runs out of room.
+  private var keyHints: [String] {
+    var hints = [L10n.isChinese ? "↩ 替换" : "↩ replace"]
+    if !model.options.isEmpty { hints.append(L10n.isChinese ? "⇥ 选项" : "⇥ option") }
+    if model.showsLanguages { hints.append(L10n.isChinese ? "⌘L 语言" : "⌘L language") }
+    if model.actions.count > 1 {
+      let last = min(model.actions.count, 9)
+      hints.append(L10n.isChinese ? "⌘1–\(last) 动作" : "⌘1–\(last) action")
+    }
+    hints.append(L10n.isChinese ? "⇧↩ 换行" : "⇧↩ new line")
+    return hints
+  }
+
   private var footer: some View {
     HStack(spacing: AppSpacing.sm) {
-      Text(
-        L10n.isChinese
-          ? "↩ 替换　⇧↩ 换行　⇥ 语体　⌘L 语言"
-          : "↩ replace  ⇧↩ new line  ⇥ register  ⌘L language"
-      )
+      let hints = keyHints
+      ViewThatFits(in: .horizontal) {
+        ForEach(Array(stride(from: hints.count, through: 1, by: -1)), id: \.self) { count in
+          Text(hints.prefix(count).joined(separator: L10n.isChinese ? "　" : "  "))
+            .lineLimit(1)
+            .fixedSize()
+        }
+      }
       .font(AppFont.caption)
       .foregroundStyle(palette.mutedForeground)
-      .lineLimit(1)
-      .minimumScaleFactor(0.85)
       .accessibilityHidden(true)
 
       Spacer(minLength: AppSpacing.xs)
 
       IconButton(
-        title: didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝译文" : "Copy the translation"),
+        title: L10n.isChinese ? "换个说法 (⌘R)" : "Try another wording (⌘R)",
+        symbol: "arrow.clockwise",
+        isDisabled: model.isStreaming || model.currentDraft == nil
+      ) {
+        model.regenerate()
+      }
+      .keyboardShortcut("r", modifiers: [.command])
+
+      IconButton(
+        title: didCopy ? (L10n.isChinese ? "已拷贝" : "Copied") : (L10n.isChinese ? "拷贝结果" : "Copy the result"),
         symbol: didCopy ? "checkmark" : "doc.on.doc",
         isDisabled: model.isStreaming || model.translation.isEmpty
       ) {
@@ -538,7 +567,7 @@ private struct ComposePanelBody: View {
         HStack(spacing: AppSpacing.xs + 1) {
           if model.replacesWhenFinished {
             Spinner(size: 11)
-            Text(L10n.isChinese ? "译完就替换" : "Replacing when done")
+            Text(L10n.isChinese ? "写完就替换" : "Replacing when done")
           } else {
             Image(systemName: "arrow.turn.down.left")
               .font(.system(size: 11, weight: .medium))
@@ -559,11 +588,11 @@ private struct ComposePanelBody: View {
   private var replaceHelp: String {
     let app = model.applicationName ?? (L10n.isChinese ? "原应用" : "the app")
     return L10n.isChinese
-      ? "用译文替换 \(app) 输入框里的文字 (↩)"
-      : "Replace the text in \(app) with the translation (Return)"
+      ? "用结果替换 \(app) 输入框里的文字 (↩)"
+      : "Replace the text in \(app) with the result (Return)"
   }
 
-  // MARK: - Nothing to translate
+  // MARK: - Nothing to work on
 
   private var notice: some View {
     VStack(alignment: .leading, spacing: AppSpacing.md) {
