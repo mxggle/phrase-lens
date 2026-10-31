@@ -145,6 +145,7 @@ final class AppModel: ObservableObject {
     selectedActionID =
       settingsStore.settings.resolvedDefaultAction(customActions: [])?.id
       ?? TranslationAction.builtIns[0].id
+    compose.requestReading = { [weak self] in self?.switchToReading() }
     speech.$errorMessage
       .compactMap { $0 }
       .sink { [weak self] message in self?.errorMessage = message }
@@ -1436,6 +1437,15 @@ final class AppModel: ObservableObject {
     case .showWindow:
       WindowCoordinator.toggleMain()
     case .translateSelection:
+      // The pop-up is open in its writing state: the lookup shortcut switches
+      // it to reading, on the same text.
+      if ComposePanelCoordinator.shared.isVisible {
+        guard !compose.hasDraft else {
+          switchToReading()
+          return
+        }
+        compose.cancel()
+      }
       captureSelectionAndTranslate(
         compact: settingsStore.settings.useCompactSelectionPreview,
         sourceProcessIdentifier: sourceProcessIdentifier
@@ -1443,6 +1453,14 @@ final class AppModel: ObservableObject {
     case .screenshotOCR:
       captureOCR()
     case .writing:
+      // The pop-up is reading a selection made in a text field: the writing
+      // shortcut switches it to writing, on that selection.
+      if settingsStore.settings.writingShowsPreview, SelectionPanelCoordinator.shared.isVisible,
+        writableSource != nil
+      {
+        switchToWriting()
+        return
+      }
       if settingsStore.settings.writingShowsPreview {
         compose.toggle(
           sourceProcessIdentifier: sourceProcessIdentifier,
@@ -1451,6 +1469,48 @@ final class AppModel: ObservableObject {
       } else {
         translateFocusedInput(sourceProcessIdentifier: sourceProcessIdentifier)
       }
+    }
+  }
+
+  // MARK: - Reading and writing
+
+  /// The pop-up's switch from reading to writing: the selection it was
+  /// reading, made in a text field, becomes the draft, and the writing state
+  /// takes the reading pop-up's place.
+  func switchToWriting() {
+    guard let target = writableSource else { return }
+    let frame = SelectionPanelCoordinator.shared.currentFrame
+    SelectionPanelCoordinator.shared.close(animated: false)
+    compose.write(
+      over: target,
+      actions: settingsStore.settings.writingActions(customActions: customActions),
+      replacing: frame
+    )
+  }
+
+  /// The pop-up's switch from writing to reading: the draft is looked up
+  /// like a selection, and the answer can still replace it.
+  func switchToReading() {
+    guard let target = compose.writeBackTarget else { return }
+    let frame = ComposePanelCoordinator.shared.currentFrame
+    compose.endForHandOff()
+    stopTranslation()
+    selectionCaptureID = UUID()
+    inputText = target.selectedText
+    outputText = ""
+    outputRendering = .plain
+    selectionContext = nil
+    selectionDiagnostics = nil
+    insertionTarget = target
+    inputSource = .selection
+    restoredSourceLanguage = nil
+    resetFollowUps()
+    errorMessage = nil
+    statusMessage = L10n.isChinese ? "就绪" : "Ready"
+    selectDefaultAction()
+    SelectionPanelCoordinator.shared.show(model: self, replacing: frame)
+    if settingsStore.settings.autoTranslate {
+      translate()
     }
   }
 
@@ -1509,10 +1569,19 @@ final class AppModel: ObservableObject {
         }
       } catch {
         guard selectionCaptureID == activeCapture else { return }
-        // No text selected: skip silently instead of showing an error dialog.
+        // No text selected: skip silently instead of showing an error dialog,
+        // unless the cursor is in a text field with something written in it.
+        // Then the pop-up opens in its writing state on that text, so one
+        // shortcut covers both reading and writing.
         if let error = error as? TranslationError, error == .selectionUnavailable {
           inputSource = .manual
           statusMessage = L10n.isChinese ? "就绪" : "Ready"
+          if settingsStore.settings.writingShowsPreview {
+            await compose.beginIfEditable(
+              sourceProcessIdentifier: sourceApplication,
+              actions: settingsStore.settings.writingActions(customActions: customActions)
+            )
+          }
           return
         }
         statusMessage = L10n.isChinese ? "未能读取选中文本" : "Selection unavailable"

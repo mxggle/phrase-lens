@@ -21,7 +21,9 @@ private final class ComposePanelWindow: NSPanel {
 final class ComposePanelCoordinator {
   static let shared = ComposePanelCoordinator()
 
-  static let contentSize = CGSize(width: 460, height: 360)
+  /// As wide as the selection pop-up, so switching between reading and
+  /// writing changes only the height of what reads as one window.
+  static let contentSize = CGSize(width: 480, height: 360)
   /// Only a reason there is nothing to translate, and a way out.
   static let noticeSize = CGSize(width: 380, height: 140)
 
@@ -33,10 +35,14 @@ final class ComposePanelCoordinator {
   private init() {}
 
   var isVisible: Bool { panel != nil }
+  /// Where the pop-up is, for the reading state to take its place.
+  var currentFrame: CGRect? { panel?.frame }
 
   /// Opens the pop-up beside `anchor`, the control the draft was read from,
-  /// or by the pointer when there is none.
-  func show(model: ComposeModel, anchor: CGRect?) {
+  /// or by the pointer when there is none. With `replacing`, the frame of the
+  /// reading pop-up this one switches from, it takes that one's place instead
+  /// and appears at once, so the switch reads as one window changing state.
+  func show(model: ComposeModel, anchor: CGRect?, replacing replaced: CGRect? = nil) {
     close(animated: false)
 
     let size = model.hasDraft ? Self.contentSize : Self.noticeSize
@@ -72,13 +78,21 @@ final class ComposePanelCoordinator {
     let visibleFrame =
       (NSScreen.screens.first { NSMouseInRect(centre, $0.frame, false) } ?? NSScreen.main)?.visibleFrame
       ?? CGRect(origin: .zero, size: size)
-    let frame = ComposePanelGeometry.frame(size: size, anchor: reference, visibleFrame: visibleFrame)
+    let frame = replaced.map {
+      PopupHandOffGeometry.frame(size: size, replacing: $0, visibleFrame: Self.visibleFrame(containing: $0))
+    } ?? ComposePanelGeometry.frame(size: size, anchor: reference, visibleFrame: visibleFrame)
     panel.setFrame(frame, display: false)
 
     self.panel = panel
     self.model = model
     installDismissalObservers(for: panel)
     NSApp.setActivationPolicy(model.settingsStore.settings.showDockIcon ? .regular : .accessory)
+    guard replaced == nil else {
+      panel.alphaValue = 1
+      panel.hasShadow = true
+      panel.makeKeyAndOrderFront(nil)
+      return
+    }
     present(
       panel,
       growingFrom: PanelMotion.anchor(
@@ -87,6 +101,12 @@ final class ComposePanelCoordinator {
         followsPointer: true
       )
     )
+  }
+
+  static func visibleFrame(containing frame: CGRect) -> CGRect {
+    let centre = CGPoint(x: frame.midX, y: frame.maxY - 1)
+    return (NSScreen.screens.first { NSMouseInRect(centre, $0.frame, false) } ?? NSScreen.main)?.visibleFrame
+      ?? frame
   }
 
   /// Takes the pop-up down. What it was showing is the model's business:
@@ -195,6 +215,25 @@ final class ComposePanelCoordinator {
       NotificationCenter.default.removeObserver(resignObserver)
       self.resignObserver = nil
     }
+  }
+}
+
+/// Where a pop-up goes when it takes another's place: the same top-left
+/// corner, so the header with the reading and writing switch stays under the
+/// pointer and only the bottom edge moves.
+enum PopupHandOffGeometry {
+  private static let inset: CGFloat = 10
+
+  static func frame(size: CGSize, replacing replaced: CGRect, visibleFrame: CGRect) -> CGRect {
+    let minX = visibleFrame.minX + inset
+    let minY = visibleFrame.minY + inset
+    let maxX = max(minX, visibleFrame.maxX - size.width - inset)
+    let maxY = max(minY, visibleFrame.maxY - size.height - inset)
+    let origin = CGPoint(x: replaced.minX, y: replaced.maxY - size.height)
+    return CGRect(
+      origin: CGPoint(x: min(max(origin.x, minX), maxX), y: min(max(origin.y, minY), maxY)),
+      size: size
+    )
   }
 }
 
@@ -310,10 +349,23 @@ private struct ComposePanelBody: View {
     HStack(spacing: AppSpacing.sm) {
       AppLogo(size: 20)
         .allowsHitTesting(false)
-      Text(Self.title)
-        .font(AppFont.bodyMedium)
-        .foregroundStyle(palette.foreground)
-        .allowsHitTesting(false)
+      if model.hasDraft {
+        PopupStateSwitch(mode: .writing, shortcuts: settingsStore.settings.shortcuts) {
+          model.requestReading?()
+        }
+        if let app = model.applicationName {
+          Text(L10n.isChinese ? "写回 \(app)" : "Into \(app)")
+            .font(AppFont.caption)
+            .foregroundStyle(palette.faintForeground)
+            .lineLimit(1)
+            .allowsHitTesting(false)
+        }
+      } else {
+        Text(Self.title)
+          .font(AppFont.bodyMedium)
+          .foregroundStyle(palette.foreground)
+          .allowsHitTesting(false)
+      }
       Spacer(minLength: AppSpacing.sm)
       if model.isStreaming {
         Spinner(size: 12, isLive: true)
@@ -653,5 +705,90 @@ private struct ComposePanelBody: View {
     .padding(.horizontal, AppSpacing.md)
     .padding(.vertical, AppSpacing.sm + 2)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+  }
+}
+
+// MARK: - Reading and writing
+
+/// The pop-up's two states, in its header where the window's name used to
+/// be: reading what someone else wrote, and writing your own. Each names its
+/// shortcut, and pressing the other shortcut while the pop-up is open
+/// switches too, so the two shortcuts read as one window's two modes.
+struct PopupStateSwitch: View {
+  enum Mode {
+    case reading
+    case writing
+  }
+
+  let mode: Mode
+  let shortcuts: ShortcutSettings
+  /// Why the other state has nothing to work on, which disables it. Nil
+  /// when it is available.
+  var unavailableReason: String?
+  let switchMode: () -> Void
+
+  @Environment(\.palette) private var palette
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    HStack(spacing: 2) {
+      segment(.reading, title: L10n.isChinese ? "划词" : "Read", shortcut: shortcuts.translateSelection)
+      segment(.writing, title: L10n.isChinese ? "写作" : "Write", shortcut: shortcuts.writing)
+    }
+    .padding(2)
+    .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+    .fixedSize()
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(L10n.isChinese ? "浮窗状态" : "Pop-up mode")
+  }
+
+  private func segment(_ segment: Mode, title: String, shortcut: String) -> some View {
+    let isOn = segment == mode
+    let isDisabled = !isOn && unavailableReason != nil
+    return Button {
+      guard !isOn else { return }
+      switchMode()
+    } label: {
+      HStack(spacing: AppSpacing.xs + 1) {
+        Text(title)
+          .font(AppFont.label)
+          .foregroundStyle(isOn ? palette.foreground : palette.mutedForeground)
+        Text(shortcut)
+          .font(AppFont.caption)
+          .foregroundStyle(palette.faintForeground)
+      }
+      .lineLimit(1)
+      .padding(.horizontal, AppSpacing.sm + 1)
+      .frame(height: 22)
+      .background {
+        if isOn {
+          RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
+            .fill(palette.surfaceElevated)
+            .shadow(color: palette.shadow, radius: 1, y: 0.5)
+        }
+      }
+      .contentShape(Rectangle())
+      .opacity(isDisabled ? 0.5 : 1)
+    }
+    .buttonStyle(.plain)
+    .disabled(isDisabled)
+    .help(tooltip(for: segment, title: title, shortcut: shortcut, isOn: isOn))
+    .accessibilityAddTraits(isOn ? [.isSelected] : [])
+    .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isOn)
+  }
+
+  private func tooltip(for segment: Mode, title: String, shortcut: String, isOn: Bool) -> String {
+    if isOn { return title }
+    if let unavailableReason { return unavailableReason }
+    switch segment {
+    case .reading:
+      return L10n.isChinese
+        ? "解释这段文字 (\(shortcut))"
+        : "Look this text up (\(shortcut))"
+    case .writing:
+      return L10n.isChinese
+        ? "改写这段文字，回车替换 (\(shortcut))"
+        : "Rewrite this text and put it in place (\(shortcut))"
+    }
   }
 }
