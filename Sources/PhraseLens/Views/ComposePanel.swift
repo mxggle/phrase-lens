@@ -21,7 +21,9 @@ private final class ComposePanelWindow: NSPanel {
 final class ComposePanelCoordinator {
   static let shared = ComposePanelCoordinator()
 
-  static let contentSize = CGSize(width: 460, height: 360)
+  /// Wide enough for Compose's four options, each with its grammar, beside
+  /// the language switch, and for a paragraph meant for a document.
+  static let contentSize = CGSize(width: 520, height: 360)
   /// Only a reason there is nothing to translate, and a way out.
   static let noticeSize = CGSize(width: 380, height: 140)
 
@@ -376,6 +378,9 @@ private struct ComposePanelBody: View {
           showsTabHint: true,
           toggle: { model.toggle(option: $0) }
         )
+        // The options take the room the language switch leaves, before the
+        // spacer gets any, so the bar can tell how much it has.
+        .layoutPriority(1)
       }
       Spacer(minLength: 0)
       if model.showsLanguages {

@@ -54,6 +54,12 @@ enum WritingSelfTests {
     let friend = writing(compose, option: option(ActionOption.friendsID))
     check(friend.system.contains("タメ口") && !friend.system.contains("敬語"),
       "Compose for a friend should ask for タメ口 only", &failures)
+    let document = writing(compose, option: option(ActionOption.documentID))
+    check(document.system.contains("書き言葉") && document.system.contains("です・ます調")
+        && document.system.contains("not a chat") && !document.system.contains("敬語"),
+      "Compose for a document should ask for 書き言葉 in place of chat, and nothing for a reader", &failures)
+    check(document.system.hasSuffix(ActionOption.document.instruction),
+      "the Document option should be the last word, over the chat the prompt describes", &failures)
     let english = writing(compose, "收到，谢谢", target: .english, option: option(ActionOption.bossID))
     check(english.system.contains(LanguageCode.english.displayName) && !english.system.contains(japanese),
       "an English message should name English only", &failures)
@@ -106,9 +112,9 @@ enum WritingSelfTests {
 
   private static func optionFailures(_ failures: inout [String]) {
     check(compose.availableOptions.map(\.id)
-        == [ActionOption.friendsID, ActionOption.coworkersID, ActionOption.bossID]
+        == [ActionOption.friendsID, ActionOption.coworkersID, ActionOption.bossID, ActionOption.documentID]
         && compose.defaultOption?.id == ActionOption.coworkersID,
-      "Compose should ship with friends, coworkers, and boss, coworkers picked", &failures)
+      "Compose should ship with friends, coworkers, boss, and document, coworkers picked", &failures)
     check(TranslationAction.builtIns.filter { $0.mode != .compose }.allSatisfy {
       $0.availableOptions.isEmpty && $0.defaultOption == nil
     }, "every other built-in should start with no options", &failures)
@@ -120,8 +126,13 @@ enum WritingSelfTests {
     renamed.name = "部長"
     check(renamed.displayName == "部長", "a renamed option should keep its new name", &failures)
     check(boss.styleName(in: .japanese) == "敬語"
-        && option(ActionOption.coworkersID).styleName(in: .english) == "Professional",
+        && option(ActionOption.coworkersID).styleName(in: .english) == "Professional"
+        && boss.styleName(in: .english) == "Formal"
+        && ActionOption.document.styleName(in: .japanese) == "書き言葉"
+        && ActionOption.document.styleName(in: .english) == "Written",
       "shipped options should name their grammar in the language being written", &failures)
+    check(["文档", "Document"].contains(ActionOption.document.displayName),
+      "the Document option should be named in the interface language", &failures)
     var reworded = boss
     reworded.instruction = "very polite"
     check(reworded.styleName(in: .japanese) == nil && renamed.styleName(in: .japanese) == "敬語"
@@ -327,6 +338,76 @@ enum WritingSelfTests {
         "settings saved before the compose pop-up should open it with its defaults", &failures)
     } catch {
       failures.append("writing settings migration threw: \(error)")
+    }
+    documentOptionFailures(&failures)
+  }
+
+  // MARK: - Settings from 0.16
+
+  /// 0.16 shipped Compose with Friends, Coworkers and Boss. A Compose saved
+  /// with its own copy of them gets Document once.
+  private static func documentOptionFailures(_ failures: inout [String]) {
+    let options016 = Array(ActionOption.composeDefaults.prefix(3))
+    func saved016(_ compose: TranslationAction) throws -> AppSettings {
+      var settings = AppSettings()
+      settings.builtInActionOverrides = [compose]
+      var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
+      json.removeValue(forKey: "shippedOptionsRevision")
+      return try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+    func resolvedCompose(_ settings: AppSettings) -> TranslationAction? {
+      settings.resolvedBuiltInActions.first { $0.id == compose.id }
+    }
+
+    do {
+      check(AppSettings().shippedOptionsRevision == AppSettings.currentShippedOptionsRevision,
+        "new settings should already have every shipped option", &failures)
+
+      // Given a model in 0.16, Compose was saved with the three options.
+      var modelled = compose
+      modelled.options = options016
+      modelled.modelOverrides = ["openai|API Key|https://api.openai.com/v1": "gpt-5-mini"]
+      let upgraded = try saved016(modelled)
+      check(resolvedCompose(upgraded)?.availableOptions.map(\.id)
+          == [ActionOption.friendsID, ActionOption.coworkersID, ActionOption.bossID, ActionOption.documentID]
+          && resolvedCompose(upgraded)?.defaultOption?.id == ActionOption.coworkersID
+          && resolvedCompose(upgraded)?.modelOverrides == modelled.modelOverrides,
+        "a Compose saved by 0.16 should get Document after its own options", &failures)
+      check(upgraded.shippedOptionsRevision == AppSettings.currentShippedOptionsRevision,
+        "upgraded settings should record that Document was offered", &failures)
+
+      // Deleted after the upgrade, Document stays deleted.
+      var deleted = upgraded
+      var trimmed = resolvedCompose(upgraded)!
+      trimmed.options = trimmed.options?.filter { $0.id != ActionOption.documentID }
+      deleted.setBuiltInOverride(trimmed)
+      let reloaded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(deleted))
+      check(resolvedCompose(reloaded)?.availableOptions.map(\.id)
+          == [ActionOption.friendsID, ActionOption.coworkersID, ActionOption.bossID],
+        "a deleted Document option came back on reload", &failures)
+
+      // Edited options are kept as they are, with Document after them.
+      var renamed = compose
+      renamed.options = options016
+      renamed.options?[2].name = "部長"
+      let edited = try saved016(renamed)
+      check(resolvedCompose(edited)?.availableOptions.map(\.name) == ["Friends", "Coworkers", "部長", "Document"],
+        "an edited Compose should keep its options and gain Document", &failures)
+
+      // A Compose whose options were all taken off keeps none.
+      var bare = compose
+      bare.options = nil
+      bare.defaultOptionID = nil
+      let bareSettings = try saved016(bare)
+      check(resolvedCompose(bareSettings)?.availableOptions.isEmpty == true,
+        "a Compose with no options should not be given Document", &failures)
+
+      // An untouched Compose follows the shipped options without any of this.
+      let untouched = try saved016(compose)
+      check(resolvedCompose(untouched)?.availableOptions.map(\.id) == compose.availableOptions.map(\.id),
+        "an unedited Compose should offer the shipped options", &failures)
+    } catch {
+      failures.append("document option migration threw: \(error)")
     }
   }
 
