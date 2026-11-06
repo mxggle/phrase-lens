@@ -7,6 +7,14 @@ struct PhraseLensApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @StateObject private var model: AppModel
   @StateObject private var appUpdater: AppUpdater
+  /// Whether the menu bar item is in the menu bar. macOS can take it out:
+  /// the reader can ⌘-drag it off, or switch PhraseLens off under System
+  /// Settings › Menu Bar. A `MenuBarExtra` with no binding quits the app when
+  /// that happens, so with the item switched off the app quit the moment it
+  /// launched. With the binding the item just goes, and the app keeps running
+  /// with its window, Dock icon and shortcuts. It is asked for again at the
+  /// next launch, so it comes back once it is allowed.
+  @State private var menuBarItemInserted = true
 
   init() {
     if CommandLine.arguments.contains("--self-test") {
@@ -188,7 +196,7 @@ struct PhraseLensApp: App {
         .environmentObject(model.learning)
     }
 
-    MenuBarExtra("PhraseLens", systemImage: "character.bubble") {
+    MenuBarExtra("PhraseLens", systemImage: "character.bubble", isInserted: $menuBarItemInserted) {
       Button(L10n.isChinese ? "打开翻译窗口" : "Open Translator") { WindowCoordinator.showMain() }
       Button(L10n.isChinese ? "在划选浮窗中翻译" : "Translate Selection in Pop-Up") { model.captureSelectionAndTranslate() }
       Button(L10n.isChinese ? "截屏文字识别" : "Screenshot OCR") { model.captureOCR() }
