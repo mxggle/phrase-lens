@@ -1232,7 +1232,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
       <ol class="cmp-steps rv" id="cmpSteps">
         <li data-step="0"><span class="combo"><span class="kbd">中</span></span><div><b>Write it in Chinese</b><span class="d">Right in the chat box: Slack, LINE, Teams, or anywhere else you type.</span></div></li>
         <li data-step="1"><span class="combo"><span class="kbd">⌥</span><span class="kbd">W</span></span><div><b>Open Compose</b><span class="d">The translation streams in just above the box. Your app stays in front.</span></div></li>
-        <li data-step="2"><span class="combo"><span class="kbd">⇥</span></span><div><b>Pick who it's for</b><span class="d">Friends, coworkers or your boss: タメ口, です・ます or 敬語. ⌘L switches to English.</span></div></li>
+        <li data-step="2"><span class="combo"><span class="kbd">⇥</span></span><div><b>Pick who it's for</b><span class="d">Friends, coworkers or your boss: タメ口, です・ます or 敬語. Document writes it as 書き言葉 for a spec or a wiki. ⌘L switches to English.</span></div></li>
         <li data-step="3"><span class="combo"><span class="kbd">↩</span></span><div><b>Send it as yours</b><span class="d">Edit it first if you want. Return replaces the Chinese, then you hit send.</span></div></li>
       </ol>
 
@@ -1265,6 +1265,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
                   <button class="cmp-reg" data-reg="casual">Friends <small></small></button>
                   <button class="cmp-reg" data-reg="polite">Coworkers <small></small></button>
                   <button class="cmp-reg" data-reg="formal">Boss <small></small></button>
+                  <button class="cmp-reg" data-reg="doc">Document <small></small></button>
                   <button class="cmp-re" id="cmpRe" title="Try another wording (⌘R)" aria-label="Try another wording (⌘R)">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
                   </button>
@@ -1285,7 +1286,7 @@ footer{border-top:1px solid var(--border);padding:30px 0}
       </div>
     </div>
     <p class="ctx-caption rv">Each app keeps its own pick: <b>LINE stays casual, Slack stays polite</b>, with nothing to set.
-      Friends, Coworkers and Boss are just Compose's options: rename them, rewrite them, or give any action
+      Friends, Coworkers, Boss and Document are just Compose's options: rename them, rewrite them, or give any action
       options of its own, like Formal or Concise under Translate.</p>
   </div>
 </section>
@@ -2390,7 +2391,9 @@ const CMP_OUT = {
     polite:['明日の会議、10分ほど遅れるかもしれません。皆さんに伝えていただけますか？',
             '明日の会議ですが、10分ほど遅れそうです。皆さんにお伝えいただけますか？'],
     formal:['明日の会議ですが、10分ほど遅れてしまうかもしれません。恐れ入りますが、皆様にお伝えいただけますでしょうか。',
-            '大変恐縮ですが、明日の会議に10分ほど遅れる可能性がございます。皆様にお伝えいただけますと幸いです。']
+            '大変恐縮ですが、明日の会議に10分ほど遅れる可能性がございます。皆様にお伝えいただけますと幸いです。'],
+    doc:['明日の会議には10分程度遅れる可能性があります。参加者の皆様への共有をお願いします。',
+         '明日の会議は10分程度遅れて参加する見込みです。参加者への周知をお願いします。']
   },
   en:{
     casual:["Might be 10 min late to tomorrow's meeting. Can you give everyone a heads-up?",
@@ -2398,15 +2401,17 @@ const CMP_OUT = {
     polite:["I might be about ten minutes late to tomorrow's meeting. Could you let everyone know?",
             "I'll likely be about ten minutes late to tomorrow's meeting. Would you mind letting everyone know?"],
     formal:["I may be around ten minutes late to tomorrow's meeting. Would you kindly let everyone know?",
-            "I expect to be approximately ten minutes late to tomorrow's meeting. Could you please inform everyone?"]
+            "I expect to be approximately ten minutes late to tomorrow's meeting. Could you please inform everyone?"],
+    doc:["I may join tomorrow's meeting approximately ten minutes late. Please inform the other attendees.",
+         "I expect to join tomorrow's meeting about ten minutes late. Please notify all attendees."]
   }
 };
 /* a register is named in the language being written, as in the app */
 const CMP_NAMES = {
-  ja:{casual:'タメ口', polite:'です・ます', formal:'敬語'},
-  en:{casual:'Casual', polite:'Professional', formal:'Formal'}
+  ja:{casual:'タメ口', polite:'です・ます', formal:'敬語', doc:'書き言葉'},
+  en:{casual:'Casual', polite:'Professional', formal:'Formal', doc:'Written'}
 };
-const CMP_REGS = ['casual','polite','formal'], CMP_LANGS = ['ja','en'];
+const CMP_REGS = ['casual','polite','formal','doc'], CMP_LANGS = ['ja','en'];
 
 const cmpStage = $('#cmpStage'), cmpPanel = $('#cmpPanel'), cmpOut = $('#cmpOut'), cmpInput = $('#cmpInput'),
       cmpText = $('#cmpText'), cmpSpin = $('#cmpSpin'), cmpGo = $('#cmpGo'), cmpChat = $('#cmpChat');
@@ -2589,14 +2594,14 @@ cmpPanel.addEventListener('keydown', e => {
   if (e.isComposing || e.keyCode === 229) return;   /* an input method's Return confirms its text */
   const cmd = e.metaKey || e.ctrlKey, inText = e.target === cmpOut;
   let handled = true;
-  if (cmd && /^Digit[1-3]$/.test(e.code)) { cmpStep(2); cmpChoose(cmp.lang, CMP_REGS[+e.code.slice(5) - 1]); }
+  if (cmd && /^Digit[1-4]$/.test(e.code)) { cmpStep(2); cmpChoose(cmp.lang, CMP_REGS[+e.code.slice(5) - 1]); }
   else if (cmd && e.code === 'KeyL') { cmpStep(2); cmpChoose(CMP_LANGS[(CMP_LANGS.indexOf(cmp.lang) + 1) % 2], cmp.reg); }
   else if (cmd && e.code === 'KeyR') cmpRegenerate();
   else if (e.key === 'Enter' && (cmd || (inText && !e.shiftKey && !e.altKey))) cmpReplace();
   else if (e.key === 'Tab' && inText) {
     cmpStep(2);
-    const i = CMP_REGS.indexOf(cmp.reg) + (e.shiftKey ? 2 : 1);
-    cmpChoose(cmp.lang, CMP_REGS[i % 3]);
+    const i = CMP_REGS.indexOf(cmp.reg) + (e.shiftKey ? CMP_REGS.length - 1 : 1);
+    cmpChoose(cmp.lang, CMP_REGS[i % CMP_REGS.length]);
   }
   else if (e.key === 'Escape') { cmpClose(); cmpStep(-1); cmpInput.focus({preventScroll:true}); }
   else handled = false;

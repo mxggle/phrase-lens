@@ -122,10 +122,11 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
   case translate
   case definition
   /// Rewrites a message drafted in an input box in another language, for
-  /// the reader picked under it (Friends, Coworkers, Boss). Just before Polish, so the two
-  /// writing actions sit together, Compose first: a saved order that lacks
-  /// it gets it after Definition, and the writing pop-up, which follows the
-  /// action list, opens its tabs on Compose.
+  /// the reader picked under it (Friends, Coworkers, Boss), or for a
+  /// document. Just before Polish, so the two writing actions sit together,
+  /// Compose first: a saved order that lacks it gets it after Definition, and
+  /// the writing pop-up, which follows the action list, opens its tabs on
+  /// Compose.
   case compose
   case polishing
   case summarize
@@ -645,8 +646,9 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
         .definition, .summarize, .analyze, .explainUsage, .explainContext, .explainCode, .compareSynonyms,
       ]
         .contains(mode),
-      // Who the message is for decides how it is written, so Compose comes
-      // with a choice of reader; every other action starts with none.
+      // Who the message is for, or that it goes into a document, decides how
+      // it is written, so Compose comes with a choice of reader and Document;
+      // every other action starts with none.
       options: mode == .compose ? ActionOption.composeDefaults : nil,
       defaultOptionID: mode == .compose ? ActionOption.coworkersID : nil
     )
@@ -1011,10 +1013,12 @@ struct ActionOption: Codable, Hashable, Identifiable, Sendable {
   static let friendsID = UUID(uuidString: "00000000-0000-4000-8000-000000000201")!
   static let coworkersID = UUID(uuidString: "00000000-0000-4000-8000-000000000202")!
   static let bossID = UUID(uuidString: "00000000-0000-4000-8000-000000000203")!
+  static let documentID = UUID(uuidString: "00000000-0000-4000-8000-000000000204")!
 
   /// Compose's options: who the message is going to rather than the grammar,
   /// because a reader who cannot yet write 敬語 knows perfectly well that the
-  /// message is for their boss.
+  /// message is for their boss. The last is where it is going instead: text
+  /// for a document is written, not spoken, whoever reads it.
   static let composeDefaults: [ActionOption] = [
     ActionOption(
       id: friendsID,
@@ -1041,7 +1045,23 @@ struct ActionOption: Codable, Hashable, Identifiable, Sendable {
         Japanese such as いただけますでしょうか or 承知いたしました.
         """
     ),
+    document,
   ]
+
+  /// Text for a document rather than a chat: a spec, a report, a wiki page.
+  /// Added after 0.16, so a Compose saved with its own options gets it once.
+  static let document = ActionOption(
+    id: documentID,
+    name: "Document",
+    instruction: """
+      Write this for a document, not a chat: a spec, report, wiki page, manual, or slide. \
+      Use written language, not speech, and keep any headings, lists, and tables. In \
+      Japanese, use 書き言葉, with です・ます調 in sentences and 体言止め in headings and short \
+      list items: しかし rather than でも, 非常に rather than すごく, 〜が rather than 〜けど, and \
+      no chat endings such as 〜ね or 〜よ. In other languages, write clear, professional \
+      prose without contractions or chat phrasing.
+      """
+  )
 
   static func factory(for id: UUID) -> ActionOption? {
     composeDefaults.first { $0.id == id }
@@ -1055,7 +1075,8 @@ struct ActionOption: Codable, Hashable, Identifiable, Sendable {
     switch id {
     case Self.friendsID: return "朋友"
     case Self.coworkersID: return "同事"
-    default: return "上司"
+    case Self.bossID: return "上司"
+    default: return "文档"
     }
   }
 
@@ -1069,9 +1090,11 @@ struct ActionOption: Codable, Hashable, Identifiable, Sendable {
     case (Self.friendsID, .japanese): return "タメ口"
     case (Self.coworkersID, .japanese): return "です・ます"
     case (Self.bossID, .japanese): return "敬語"
+    case (Self.documentID, .japanese): return "書き言葉"
     case (Self.friendsID, _): return "Casual"
     case (Self.coworkersID, _): return "Professional"
-    default: return "Formal"
+    case (Self.bossID, _): return "Formal"
+    default: return "Written"
     }
   }
 
@@ -1196,6 +1219,9 @@ struct AppSettings: Codable, Equatable, Sendable {
   /// then option ID, or "" for none picked. An action missing here starts on
   /// its default option.
   var actionOptionChoices: [String: [String: String]] = [:]
+  /// Which of the shipped options these settings have been offered. 1 is
+  /// Compose's Friends, Coworkers and Boss from 0.16; 2 adds Document.
+  var shippedOptionsRevision = AppSettings.currentShippedOptionsRevision
   /// Shows the translation in a pop-up to adjust before it replaces the
   /// text. Off, the shortcut replaces the text straight away.
   var writingShowsPreview = true
@@ -1250,6 +1276,7 @@ struct AppSettings: Codable, Equatable, Sendable {
     case writingTargetLanguage
     case writingStylesByApp
     case actionOptionChoices
+    case shippedOptionsRevision
     case writingShowsPreview
     case shortcuts
     case proxy
@@ -1340,6 +1367,9 @@ struct AppSettings: Codable, Equatable, Sendable {
     actionOptionChoices =
       (try? container.decodeIfPresent([String: [String: String]].self, forKey: .actionOptionChoices))
       ?? [:]
+    let savedOptionsRevision =
+      try container.decodeIfPresent(Int.self, forKey: .shippedOptionsRevision) ?? 1
+    shippedOptionsRevision = max(savedOptionsRevision, Self.currentShippedOptionsRevision)
     writingShowsPreview =
       try container.decodeIfPresent(Bool.self, forKey: .writingShowsPreview) ?? true
     shortcuts = try container.decodeIfPresent(ShortcutSettings.self, forKey: .shortcuts) ?? .init()
@@ -1376,6 +1406,20 @@ struct AppSettings: Codable, Equatable, Sendable {
         actionOptionChoices[app, default: [:]][composeKey] = option.uuidString
       }
     }
+    // A Compose saved with its own copy of its options, because they were
+    // edited or it was given a model, never sees an option shipped since.
+    // It gets each one once, so an option deleted after that stays deleted,
+    // and one whose options were all taken off keeps none.
+    if savedOptionsRevision < 2 {
+      builtInActionOverrides = builtInActionOverrides.map { action in
+        guard action.id == composeID, let options = action.options, !options.isEmpty,
+          !options.contains(where: { $0.id == ActionOption.documentID })
+        else { return action }
+        var upgraded = action
+        upgraded.options = options + [ActionOption.document]
+        return upgraded
+      }
+    }
 
     sanitizeActionConfiguration()
   }
@@ -1387,6 +1431,9 @@ struct AppSettings: Codable, Equatable, Sendable {
 
   /// The key in `actionOptionChoices` for the choice made last in any app.
   static let anyApp = "*"
+
+  /// See `shippedOptionsRevision`.
+  static let currentShippedOptionsRevision = 2
 
   /// Built-ins written for the writing pop-up, left out of the lookup one
   /// unless the reader adds them there.

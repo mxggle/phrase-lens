@@ -1103,10 +1103,10 @@ struct ChipToggleStyle: ToggleStyle {
 
 // MARK: - Action options
 
-/// The options under an action, such as Compose's Friends, Coworkers and
-/// Boss, as a row of chips: at most one picked, and clicking the picked one
-/// takes it off. Shown only for an action that has options, in every place
-/// that runs actions, so the rule is the same everywhere.
+/// The options under an action, such as Compose's Friends, Coworkers, Boss
+/// and Document, as a row of chips: at most one picked, and clicking the
+/// picked one takes it off. Shown only for an action that has options, in
+/// every place that runs actions, so the rule is the same everywhere.
 struct ActionOptionsBar: View {
   let options: [ActionOption]
   let selectedID: UUID?
@@ -1121,19 +1121,30 @@ struct ActionOptionsBar: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    // A long list scrolls rather than pushing what sits beside it off the edge.
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: AppSpacing.xs) {
-        ForEach(options) { option in
-          chip(option)
-        }
+    // Each chip names its grammar beside it while the row has room for that,
+    // then shows its name alone; a list too long even for that scrolls rather
+    // than pushing what sits beside it off the edge. The grammar stays in
+    // the tooltip either way.
+    ViewThatFits(in: .horizontal) {
+      chips(showingStyle: true)
+      chips(showingStyle: false)
+      ScrollView(.horizontal, showsIndicators: false) {
+        chips(showingStyle: false)
       }
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel(L10n.isChinese ? "选项" : "Options")
   }
 
-  private func chip(_ option: ActionOption) -> some View {
+  private func chips(showingStyle: Bool) -> some View {
+    HStack(spacing: AppSpacing.xs) {
+      ForEach(options) { option in
+        chip(option, showingStyle: showingStyle)
+      }
+    }
+  }
+
+  private func chip(_ option: ActionOption, showingStyle: Bool) -> some View {
     let isOn = option.id == selectedID
     let styleName = language.flatMap { option.styleName(in: $0) }
     let label = [option.displayName, styleName].compactMap { $0 }.joined(separator: " · ")
@@ -1150,7 +1161,7 @@ struct ActionOptionsBar: View {
         Text(option.displayName)
           .font(AppFont.label)
           .foregroundStyle(isOn ? palette.foreground : palette.secondaryForeground)
-        if let styleName {
+        if showingStyle, let styleName {
           Text(styleName)
             .font(AppFont.caption)
             .foregroundStyle(palette.mutedForeground)
