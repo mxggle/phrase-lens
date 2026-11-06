@@ -49,12 +49,17 @@ enum MobileCredentials {
   }
 
   private static func baseQuery(for provider: ProviderKind) -> [String: Any] {
-    [
+    var query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: provider.rawValue,
-      kSecAttrAccessGroup as String: MobileSettingsStore.appGroup,
     ]
+    // Without the App Group (a Personal Team build) the item lives in this
+    // process's own Keychain group, and the extension keeps a key of its own.
+    if MobileSettingsStore.isAppGroupAvailable {
+      query[kSecAttrAccessGroup as String] = MobileSettingsStore.appGroup
+    }
+    return query
   }
 
   // MARK: - Unsigned simulator builds
