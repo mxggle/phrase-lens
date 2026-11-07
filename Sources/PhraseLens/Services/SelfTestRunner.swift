@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 enum SelfTestRunner {
   static func run() -> [String] {
@@ -634,11 +635,23 @@ enum SelfTestRunner {
       "built-in action override was not resolved",
       failures: &failures
     )
+    actionSettings.popupHiddenActionIDs = []
+    check(
+      actionSettings.popupActions(customActions: [customAction]).contains(where: { $0.id == customAction.id }),
+      "an action hidden from the main window was also taken out of the lookup pop-up",
+      failures: &failures
+    )
+    actionSettings.popupHiddenActionIDs = [translateAction.id]
     actionSettings.setDefaultAction(customAction.id)
     check(
       actionSettings.defaultActionID == customAction.id
         && !actionSettings.hiddenActionIDs.contains(customAction.id),
       "setting a default action did not atomically make it visible",
+      failures: &failures
+    )
+    check(
+      actionSettings.popupHiddenActionIDs == [translateAction.id],
+      "the main window's default changed what the lookup pop-up offers",
       failures: &failures
     )
 
@@ -669,6 +682,8 @@ enum SelfTestRunner {
         migrated.actionOrder == TranslationAction.defaultOrder
           // Compose arrives with the writing pop-up, kept off the lookup one.
           && migrated.hiddenActionIDs == AppSettings.writingOnlyActionIDs
+          && migrated.popupHiddenActionIDs == AppSettings.writingOnlyActionIDs
+          && migrated.popupDefaultActionID == nil
           && migrated.builtInActionOverrides.isEmpty
           && migrated.selectionPanelPlacement == .nearPointer
           && migrated.selectionPanelTopLeft == nil
@@ -691,6 +706,8 @@ enum SelfTestRunner {
       persisted.hiddenActionIDs = [
         TranslationAction.builtIns.first { $0.mode == .polishing }!.id
       ]
+      persisted.popupHiddenActionIDs = [translateAction.id]
+      persisted.popupDefaultActionID = legacyCustomID
       persisted.setBuiltInOverride(overriddenTranslate)
       let roundTripped = try JSONDecoder().decode(
         AppSettings.self,
@@ -739,10 +756,34 @@ enum SelfTestRunner {
         "persisted order or built-in override was not restored after decoding",
         failures: &failures
       )
+      // Before 0.18 one list hid actions from both the main window and the
+      // pop-up, so the pop-up starts out with that same list.
+      let polishID = TranslationAction.builtIn(for: .polishing).id
+      let sharedHidden = try JSONDecoder().decode(
+        AppSettings.self,
+        from: Data(#"{"hiddenActionIDs": ["\#(polishID.uuidString)"]}"#.utf8)
+      )
+      check(
+        sharedHidden.hiddenActionIDs.contains(polishID)
+          && sharedHidden.popupHiddenActionIDs == sharedHidden.hiddenActionIDs,
+        "the pop-up did not inherit the actions hidden before 0.18",
+        failures: &failures
+      )
     } catch {
       failures.append("action settings migration or round trip threw: \(error)")
     }
+    let lookupKey = KeyboardShortcut(globalShortcut: "⌥F")
+    check(
+      lookupKey?.key == KeyEquivalent("f") && lookupKey?.modifiers == .option
+        && KeyboardShortcut(globalShortcut: "⌥⇧F")?.modifiers == [.option, .shift]
+        && KeyboardShortcut(globalShortcut: "") == nil
+        && KeyboardShortcut(globalShortcut: "⌥F5") == nil,
+      "a global shortcut was not shown as the menu shortcut it is",
+      failures: &failures
+    )
     failures += selectionPanelPlacementFailures()
+    failures += settingsPaneFailures()
+    failures += MainActor.assumeIsolated { savedWordFailures() }
     let fragmentedContext = SelectionContextMatcher.context(
       matching: "selected phrase",
       in: ["The paragraph starts before the selected", "phrase and continues after it."]
@@ -1939,6 +1980,19 @@ enum SelfTestRunner {
       check(translateAction.localizedTitle == "翻译", "TranslationAction.localizedTitle in Chinese", failures: &failures)
       let customAction = TranslationAction(name: "Custom")
       check(customAction.localizedTitle == "Custom", "Custom TranslationAction.localizedTitle", failures: &failures)
+      // A preset saved while the app was in English still reads in Chinese;
+      // one the reader renamed keeps the name they gave it.
+      var savedInEnglish = translateAction
+      savedInEnglish.name = "Translate"
+      var renamed = translateAction
+      renamed.name = "我的翻译"
+      check(
+        savedInEnglish.displayName == "翻译" && renamed.displayName == "我的翻译",
+        "TranslationAction.displayName in Chinese",
+        failures: &failures
+      )
+      let polishAction = TranslationAction.builtIn(for: .polishing)
+      check(polishAction.progressTitle == "正在润色…", "TranslationAction.progressTitle in Chinese", failures: &failures)
 
       let wordSuggestions = FollowUpSuggestion.suggestions(for: "word", mode: nil)
       check(wordSuggestions.map(\.label) == ["实用例句", "词义辨析", "高频搭配", "词根词缀", "记忆要点"], "word suggestions labels in Chinese", failures: &failures)
@@ -1986,6 +2040,15 @@ enum SelfTestRunner {
       check(LanguageCode.english.displayName == "English", "LanguageCode.english displayName in English", failures: &failures)
       check(ActionMode.translate.title == "Translate", "ActionMode.translate title in English", failures: &failures)
       check(translateAction.localizedTitle == "Translate", "TranslationAction.localizedTitle in English", failures: &failures)
+      var savedInChinese = translateAction
+      savedInChinese.name = "翻译"
+      check(savedInChinese.displayName == "Translate", "TranslationAction.displayName in English", failures: &failures)
+      check(
+        TranslationAction.builtIn(for: .polishing).progressTitle == "Polishing…"
+          && customAction.progressTitle == "Running “Custom”…",
+        "TranslationAction.progressTitle in English",
+        failures: &failures
+      )
       check(DictionaryLanguages.name("zh") == "Chinese", "DictionaryLanguages.name zh in English", failures: &failures)
       check(DictionaryLanguages.name("auto") == "Auto", "DictionaryLanguages.name auto in English", failures: &failures)
 
@@ -2001,6 +2064,92 @@ enum SelfTestRunner {
     failures += LearningSelfTests.run()
     failures += WritingSelfTests.run()
 
+    return failures
+  }
+
+  /// Settings are organized by way in: each global shortcut lives on its
+  /// own page, and a registration failure leads to that page.
+  private static func settingsPaneFailures() -> [String] {
+    var failures: [String] = []
+    check(
+      HotKeyAction.allCases.map(\.settingsPane) == [.lookup, .general, .capture, .writing],
+      "a global shortcut did not lead to the Settings page that holds it",
+      failures: &failures
+    )
+    check(
+      SettingsPane.allCases.allSatisfy { pane in pane.hotKey.map { $0.settingsPane == pane } ?? true }
+        && SettingsPane.allCases.compactMap(\.hotKey) == [.translateSelection, .writing, .screenshotOCR],
+      "an entry page named a shortcut that belongs to another page",
+      failures: &failures
+    )
+    let defaults = ShortcutSettings()
+    check(
+      HotKeyAction.allCases.map { defaults.value(for: $0) } == ["⌥F", "⌥⇧F", "⌥S", "⌥W"],
+      "a shortcut was read from the wrong setting",
+      failures: &failures
+    )
+    check(
+      !SettingsPane.allCases.map(\.rawValue).contains("shortcuts"),
+      "the old catch-all Shortcuts page came back",
+      failures: &failures
+    )
+    return failures
+  }
+
+  /// The bookmark means "learn this": saving a word enrolls its term, a batch
+  /// of saved words is spread out, and a term page opened from the saved
+  /// words leaves their card view.
+  @MainActor
+  private static func savedWordFailures() -> [String] {
+    var failures: [String] = []
+    let suite = "PhraseLens-saved-words-test-\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suite) else { return ["saved words: no defaults suite"] }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let settings = SettingsStore(
+      defaults: defaults,
+      credentials: CredentialStore(directory: directory, defaults: defaults),
+      loadStoredCredentials: false
+    )
+    let learning = LearningModel(library: LibraryStore(directory: directory), settingsStore: settings)
+    let now = Date()
+    let day: TimeInterval = 86_400
+    let words = (0..<26).map { LearningSelfTests.term("saved\($0)", at: now) }
+    learning.replaceTerms(words)
+
+    learning.enroll(words[0].id, now: now, dueNow: false)
+    learning.enroll(words[1].id, now: now)
+    let bookmarked = learning.term(id: words[0].id)?.review?.due
+    check(
+      bookmarked.map { $0 > now.addingTimeInterval(3_600) && $0 < now.addingTimeInterval(day) } == true
+        && learning.term(id: words[1].id)?.review?.due == now,
+      "a bookmarked word was due at once, or Add to Review was not",
+      failures: &failures
+    )
+
+    let rest = words.dropFirst(2).map(\.id)
+    learning.enrollSpread([words[0].id] + rest + [rest[0]], now: now)
+    let dues = rest.compactMap { learning.term(id: $0)?.review?.due }
+    check(
+      dues.count == 24
+        && dues.filter { $0 == now }.count == ReviewScheduler.backlogPerDay
+        && dues.max() == now.addingTimeInterval(2 * day)
+        && learning.term(id: words[0].id)?.review?.due == bookmarked,
+      "saved words were not spread ten a day, or one already in review was rescheduled",
+      failures: &failures
+    )
+
+    check(LearningTermFilter.collected.includes(words[2]), "the Saved filter hid terms", failures: &failures)
+    learning.termFilter = .collected
+    learning.select(words[2].id)
+    check(
+      learning.termFilter == .all && learning.tab == .terms && learning.selectedTermID == words[2].id,
+      "a term opened from the saved words stayed behind the card view",
+      failures: &failures
+    )
+    learning.termFilter = .reviewing
+    learning.select(words[3].id)
+    check(learning.termFilter == .reviewing, "opening a term in review cleared the In Review filter", failures: &failures)
     return failures
   }
 

@@ -152,6 +152,9 @@ private struct LibraryScaffold<Toolbar: View, Content: View>: View {
   let searchPrompt: String
   let count: Int
   let countNoun: String
+  /// A control that sits right after the search field, such as the picker
+  /// that moves between the saved words and the rest of Study's terms.
+  var accessory: AnyView?
   @ViewBuilder var toolbar: Toolbar
   @ViewBuilder var content: Content
 
@@ -179,13 +182,15 @@ private struct LibraryScaffold<Toolbar: View, Content: View>: View {
       )
       .frame(maxWidth: layoutWidth.isCompact ? .infinity : 320)
 
+      if let accessory { accessory }
+
       if !layoutWidth.isCompact {
         let text: String = {
           if L10n.isChinese {
             if countNoun == "translations" {
               return "\(count) 条翻译"
             } else if countNoun == "words" {
-              return "\(count) 个生词"
+              return "\(count) 个词"
             } else {
               return "\(count) \(countNoun)"
             }
@@ -236,7 +241,7 @@ extension View {
   ) -> some View {
     let noun = count == 1 ? singular : plural
     let title = L10n.isChinese
-      ? "确认删除这 \(count) 个\(singular == "word" ? "生词" : "条目")？"
+      ? "确认删除这 \(count) 个\(singular == "word" ? "收藏的词" : "条目")？"
       : "Delete \(count) \(noun)?"
     let destructiveTitle = L10n.isChinese
       ? "删除 \(count) 项"
@@ -474,7 +479,7 @@ private struct LibrarySectionHeader: View {
     // it vertically would overlap the row above whenever it is not pinned.
     .background { palette.background.padding(.horizontal, -AppSpacing.lg) }
     .accessibilityElement(children: .combine)
-    .accessibilityLabel(L10n.isChinese ? "\(displayTitle)，\(count) 个生词" : "\(title), \(count) words")
+    .accessibilityLabel(L10n.isChinese ? "\(displayTitle)，\(count) 个词" : "\(title), \(count) words")
     .accessibilityAddTraits(.isHeader)
   }
 }
@@ -539,12 +544,23 @@ struct HistoryView: View {
               copyTranslatedText(of: entry)
             }
             Divider()
-            Button(
-              entry.favorite
-                ? (L10n.isChinese ? "取消收藏" : "Remove from Favorites")
-                : (L10n.isChinese ? "添加到收藏" : "Add to Favorites")
-            ) {
-              model.toggleFavorite(entry)
+            if isWordLookup(entry) {
+              Button(
+                model.isCollected(entry)
+                  ? (L10n.isChinese ? "取消收藏这个词" : "Remove Word from Saved")
+                  : (L10n.isChinese ? "收藏这个词并加入复习" : "Save Word for Review")
+              ) {
+                model.toggleCollect(entry)
+              }
+            }
+            if !isWordLookup(entry) || entry.favorite {
+              Button(
+                entry.favorite
+                  ? (L10n.isChinese ? "取消星标" : "Remove Star")
+                  : (L10n.isChinese ? "加星标" : "Add Star")
+              ) {
+                model.toggleFavorite(entry)
+              }
             }
             Divider()
             Button(L10n.isChinese ? "删除此条记录" : "Delete translation", role: .destructive) {
@@ -572,23 +588,41 @@ struct HistoryView: View {
     isConfirmingDelete = true
   }
 
-  /// Open, copy, favourite, delete — the moves made on one row, on the row.
+  /// A word or a short phrase is kept with the bookmark, the way it is
+  /// everywhere else, and the star is for the sentences and passages that
+  /// have nowhere else to be kept.
+  private func isWordLookup(_ entry: HistoryEntry) -> Bool {
+    LearningLedger.isLookup(text: entry.sourceText, mode: nil)
+  }
+
+  /// Open, copy, keep, delete — the moves made on one row, on the row.
   @ViewBuilder
   private func rowActions(for entry: HistoryEntry) -> some View {
     IconButton(
-      title: L10n.isChinese ? "在翻译器中打开" : "Open in translator",
+      title: L10n.isChinese ? "在工作台中打开" : "Open in the workbench",
       symbol: "arrow.up.forward.app"
     ) { model.restore(entry) }
     IconButton(
-      title: L10n.isChinese ? "拷贝译文" : "Copy translated text",
+      title: L10n.isChinese ? "拷贝结果" : "Copy the result",
       symbol: "doc.on.doc"
     ) { copyTranslatedText(of: entry) }
-    IconButton(
-      title: entry.favorite
-        ? (L10n.isChinese ? "取消收藏" : "Remove from Favorites")
-        : (L10n.isChinese ? "添加到收藏" : "Add to Favorites"),
-      symbol: entry.favorite ? "star.fill" : "star"
-    ) { model.toggleFavorite(entry) }
+    if isWordLookup(entry) {
+      let isCollected = model.isCollected(entry)
+      IconButton(
+        title: isCollected
+          ? (L10n.isChinese ? "取消收藏这个词" : "Remove the word from Saved")
+          : (L10n.isChinese ? "收藏这个词并加入复习" : "Save the word for review"),
+        symbol: isCollected ? "bookmark.fill" : "bookmark"
+      ) { model.toggleCollect(entry) }
+    }
+    if !isWordLookup(entry) || entry.favorite {
+      IconButton(
+        title: entry.favorite
+          ? (L10n.isChinese ? "取消星标" : "Remove the star")
+          : (L10n.isChinese ? "加星标" : "Star this"),
+        symbol: entry.favorite ? "star.fill" : "star"
+      ) { model.toggleFavorite(entry) }
+    }
     IconButton(
       title: L10n.isChinese ? "删除此条记录" : "Delete translation",
       symbol: "trash"
@@ -604,14 +638,14 @@ struct HistoryView: View {
       favoritesOnly.toggle()
     } label: {
       AdaptiveLabel(
-        title: L10n.isChinese ? "收藏" : "Favorites",
+        title: L10n.isChinese ? "星标" : "Starred",
         symbol: favoritesOnly ? "star.fill" : "star",
         iconOnly: layoutWidth.isCompact
       )
     }
     .appButton(favoritesOnly ? .secondary : .outline, size: .sm)
-    .help(L10n.isChinese ? "只显示已收藏的记录" : "Show only favorite translations")
-    .accessibilityLabel(L10n.isChinese ? "只显示收藏" : "Favorites only")
+    .help(L10n.isChinese ? "只显示加了星标的记录" : "Show only starred lookups")
+    .accessibilityLabel(L10n.isChinese ? "只显示星标" : "Starred only")
     .accessibilityAddTraits(favoritesOnly ? [.isSelected] : [])
 
     if learning.isEnabled {
@@ -721,10 +755,10 @@ struct HistoryView: View {
     } else if favoritesOnly, searchText.isEmpty {
       EmptyState(
         symbol: "star",
-        title: L10n.isChinese ? "还没有收藏的记录" : "No favorites yet",
+        title: L10n.isChinese ? "还没有星标的记录" : "Nothing starred yet",
         message: L10n.isChinese
-          ? "将鼠标移到任意记录上，点按星标即可收藏。"
-          : "Hover over any translation and click the star to keep it here."
+          ? "把鼠标移到一句话或一段话的记录上，点星标留下它。单词用书签收藏，收在学习中心 › 词条 › 已收藏。"
+          : "Hover over a sentence or a passage and click the star to keep it here. Words are kept with the bookmark, in Study › Terms › Saved."
       ) {
         Button(L10n.isChinese ? "显示全部" : "Show All") { favoritesOnly = false }
           .appButton(.outline, size: .sm)
@@ -772,7 +806,13 @@ private struct HistoryRow: View {
           Image(systemName: "star.fill")
             .font(.system(size: 9))
             .foregroundStyle(palette.warning)
-            .accessibilityLabel(L10n.isChinese ? "已收藏" : "Favorite")
+            .accessibilityLabel(L10n.isChinese ? "星标" : "Starred")
+        }
+        if model.isCollected(entry) {
+          Image(systemName: "bookmark.fill")
+            .font(.system(size: 9))
+            .foregroundStyle(palette.accent)
+            .accessibilityLabel(L10n.isChinese ? "已收藏" : "Saved")
         }
         if let term, term.encounters.count > 1 {
           Button {
@@ -854,8 +894,15 @@ private struct HistoryRow: View {
 
 // MARK: - Vocabulary
 
+/// The saved words: what the bookmark keeps, listed in Study under
+/// Terms › Saved.
 struct VocabularyView: View {
+  /// Study's term filter, shown beside the search field so the saved words
+  /// can be left the way they were reached.
+  var scope: AnyView?
+
   @EnvironmentObject private var model: AppModel
+  @EnvironmentObject private var learning: LearningModel
   @Environment(\.palette) private var palette
   @Environment(\.layoutWidth) private var layoutWidth
   @State private var searchText = ""
@@ -892,9 +939,10 @@ struct VocabularyView: View {
 
     LibraryScaffold(
       searchText: $searchText,
-      searchPrompt: L10n.isChinese ? "搜索生词本…" : "Search vocabulary…",
+      searchPrompt: L10n.isChinese ? "搜索收藏的词…" : "Search saved words…",
       count: entries.count,
-      countNoun: "words"
+      countNoun: "words",
+      accessory: scope
     ) {
       toolbar(sections: sections, showsOrganizeBar: showsOrganizeBar)
     } content: {
@@ -963,12 +1011,16 @@ struct VocabularyView: View {
     LibraryCard(
       isSelected: selection.contains(entry.id),
       onSelect: { extending in select(entry.id, extending: extending) },
-      onOpen: { speak(entry: entry) },
+      onOpen: { open(entry) },
       hoverActions: { AnyView(rowActions(for: entry)) }
     ) {
       VocabularyRow(entry: entry)
     }
     .contextMenu {
+      if learning.isEnabled {
+        Button(L10n.isChinese ? "打开词条" : "Open Term") { open(entry) }
+        Divider()
+      }
       Button(L10n.isChinese ? "朗读单词" : "Speak word") { speak(entry: entry) }
       Button(L10n.isChinese ? "拷贝单词" : "Copy word") { copyWord(of: entry) }
       Button(L10n.isChinese ? "拷贝释义" : "Copy Explanation") { copyExplanation(of: entry) }
@@ -977,7 +1029,7 @@ struct VocabularyView: View {
       }
       .disabled(model.isOrganizingVocabulary)
       Divider()
-      Button(L10n.isChinese ? "移出生词本" : "Delete word", role: .destructive) {
+      Button(L10n.isChinese ? "取消收藏" : "Remove from Saved", role: .destructive) {
         confirmDelete(of: [entry.id])
       }
     }
@@ -991,7 +1043,7 @@ struct VocabularyView: View {
     IconButton(title: L10n.isChinese ? "拷贝单词" : "Copy word", symbol: "doc.on.doc") {
       copyWord(of: entry)
     }
-    IconButton(title: L10n.isChinese ? "移出生词本" : "Delete word", symbol: "trash") {
+    IconButton(title: L10n.isChinese ? "取消收藏" : "Remove from Saved", symbol: "trash") {
       confirmDelete(of: [entry.id])
     }
   }
@@ -1011,7 +1063,7 @@ struct VocabularyView: View {
         )
       }
       .appButton(filter.isEmpty ? .outline : .secondary, size: .sm)
-      .help(L10n.isChinese ? "按类型、主题或等级筛选生词本" : "Narrow the collection by type, topic, or level")
+      .help(L10n.isChinese ? "按类型、主题或等级筛选收藏的词" : "Narrow the collection by type, topic, or level")
       .popover(isPresented: $isFilterPresented, arrowEdge: .bottom) {
         VocabularyFacetRail(sections: sections, filter: $filter)
           .frame(width: 240, height: 360)
@@ -1019,7 +1071,7 @@ struct VocabularyView: View {
     }
 
     AppSelect(
-      title: L10n.isChinese ? "按分类对生词本进行分组" : "Group the collection into sections",
+      title: L10n.isChinese ? "按分类给收藏的词分组" : "Group the collection into sections",
       selection: $grouping,
       options: VocabularyGrouping.allCases,
       // Narrow windows get the bare axis: the bar is already carrying a search
@@ -1045,8 +1097,8 @@ struct VocabularyView: View {
         )
       }
       .appButton(.destructiveGhost, size: .sm)
-      .help(L10n.isChinese ? "删除所选生词" : "Delete selected words")
-      .accessibilityLabel(L10n.isChinese ? "删除所选生词" : "Delete selected words")
+      .help(L10n.isChinese ? "删除所选的词" : "Delete selected words")
+      .accessibilityLabel(L10n.isChinese ? "删除所选的词" : "Delete selected words")
     }
 
     // The strip above the grid already offers to organize whatever is
@@ -1064,11 +1116,20 @@ struct VocabularyView: View {
       }
       .appButton(.outline, size: .sm)
       .disabled(model.isOrganizingVocabulary || model.vocabulary.isEmpty)
-      .help(L10n.isChinese ? "使用 AI 按类型、主题、词性和级别整理生词" : "Have the model file words by type, topic, part of speech, and level")
+      .help(L10n.isChinese ? "使用 AI 按类型、主题、词性和级别整理收藏的词" : "Have the model file words by type, topic, part of speech, and level")
       .accessibilityLabel(L10n.isChinese ? "AI 智能整理分类" : "Organize with AI")
     }
 
     Menu {
+      if learning.isEnabled {
+        // For words saved before the bookmark also meant review. Spread over
+        // the coming days, ten a day, so a long list does not land at once.
+        Button(L10n.isChinese ? "把收藏的词都加入复习" : "Add All Saved Words to Review", systemImage: "rectangle.on.rectangle.angled") {
+          enrollAll()
+        }
+        .disabled(model.vocabulary.isEmpty)
+        Divider()
+      }
       Button(L10n.isChinese ? "导出 (JSON / CSV)…" : "Export (JSON / CSV)…", systemImage: "square.and.arrow.up") {
         exportVocabulary()
       }
@@ -1083,7 +1144,7 @@ struct VocabularyView: View {
     .menuIndicator(.hidden)
     .fixedSize()
     .help(L10n.isChinese ? "更多" : "More")
-    .accessibilityLabel(L10n.isChinese ? "更多生词本命令" : "More vocabulary commands")
+    .accessibilityLabel(L10n.isChinese ? "更多收藏命令" : "More commands for saved words")
   }
 
   private func confirmDelete(of ids: Set<UUID>) {
@@ -1110,6 +1171,25 @@ struct VocabularyView: View {
     NSPasteboard.general.setString(entry.word, forType: .string)
   }
 
+  /// A saved word opens on its page in Study, where every sentence it was
+  /// met in, its card, and its review live. A word with no record yet, or
+  /// with the record off, is read aloud instead.
+  private func open(_ entry: VocabularyEntry) {
+    if learning.isEnabled, let term = learning.term(for: entry.word, language: entry.sourceLanguage) {
+      learning.select(term.id)
+    } else {
+      speak(entry: entry)
+    }
+  }
+
+  private func enrollAll() {
+    let count = model.collectedTermsOutsideReview.count
+    model.enrollCollectedBacklog()
+    model.statusMessage = count == 0
+      ? (L10n.isChinese ? "收藏的词都已在复习中" : "Every saved word is already in review")
+      : (L10n.isChinese ? "已把 \(count) 个词加入复习，每天最多 10 个" : "Added \(count) to review, at most ten a day")
+  }
+
   private func speak(entry: VocabularyEntry) {
     let settings = model.settingsStore.settings
     model.speech.speak(
@@ -1126,7 +1206,7 @@ struct VocabularyView: View {
     panel.allowedContentTypes = [.json, .commaSeparatedText]
     panel.nameFieldStringValue = "phraselens-vocabulary.json"
     panel.prompt = L10n.isChinese ? "导出" : "Export"
-    panel.title = L10n.isChinese ? "导出生词本" : "Export Vocabulary"
+    panel.title = L10n.isChinese ? "导出收藏的词" : "Export Saved Words"
     if panel.runModal() == .OK, let url = panel.url {
       do {
         if url.pathExtension.lowercased() == "csv" {
@@ -1156,7 +1236,7 @@ struct VocabularyView: View {
     if !filter.isEmpty {
       EmptyState(
         symbol: "line.3.horizontal.decrease",
-        title: L10n.isChinese ? "未找到匹配的生词" : "No matching words",
+        title: L10n.isChinese ? "未找到匹配的词" : "No matching words",
         message: L10n.isChinese
           ? "尝试其他关键词或清除筛选条件。"
           : "Try a different search term or clear the facet filters."
@@ -1167,7 +1247,7 @@ struct VocabularyView: View {
     } else if !searchText.isEmpty {
       EmptyState(
         symbol: "magnifyingglass",
-        title: L10n.isChinese ? "未找到匹配的生词" : "No matching words",
+        title: L10n.isChinese ? "未找到匹配的词" : "No matching words",
         message: L10n.isChinese
           ? "尝试其他关键词或清除筛选条件。"
           : "Try a different search term or clear the facet filters."
@@ -1177,11 +1257,11 @@ struct VocabularyView: View {
       }
     } else {
       EmptyState(
-        symbol: "books.vertical",
-        title: L10n.isChinese ? "生词本为空" : "No saved words",
+        symbol: "bookmark",
+        title: L10n.isChinese ? "还没有收藏的词" : "No saved words",
         message: L10n.isChinese
-          ? "在翻译结果或词典卡片中点按书签图标，即可收集想学习的生词。"
-          : "Click the bookmark icon on any result or dictionary entry to collect words you want to study."
+          ? "查完一个词，点结果旁的书签，它就会出现在这里，并加入复习。"
+          : "After a lookup, click the bookmark beside the result. The word lands here and joins your review."
       )
     }
   }
@@ -1222,7 +1302,7 @@ private struct VocabularyOrganizeBar: View {
           .foregroundStyle(palette.mutedForeground)
         Text(
           L10n.isChinese
-            ? "\(unfiled) 个生词尚未分类。"
+            ? "\(unfiled) 个收藏的词尚未分类。"
             : (unfiled == 1
               ? "1 word has not been sorted into categories yet."
               : "\(unfiled) words have not been sorted into categories yet.")
@@ -1234,7 +1314,7 @@ private struct VocabularyOrganizeBar: View {
           .appButton(.outline, size: .xs)
           .help(
             L10n.isChinese
-              ? "使用 AI 模型对这些生词按类型、主题、词性和级别分类"
+              ? "使用 AI 模型对这些词按类型、主题、词性和级别分类"
               : "Have the model file these under type, topic, part of speech, and level"
           )
       }
@@ -1299,7 +1379,7 @@ private struct VocabularyFacetRail: View {
     }
     .background(palette.chrome)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel(L10n.isChinese ? "生词本筛选" : "Vocabulary filters")
+    .accessibilityLabel(L10n.isChinese ? "收藏筛选" : "Saved word filters")
   }
 }
 
@@ -1340,7 +1420,7 @@ private struct VocabularyFacetRow: View {
     .onHover { isHovering = $0 }
     .animation(AppMotion.hover(reduceMotion: reduceMotion), value: isHovering)
     .help(row.value.localizedLabel)
-    .accessibilityLabel(L10n.isChinese ? "\(row.value.localizedLabel)，\(row.count) 个生词" : "\(row.value.label), \(row.count) words")
+    .accessibilityLabel(L10n.isChinese ? "\(row.value.localizedLabel)，\(row.count) 个词" : "\(row.value.label), \(row.count) words")
     .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : [.isButton])
   }
 

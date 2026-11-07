@@ -101,12 +101,36 @@ struct LearningTabBar: View {
 /// and the assistant to ask about them.
 struct LearningView: View {
   @EnvironmentObject private var learning: LearningModel
+  @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
   @Environment(\.palette) private var palette
 
   var body: some View {
     Group {
-      if !settingsStore.settings.learningEnabled {
+      if !settingsStore.settings.learningEnabled, !model.vocabulary.isEmpty {
+        // Saved words live here now, and they do not depend on the record:
+        // with it off, the section still opens on them.
+        VStack(spacing: 0) {
+          HStack(spacing: AppSpacing.sm) {
+            InlineNote(
+              text: L10n.isChinese
+                ? "学习记录已关闭，这里只显示你收藏的词。"
+                : "The study record is off, so only your saved words are shown.",
+              kind: .info
+            )
+            Spacer(minLength: AppSpacing.sm)
+            Button(L10n.isChinese ? "打开学习记录" : "Turn On") {
+              settingsStore.settings.learningEnabled = true
+            }
+            .appButton(.outline, size: .sm)
+          }
+          .padding(.horizontal, AppSpacing.lg)
+          .padding(.vertical, AppSpacing.sm)
+          .background(palette.chrome)
+          Hairline()
+          VocabularyView()
+        }
+      } else if !settingsStore.settings.learningEnabled {
         EmptyState(
           symbol: "graduationcap",
           title: L10n.isChinese ? "学习记录已关闭" : "The study record is off",
@@ -655,6 +679,9 @@ private struct RelationPairRow: View {
 
 enum LearningTermFilter: String, CaseIterable, Identifiable {
   case all
+  /// The words saved with the bookmark. Listed as cards, with their AI
+  /// filing and facets, rather than as terms.
+  case collected
   case repeated
   case stubborn
   case reviewing
@@ -665,6 +692,7 @@ enum LearningTermFilter: String, CaseIterable, Identifiable {
   var title: String {
     switch self {
     case .all: L10n.isChinese ? "全部" : "All"
+    case .collected: L10n.isChinese ? "已收藏" : "Saved"
     case .repeated: L10n.isChinese ? "反复查询" : "Looked up again"
     case .stubborn: L10n.isChinese ? "老记不住" : "Not sticking"
     case .reviewing: L10n.isChinese ? "复习中" : "In review"
@@ -674,7 +702,9 @@ enum LearningTermFilter: String, CaseIterable, Identifiable {
 
   func includes(_ term: LearningTerm) -> Bool {
     switch self {
-    case .all: true
+    // Saved words are a separate collection the cards view lists; nothing
+    // is filtered out of the terms by it.
+    case .all, .collected: true
     case .repeated: LearningLedger.isRepeat(term)
     case .stubborn: LearningLedger.isStubborn(term)
     case .reviewing: term.review != nil
@@ -703,6 +733,28 @@ private struct LearningTermsView: View {
   }
 
   var body: some View {
+    if learning.termFilter == .collected {
+      VocabularyView(scope: AnyView(filterPicker))
+    } else {
+      termsBody
+    }
+  }
+
+  /// Which terms to list. It also switches to the saved words, whose cards
+  /// carry the same picker so the way back is where the way in was.
+  private var filterPicker: some View {
+    AppSelect(
+      title: L10n.isChinese ? "筛选" : "Filter",
+      selection: $learning.termFilter,
+      options: LearningTermFilter.allCases,
+      label: { $0.title },
+      isGhost: true
+    )
+    .fixedSize()
+  }
+
+  @ViewBuilder
+  private var termsBody: some View {
     let terms = filtered
     let selected = learning.selectedTermID.flatMap { learning.term(id: $0) }
     if layoutWidth.isCompact {
@@ -758,14 +810,7 @@ private struct LearningTermsView: View {
           symbol: "magnifyingglass",
           size: .sm
         )
-        AppSelect(
-          title: L10n.isChinese ? "筛选" : "Filter",
-          selection: $learning.termFilter,
-          options: LearningTermFilter.allCases,
-          label: { $0.title },
-          isGhost: true
-        )
-        .fixedSize()
+        filterPicker
       }
       .padding(.horizontal, AppSpacing.md)
       .padding(.vertical, AppSpacing.sm)
@@ -918,6 +963,9 @@ struct LearningTermDetail: View {
         }
         if let review = term.review {
           Badge(text: LearningCopy.nextReview(review), variant: .success, symbol: "rectangle.on.rectangle.angled")
+        }
+        if learning.isCollected?(term) == true {
+          Badge(text: L10n.isChinese ? "已收藏" : "Saved", variant: .outline, symbol: "bookmark.fill")
         }
       }
     }
@@ -1374,10 +1422,10 @@ struct LearningSettingsPane: View {
         .disabled(!settingsStore.settings.learningEnabled)
         Hairline()
         switchRow(
-          L10n.isChinese ? "老记不住的词自动加入生词本" : "Collect words that will not stick",
+          L10n.isChinese ? "老记不住的词自动收藏" : "Save words that will not stick",
           detail: L10n.isChinese
-            ? "在不同的日子查过三次以上的词，会自动保存到生词本。"
-            : "A term looked up three times or more, on different days, is saved to Vocabulary.",
+            ? "在不同的日子查过三次以上的词，会自动收藏到学习中心 › 词条 › 已收藏。"
+            : "A term looked up three times or more, on different days, is saved to Study › Terms › Saved.",
           isOn: $settingsStore.settings.learningAutoCollect
         )
         .disabled(!settingsStore.settings.learningEnabled)
@@ -1424,8 +1472,8 @@ struct LearningSettingsPane: View {
     } message: {
       Text(
         L10n.isChinese
-          ? "词条、关联、记忆卡、复习进度和诊断都会删除，历史记录和生词本保留。此操作无法撤销。"
-          : "Terms, relations, cards, review progress, and diagnoses are removed. History and Vocabulary stay. There is no undo."
+          ? "词条、关联、记忆卡、复习进度和诊断都会删除，历史记录和收藏的词保留。此操作无法撤销。"
+          : "Terms, relations, cards, review progress, and diagnoses are removed. History and saved words stay. There is no undo."
       )
     }
   }

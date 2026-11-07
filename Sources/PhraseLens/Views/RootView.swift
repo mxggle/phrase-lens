@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
@@ -5,7 +6,6 @@ enum AppSection: String, CaseIterable, Identifiable {
   case translator
   case learning
   case history
-  case vocabulary
   case actions
 
   var id: String { rawValue }
@@ -13,11 +13,12 @@ enum AppSection: String, CaseIterable, Identifiable {
   var title: String {
     switch self {
     case .setup: L10n.isChinese ? "新手引导" : "Getting Started"
-    case .translator: L10n.isChinese ? "翻译" : "Translator"
+    // Not "Translate": the first action tab is already called that, and the
+    // section runs every action, not only translation.
+    case .translator: L10n.isChinese ? "工作台" : "Workbench"
     case .learning: L10n.isChinese ? "学习中心" : "Study"
     case .history: L10n.isChinese ? "历史记录" : "History"
-    case .vocabulary: L10n.isChinese ? "生词本" : "Vocabulary"
-    case .actions: L10n.isChinese ? "动作配置" : "Actions"
+    case .actions: L10n.isChinese ? "动作" : "Actions"
     }
   }
 
@@ -27,7 +28,6 @@ enum AppSection: String, CaseIterable, Identifiable {
     case .translator: "character.bubble"
     case .learning: "graduationcap"
     case .history: "clock.arrow.circlepath"
-    case .vocabulary: "books.vertical"
     case .actions: "slider.horizontal.3"
     }
   }
@@ -40,7 +40,6 @@ enum AppSection: String, CaseIterable, Identifiable {
     case .translator: L10n.isChinese ? "翻译、润色与解析文本" : "Translate, rewrite, and explain text"
     case .learning: L10n.isChinese ? "反复查询、相关词、复习与学习诊断" : "Repeats, related terms, review, and diagnosis"
     case .history: L10n.isChinese ? "保存在本机的所有翻译记录" : "Every translation saved on this Mac"
-    case .vocabulary: L10n.isChinese ? "阅读时收集的高频词汇" : "Words you collected while reading"
     case .actions: L10n.isChinese ? "定制每个动作背后的提示词" : "The prompts behind each action"
     }
   }
@@ -54,20 +53,19 @@ enum AppSection: String, CaseIterable, Identifiable {
     self != .translator && self != .learning
   }
 
-  /// Sidebar grouping.
+  /// Sidebar grouping: where work is done, and what it leaves behind.
+  /// Actions sit with the workbench because they are what it runs, not a
+  /// setting; saved words live in Study, under Terms › Saved.
   var group: Group {
     switch self {
-    case .setup: .configure
-    case .translator, .learning: .workspace
-    case .history, .vocabulary: .library
-    case .actions: .configure
+    case .setup, .translator, .actions: .workspace
+    case .learning, .history: .library
     }
   }
 
   enum Group: String, CaseIterable, Identifiable {
     case workspace = "Workspace"
     case library = "Library"
-    case configure = "Configure"
 
     var id: String { rawValue }
 
@@ -75,7 +73,6 @@ enum AppSection: String, CaseIterable, Identifiable {
       switch self {
       case .workspace: L10n.isChinese ? "工作区" : "Workspace"
       case .library: L10n.isChinese ? "资源库" : "Library"
-      case .configure: L10n.isChinese ? "设置" : "Configure"
       }
     }
   }
@@ -251,7 +248,6 @@ private struct Shell: View {
           case .translator: TranslatorView()
           case .learning: LearningView()
           case .history: HistoryView()
-          case .vocabulary: VocabularyView()
           case .actions: ActionsView()
           }
         }
@@ -301,6 +297,16 @@ private struct ErrorBanner: View {
               .frame(maxWidth: .infinity, alignment: .leading)
             if model.errorMessage != nil {
               recovery
+            }
+            // The whole of a provider's message, for a bug report or a search,
+            // without having to select three clipped lines of it.
+            IconButton(
+              title: L10n.isChinese ? "拷贝详情" : "Copy details",
+              symbol: "doc.on.doc",
+              size: .iconSmall
+            ) {
+              NSPasteboard.general.clearContents()
+              NSPasteboard.general.setString(message, forType: .string)
             }
             IconButton(
               title: L10n.isChinese ? "关闭提示" : "Dismiss",
@@ -485,15 +491,11 @@ private struct SidebarView: View {
     .accessibilityLabel("PhraseLens")
   }
 
+  /// Only a number that asks for something: the terms due for review today.
+  /// Totals are not news, so they sit in the section's own top bar instead.
   private func badgeText(for section: AppSection) -> String? {
-    switch section {
-    case .setup: nil
-    case .history: model.history.isEmpty ? nil : "\(model.history.count)"
-    case .vocabulary: model.vocabulary.isEmpty ? nil : "\(model.vocabulary.count)"
-    case .actions: model.orderedActions.isEmpty ? nil : "\(model.orderedActions.count)"
-    case .translator: nil
-    case .learning: learning.dueCount > 0 ? "\(learning.dueCount)" : nil
-    }
+    guard section == .learning, learning.dueCount > 0 else { return nil }
+    return "\(learning.dueCount)"
   }
 
   // MARK: Provider
@@ -580,6 +582,22 @@ private struct NavBar: View {
   @Environment(\.layoutWidth) private var layoutWidth
   @Environment(\.openSettings) private var openSettings
 
+  /// The section's caption, led by how many things are in it: the totals the
+  /// sidebar used to badge every row with, said where they describe the page.
+  private var caption: String {
+    let zh = L10n.isChinese
+    switch section {
+    case .history where !model.history.isEmpty:
+      let count = model.history.count
+      return zh ? "\(count) 条记录，保存在本机" : "\(count) \(count == 1 ? "lookup" : "lookups") saved on this Mac"
+    case .actions where !model.orderedActions.isEmpty:
+      let count = model.orderedActions.count
+      return zh ? "\(count) 个动作，定制每个动作背后的提示词" : "\(count) \(count == 1 ? "action" : "actions"), and the prompt behind each"
+    default:
+      return section.caption
+    }
+  }
+
   var body: some View {
     HStack(spacing: AppSpacing.md) {
       VStack(alignment: .leading, spacing: 1) {
@@ -588,7 +606,7 @@ private struct NavBar: View {
           .titleTracking()
           .foregroundStyle(palette.foreground)
         if section.showsCaption, !layoutWidth.isCompact {
-          Text(section.caption)
+          Text(caption)
             .font(AppFont.caption)
             .foregroundStyle(palette.mutedForeground)
             .lineLimit(1)
@@ -605,11 +623,11 @@ private struct NavBar: View {
 
       Spacer(minLength: AppSpacing.sm)
 
-      if !model.shortcutErrors.isEmpty {
+      if let failed = HotKeyAction.allCases.first(where: { model.shortcutErrors[$0] != nil }) {
         // A warning with nowhere to go is only an alarm. The badge opens the
-        // pane where the conflicting shortcut can be changed.
+        // page where the first conflicting shortcut can be changed.
         Button {
-          SettingsNavigation.show(.shortcuts) { openSettings() }
+          SettingsNavigation.show(failed.settingsPane) { openSettings() }
         } label: {
           Badge(
             text: L10n.isChinese ? "快捷键冲突" : "Shortcut conflict",
@@ -620,9 +638,9 @@ private struct NavBar: View {
         .buttonStyle(.plain)
         .help(
           L10n.isChinese
-            ? "部分全局快捷键注册失败，点按前往设置修改：\n" + model.shortcutErrors.joined(separator: "\n")
+            ? "部分全局快捷键注册失败，点按前往设置修改：\n" + model.shortcutErrorMessages.joined(separator: "\n")
             : "Some global shortcuts could not be registered. Click to change them:\n"
-              + model.shortcutErrors.joined(separator: "\n")
+              + model.shortcutErrorMessages.joined(separator: "\n")
         )
         .accessibilityLabel(L10n.isChinese ? "快捷键冲突，前往设置" : "Shortcut conflict. Opens Settings.")
         .layoutPriority(2)
@@ -660,7 +678,7 @@ private struct NavBarControls: View {
       )
     case .learning:
       LearningTabBar()
-    case .setup, .history, .vocabulary, .actions:
+    case .setup, .history, .actions:
       EmptyView()
     }
   }
@@ -669,6 +687,7 @@ private struct NavBarControls: View {
     Binding(
       get: { model.selectedActionID },
       set: { id in
+        model.mainWindowTookOverLookup()
         model.selectedActionID = id
         if settingsStore.settings.autoTranslate, !model.inputText.isEmpty {
           model.translate()

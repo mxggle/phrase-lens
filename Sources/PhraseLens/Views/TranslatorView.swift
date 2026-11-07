@@ -27,7 +27,11 @@ struct TranslatorView: View {
   private var inputBinding: Binding<String> {
     Binding(
       get: { model.inputText },
-      set: { model.editInputText($0) }
+      set: {
+        guard $0 != model.inputText else { return }
+        model.mainWindowTookOverLookup()
+        model.editInputText($0)
+      }
     )
   }
 
@@ -63,7 +67,10 @@ struct TranslatorView: View {
             selectedID: model.selectedOption?.id,
             language: model.selectedAction?.usesTargetLanguage == true
               ? settingsStore.settings.targetLanguage : nil,
-            toggle: { model.toggleOption($0, retranslate: settingsStore.settings.autoTranslate) }
+            toggle: {
+              model.mainWindowTookOverLookup()
+              model.toggleOption($0, retranslate: settingsStore.settings.autoTranslate)
+            }
           )
           .frame(height: AppMetrics.controlHeightSmall)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -212,8 +219,24 @@ struct TranslatorView: View {
           if model.isTranslating {
             model.stopTranslation()
           } else if !model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            model.mainWindowTookOverLookup()
             model.translate()
           }
+          return .handled
+        }
+        .onKeyPress(keys: [.tab], phases: .down) { press in
+          // Tab steps through the action's options, as in both pop-ups. An
+          // action without any leaves Tab to the editor.
+          guard press.modifiers.subtracting(.shift).isEmpty,
+            (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true,
+            model.selectedAction?.availableOptions.isEmpty == false
+          else { return .ignored }
+          model.mainWindowTookOverLookup()
+          guard model.cycleOption(
+              backwards: press.modifiers.contains(.shift),
+              retranslate: settingsStore.settings.autoTranslate
+            )
+          else { return .ignored }
           return .handled
         }
         .padding(.horizontal, AppMetrics.readingInset - 5)
@@ -285,8 +308,8 @@ struct TranslatorView: View {
     HStack(spacing: 0) {
       IconButton(
         title: model.isCurrentWordCollected
-          ? (L10n.isChinese ? "从生词本中移除此词" : "Remove this word from Vocabulary")
-          : (L10n.isChinese ? "将此词与释义保存至生词本" : "Save this word and its explanation to Vocabulary"),
+          ? (L10n.isChinese ? "取消收藏" : "Remove from Saved")
+          : (L10n.isChinese ? "收藏这个词并加入复习" : "Save this word and add it to review"),
         symbol: model.isCurrentWordCollected ? "bookmark.fill" : "bookmark",
         isDisabled: !model.isCurrentWordCollected
           && (model.outputText.isEmpty || model.inputText.count > 80)
@@ -338,11 +361,13 @@ struct TranslatorView: View {
   private var resultBody: some View {
     if model.outputText.isEmpty {
       EmptyState(
-        symbol: model.isTranslating ? "ellipsis" : "character.bubble",
-        title: model.isTranslating ? (L10n.isChinese ? "正在翻译…" : "Translating…") : (L10n.isChinese ? "暂无翻译内容" : "No translation yet"),
+        symbol: model.isTranslating ? "ellipsis" : (model.selectedAction?.displaySymbol ?? "character.bubble"),
+        title: model.isTranslating
+          ? (model.selectedAction?.progressTitle ?? (L10n.isChinese ? "正在处理…" : "Working…"))
+          : (L10n.isChinese ? "还没有结果" : "No result yet"),
         message: model.inputText.isEmpty
           ? (L10n.isChinese ? "在左侧输入文本，或在其他应用中划选文字后按下 ⌥F。" : "Enter text on the left, or press ⌥F while text is selected in another app.")
-          : (L10n.isChinese ? "按下 ↩ 开始翻译。" : "Press Enter to translate.")
+          : runHint
       )
       .transition(.opacity)
     } else {
@@ -374,6 +399,11 @@ struct TranslatorView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .transition(.opacity)
     }
+  }
+
+  private var runHint: String {
+    let name = model.selectedAction?.displayName ?? (L10n.isChinese ? "运行" : "Run")
+    return L10n.isChinese ? "按下 ↩ 开始\(name)。" : "Press Return to run \(name)."
   }
 
   // MARK: - Status
@@ -489,8 +519,14 @@ struct PaneFooter<Content: View>: View {
 
 // MARK: - Run command
 
-/// The translator's one primary command. Its own view so that the source pane
-/// footer it sits in does not have to know how it is labelled.
+/// The translator's one primary command, named after the action it runs.
+/// Its own view so that the source pane footer it sits in does not have to
+/// know how it is labelled.
+///
+/// Once the answer on screen is for the text as it stands, running again only
+/// asks for another wording: the button steps down to a secondary "run again"
+/// so the follow-up composer's send is the one lit command in the window,
+/// and it lights up again as soon as the text, action or option changes.
 private struct TranslateButton: View {
   @EnvironmentObject private var model: AppModel
   @Environment(\.palette) private var palette
@@ -500,9 +536,26 @@ private struct TranslateButton: View {
     model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
+  private var isRerun: Bool { !model.isTranslating && model.resultIsCurrent }
+
+  private var actionName: String {
+    model.selectedAction?.displayName ?? (L10n.isChinese ? "运行" : "Run")
+  }
+
   private var title: String {
     if model.isTranslating { return L10n.isChinese ? "停止" : "Stop" }
-    return L10n.isChinese ? "翻译" : "Translate"
+    if isRerun { return L10n.isChinese ? "重新\(actionName)" : "\(actionName) Again" }
+    return actionName
+  }
+
+  private var help: String {
+    if model.isTranslating {
+      return L10n.isChinese ? "停止 (⌘.)" : "Stop (⌘.)"
+    }
+    if isRerun {
+      return L10n.isChinese ? "再问一次，换一个结果 (⌘R)" : "Ask again for another answer (⌘R)"
+    }
+    return "\(title) (↩)"
   }
 
   var body: some View {
@@ -511,6 +564,7 @@ private struct TranslateButton: View {
         if model.isTranslating {
           model.stopTranslation()
         } else {
+          model.mainWindowTookOverLookup()
           model.translate()
         }
       } label: {
@@ -518,12 +572,16 @@ private struct TranslateButton: View {
           if model.isTranslating {
             Image(systemName: "stop.fill")
               .font(.system(size: 9, weight: .bold))
+          } else if isRerun {
+            Image(systemName: "arrow.clockwise")
+              .font(.system(size: 10, weight: .semibold))
           }
-          if !layoutWidth.isCompact || !model.isTranslating {
+          if !layoutWidth.isCompact || (!model.isTranslating && !isRerun) {
             Text(title)
               .font(AppFont.label.weight(.semibold))
+              .lineLimit(1)
           }
-          if !model.isTranslating, !layoutWidth.isCompact {
+          if !model.isTranslating, !isRerun, !layoutWidth.isCompact {
             // The key that runs it, inside the command rather than in a
             // keycap beside it: one object to find, not two.
             Image(systemName: "return")
@@ -534,13 +592,9 @@ private struct TranslateButton: View {
         }
         .padding(.horizontal, AppSpacing.xs)
       }
-      .appButton(model.isTranslating ? .secondary : .brand, size: .sm, capsule: true)
+      .appButton(model.isTranslating || isRerun ? .secondary : .brand, size: .sm, capsule: true)
       .disabled(!model.isTranslating && (isInputEmpty || model.selectedAction == nil))
-      .help(
-        model.isTranslating
-          ? (L10n.isChinese ? "停止翻译 (⌘.)" : "Stop translating (⌘.)")
-          : "\(title) (↩)"
-      )
+      .help(help)
       .accessibilityLabel(title)
     }
   }
