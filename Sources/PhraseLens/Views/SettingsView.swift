@@ -320,21 +320,9 @@ private struct GeneralSettingsPane: View {
         }
       }
 
+      // The default action is set where it applies: right-click an action
+      // tab in the main window or the lookup pop-up.
       SettingsCard(L10n.isChinese ? "翻译与交互" : "Translation") {
-        SettingsRow(L10n.isChinese ? "默认动作" : "Default action") {
-          AppSelect(
-            title: L10n.isChinese ? "默认动作" : "Default action",
-            selection: Binding(
-              get: { settingsStore.settings.defaultActionID },
-              set: { model.setDefaultAction($0) }
-            ),
-            options: model.visibleActions.map(\.id),
-            label: { id in
-              model.visibleActions.first { $0.id == id }?.name ?? (L10n.isChinese ? "默认动作" : "Default action")
-            }
-          )
-        }
-        Hairline()
         switchRow(
           L10n.isChinese ? "自动开始翻译" : "Translate automatically",
           detail: L10n.isChinese
@@ -1395,7 +1383,7 @@ private struct SpeechWritingSettingsPane: View {
 
   /// The actions the writing pop-up offers, by name, in its order.
   private var writingActionNames: String {
-    let names = settingsStore.settings.writingActions(customActions: model.customActions).map(\.name)
+    let names = settingsStore.settings.writingActions(customActions: model.customActions).map(\.displayName)
     guard !names.isEmpty else { return L10n.isChinese ? "还没有" : "None yet" }
     return names.joined(separator: L10n.isChinese ? "、" : ", ")
   }

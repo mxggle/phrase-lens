@@ -1316,8 +1316,8 @@ struct ActionTabBar: View {
           select(action.id)
         } label: {
           Label(
-            isDefault(action) ? "\(action.name) · \(L10n.tr("common.default"))" : action.name,
-            systemImage: action.mode?.symbol ?? "sparkles"
+            isDefault(action) ? "\(action.displayName) · \(L10n.tr("common.default"))" : action.displayName,
+            systemImage: action.displaySymbol
           )
         }
       }
@@ -1340,7 +1340,7 @@ struct ActionTabBar: View {
     .buttonStyle(.plain)
     .menuIndicator(.hidden)
     .fixedSize()
-    .help(overflow.map(\.name).joined(separator: " · "))
+    .help(overflow.map(\.displayName).joined(separator: " · "))
     .accessibilityLabel(L10n.isChinese ? "更多动作" : "More actions")
   }
 
@@ -1354,19 +1354,19 @@ struct ActionTabBar: View {
           select(action.id)
         } label: {
           if action.id == selection {
-            Label(action.name, systemImage: "checkmark")
+            Label(action.displayName, systemImage: "checkmark")
           } else {
-            Text(action.name)
+            Text(action.displayName)
           }
         }
       }
       defaultSubmenu
     } label: {
       HStack(spacing: AppSpacing.xs + 1) {
-        Image(systemName: armedAction?.mode?.symbol ?? "sparkles")
+        Image(systemName: armedAction?.displaySymbol ?? "sparkles")
           .font(.system(size: size.iconSize, weight: .medium))
           .foregroundStyle(palette.foreground)
-        Text(armedAction?.name ?? L10n.tr("menu.action"))
+        Text(armedAction?.displayName ?? L10n.tr("menu.action"))
           .font(size.font)
           .foregroundStyle(palette.foreground)
           .lineLimit(1)
@@ -1383,7 +1383,7 @@ struct ActionTabBar: View {
     }
     .menuStyle(.borderlessButton)
     .menuIndicator(.hidden)
-    .help(armedAction.map { "Action: \($0.name)" } ?? "Action")
+    .help(armedAction.map { "Action: \($0.displayName)" } ?? "Action")
   }
 
   // MARK: - Parts
@@ -1399,9 +1399,9 @@ struct ActionTabBar: View {
             setDefault(action.id)
           } label: {
             if isDefault(action) {
-              Label(action.name, systemImage: "checkmark")
+              Label(action.displayName, systemImage: "checkmark")
             } else {
-              Text(action.name)
+              Text(action.displayName)
             }
           }
         }
@@ -1434,13 +1434,13 @@ struct ActionTabBar: View {
   }
 
   private func tabHelp(_ action: TranslationAction) -> String {
-    guard setDefault != nil else { return action.name }
+    guard setDefault != nil else { return action.displayName }
     if isDefault(action) {
-      return "\(action.name) · \(defaultLabel)"
+      return "\(action.displayName) · \(defaultLabel)"
     }
     return L10n.isChinese
-      ? "\(action.name) · 右键设为默认"
-      : "\(action.name) · Right-click to set as default"
+      ? "\(action.displayName) · 右键设为默认"
+      : "\(action.displayName) · Right-click to set as default"
   }
 
   /// The raised surface under the armed option. The strip has no track of
@@ -1461,10 +1461,10 @@ struct ActionTabBar: View {
       select(action.id)
     } label: {
       HStack(spacing: AppSpacing.xs + 1) {
-        Image(systemName: action.mode?.symbol ?? "sparkles")
+        Image(systemName: action.displaySymbol)
           .font(.system(size: size.iconSize, weight: .semibold))
           .foregroundStyle(isSelected ? palette.accent : palette.faintForeground)
-        Text(action.name)
+        Text(action.displayName)
           .font(size.font)
           .lineLimit(1)
       }
@@ -1491,7 +1491,7 @@ struct ActionTabBar: View {
     .buttonStyle(.plain)
     .contextMenu { defaultContextMenu(action) }
     .help(tabHelp(action))
-    .accessibilityLabel(action.name)
+    .accessibilityLabel(action.displayName)
     .accessibilityValue(isDefault(action) ? defaultLabel : "")
     .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     .accessibilityAction(named: L10n.tr("actions.set_as_default")) {

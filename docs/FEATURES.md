@@ -23,9 +23,9 @@ This file maps the original desktop behaviors to their native implementation.
 | Related terms and cards | Local candidates (`LearningRelations`) judged by `LearningAnnotator`; memory cards and weekly diagnosis by `LearningCoach` |
 | Review | `ReviewScheduler` spaced repetition, with a re-lookup counted as a lapse |
 | Study assistant | Tool-using chat over the record (`AgentClient`, `LearningTools`), native for Anthropic and OpenAI-compatible connections |
-| Custom actions | Editable prompts with source, target, and text variables |
-| Global shortcuts | Carbon hot-key registration with conflict reporting |
-| Menu bar | `MenuBarExtra` actions and quit/settings access |
+| Custom actions | Editable prompts with source, target, and text variables, an icon of their own (`symbol`), and where each action appears: the main window (`hiddenActionIDs`), the ⌥F pop-up (`popupHiddenActionIDs`, with its own default in `popupDefaultActionID`) and the ⌥W pop-up (`writingActionIDs`). The editor has a "Try it" box that runs the unsaved draft through `AppModel.tryAction` without touching history. An unrenamed preset is shown in the interface language (`displayName`) |
+| Global shortcuts | Carbon hot-key registration with conflict reporting. Inside the app one key grammar holds on every surface: ↩ primary command, Tab option, ⌘1–9 action, ⌘L language, ⌘R ask again, ⌘. stop, ⇧⌘C copy, and ⌘K follow-up in the main window |
+| Menu bar | `MenuBarExtra` with every entry point (look up, write, OCR, main window) beside the shortcut the reader set, today's review count, settings and quit |
 | Launch at login | `SMAppService.mainApp` |
 | Proxy | Ephemeral `URLSessionConfiguration` proxy settings |
 | Theme and window behavior | System/light/dark, always-on-top, auto-hide, Dock policy |

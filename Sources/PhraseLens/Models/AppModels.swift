@@ -138,8 +138,12 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
 
   var id: String { rawValue }
 
-  var title: String {
-    if L10n.isChinese {
+  var title: String { title(chinese: L10n.isChinese) }
+
+  /// The factory name in either interface language, so a built-in that was
+  /// saved under one can be recognised as unrenamed under the other.
+  func title(chinese: Bool) -> String {
+    if chinese {
       switch self {
       case .translate: return "翻译"
       case .definition: return "释义"
@@ -164,6 +168,20 @@ enum ActionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case .explainCode: return "Explain Code"
     case .compareSynonyms: return "Compare Synonyms"
     case .compose: return "Compose"
+    }
+  }
+
+  /// The factory action at work, for the English status line.
+  var englishProgressTitle: String {
+    switch self {
+    case .translate: "Translating…"
+    case .definition: "Looking it up…"
+    case .polishing: "Polishing…"
+    case .summarize: "Summarizing…"
+    case .analyze: "Analyzing…"
+    case .explainUsage, .explainContext, .explainCode: "Explaining…"
+    case .compareSynonyms: "Comparing…"
+    case .compose: "Writing…"
     }
   }
 
@@ -554,6 +572,10 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
   var options: [ActionOption]?
   /// The option picked until the reader picks another, or nil for none.
   var defaultOptionID: UUID?
+  /// The SF Symbol the action is drawn with, or nil for its mode's own (or
+  /// a generic one for a custom action). Lets several custom actions be told
+  /// apart in a tab strip at a glance, not only by reading their names.
+  var symbol: String?
 
   /// The options in the order the pop-ups show them.
   var availableOptions: [ActionOption] { options ?? [] }
@@ -671,6 +693,39 @@ struct TranslationAction: Codable, Identifiable, Hashable, Sendable {
     }
     return name
   }
+
+  /// The name to show. A built-in nobody renamed follows the interface
+  /// language: the name it was saved under — in an override, or a library
+  /// written while the app was in the other language — is only the factory
+  /// title in that language. A name the author typed is shown as typed.
+  var displayName: String {
+    guard isBuiltIn, let mode, [mode.title(chinese: true), mode.title(chinese: false)].contains(name) else {
+      return name
+    }
+    return mode.title
+  }
+
+  /// What a surface says while the action runs: "正在润色…", "Polishing…".
+  var progressTitle: String {
+    let name = displayName
+    if L10n.isChinese { return "正在\(name)…" }
+    if isBuiltIn, let mode, name == mode.title { return mode.englishProgressTitle }
+    return "Running “\(name)”…"
+  }
+
+  /// The glyph the action is drawn with: the author's pick, else its mode's.
+  var displaySymbol: String {
+    symbol ?? mode?.symbol ?? "sparkles"
+  }
+
+  /// Glyphs offered for an action, by what it is for.
+  static let symbolChoices = [
+    "sparkles", "character.bubble", "character.book.closed", "text.book.closed", "book.pages",
+    "wand.and.stars", "square.and.pencil", "text.redaction", "list.bullet.rectangle",
+    "chart.bar.doc.horizontal", "lightbulb", "graduationcap", "quote.bubble", "envelope",
+    "briefcase", "chevron.left.forwardslash.chevron.right", "number", "globe",
+    "arrow.triangle.2.circlepath", "checkmark.seal", "face.smiling", "heart",
+  ]
 
   /// Whether this action's answer depends on the text around the selection.
   ///
@@ -1183,6 +1238,13 @@ struct AppSettings: Codable, Equatable, Sendable {
   /// Actions left out of the lookup pop-up. Compose starts here: it rewrites
   /// a message, which is the writing pop-up's job, not a reader's.
   var hiddenActionIDs: Set<UUID> = AppSettings.writingOnlyActionIDs
+  /// Actions left out of the ⌥F pop-up, independently of the main window: an
+  /// action is offered where its author said it appears, and nowhere else.
+  var popupHiddenActionIDs: Set<UUID> = AppSettings.writingOnlyActionIDs
+  /// The action the ⌥F pop-up opens on, set from its own tabs; nil, or one the
+  /// pop-up no longer offers, falls back to the main window's default and
+  /// then to the pop-up's first action.
+  var popupDefaultActionID: UUID?
   /// User-authored replacements for built-in presentation and prompts. The
   /// stable built-in ID and mode remain authoritative when resolving them.
   var builtInActionOverrides: [TranslationAction] = []
@@ -1258,6 +1320,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     case actionOrder
     case installedBuiltInActionIDs
     case hiddenActionIDs
+    case popupHiddenActionIDs
+    case popupDefaultActionID
     case builtInActionOverrides
     case autoTranslate
     case autoSpeakSelection
@@ -1406,6 +1470,12 @@ struct AppSettings: Codable, Equatable, Sendable {
       installedBuiltInActionIDs.insert(composeID)
       hiddenActionIDs.formUnion(Self.writingOnlyActionIDs)
     }
+    // Before 0.18 the main window and the pop-up shared one list of hidden
+    // actions, so the pop-up starts out with the same one.
+    popupHiddenActionIDs =
+      try container.decodeIfPresent(Set<UUID>.self, forKey: .popupHiddenActionIDs)
+      ?? hiddenActionIDs
+    popupDefaultActionID = try container.decodeIfPresent(UUID.self, forKey: .popupDefaultActionID)
     // 0.15 kept a register, overall and for each app; it is Compose's option now.
     if !container.contains(.actionOptionChoices) {
       let composeKey = composeID.uuidString
@@ -1488,6 +1558,11 @@ struct AppSettings: Codable, Equatable, Sendable {
     let result = Self.completedActionOrder(actionOrder, available: available.map(\.id))
       .compactMap { byID[$0] }
     return includingHidden ? result : result.filter { !hiddenActionIDs.contains($0.id) }
+  }
+
+  /// The actions the ⌥F pop-up offers, in the same order.
+  func popupActions(customActions: [TranslationAction]) -> [TranslationAction] {
+    orderedActions(customActions: customActions).filter { !popupHiddenActionIDs.contains($0.id) }
   }
 
   /// `order` restricted to `available`, with every available ID it lacks
@@ -1621,6 +1696,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     builtInActionOverrides.removeAll { added.contains($0.id) }
     hiddenActionIDs.subtract(added.subtracting(Self.writingOnlyActionIDs))
     hiddenActionIDs.formUnion(added.intersection(Self.writingOnlyActionIDs))
+    popupHiddenActionIDs.subtract(added.subtracting(Self.writingOnlyActionIDs))
+    popupHiddenActionIDs.formUnion(added.intersection(Self.writingOnlyActionIDs))
     actionOrder = Self.completedActionOrder(existingOrder + missing,
       available: resolvedBuiltInActions.map(\.id) + customActions.map(\.id))
     if let fallback = resolvedDefaultAction(customActions: customActions) {
@@ -1632,6 +1709,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     installedBuiltInActionIDs = Set(TranslationAction.defaultOrder)
     actionOrder = TranslationAction.defaultOrder
     hiddenActionIDs = Self.writingOnlyActionIDs
+    popupHiddenActionIDs = Self.writingOnlyActionIDs
+    popupDefaultActionID = nil
     writingActionIDs = Self.defaultWritingActionIDs
     builtInActionOverrides = []
     defaultActionID = TranslationAction.builtIns[0].id

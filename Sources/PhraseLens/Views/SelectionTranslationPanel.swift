@@ -46,6 +46,7 @@ final class SelectionPanelCoordinator {
   private var deactivateObserver: NSObjectProtocol?
   private var moveObserver: NSObjectProtocol?
   private var liveResizeObserver: NSObjectProtocol?
+  private var tabKeyMonitor: Any?
   /// Where the panel grew from, in the content layer's unit space, so that it
   /// collapses back into the same point on the way out.
   private var growthAnchor = PanelMotion.centreAnchor
@@ -150,6 +151,7 @@ final class SelectionPanelCoordinator {
     self.model = model
     settingsStore = model.settingsStore
     installFrameObservers(for: panel)
+    installTabKeyMonitor()
     if !settings.selectionPanelPinned {
       installDismissalObservers()
     }
@@ -174,6 +176,7 @@ final class SelectionPanelCoordinator {
   func close(animated: Bool = true, as exit: Exit = .dismissal) {
     removeDismissalObservers()
     removeFrameObservers()
+    removeTabKeyMonitor()
     let model = self.model
     self.model = nil
     settingsStore = nil
@@ -471,6 +474,39 @@ final class SelectionPanelCoordinator {
         SelectionPanelCoordinator.shared.panelDidEndLiveResize()
       }
     }
+  }
+
+  /// Tab and ⇧Tab step through the action's options, as in the writing
+  /// pop-up and the main window. Read before the window sees the key, so it
+  /// works wherever focus is in the panel — the field included, where Tab
+  /// would otherwise only move focus — and is left alone for an action with
+  /// no options, or while an input method is composing.
+  private func installTabKeyMonitor() {
+    tabKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+      guard event.keyCode == 48,
+        event.modifierFlags.intersection([.command, .option, .control]).isEmpty
+      else { return event }
+      let backwards = event.modifierFlags.contains(.shift)
+      let windowNumber = event.windowNumber
+      let handled = MainActor.assumeIsolated {
+        SelectionPanelCoordinator.shared.cycleOption(inWindow: windowNumber, backwards: backwards)
+      }
+      return handled ? nil : event
+    }
+  }
+
+  private func removeTabKeyMonitor() {
+    if let tabKeyMonitor {
+      NSEvent.removeMonitor(tabKeyMonitor)
+      self.tabKeyMonitor = nil
+    }
+  }
+
+  private func cycleOption(inWindow windowNumber: Int, backwards: Bool) -> Bool {
+    guard let panel, let model, panel.windowNumber == windowNumber,
+      (panel.firstResponder as? NSTextView)?.hasMarkedText() != true
+    else { return false }
+    return model.cycleOption(backwards: backwards)
   }
 
   private func removeFrameObservers() {
@@ -810,6 +846,7 @@ private struct SelectionPanelBody: View {
       .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomChromeHeight = $0 }
     }
     .floatingPanelBackground(palette)
+    .background { keyboardShortcuts }
     .onChange(of: preferredHeight) { _, _ in reportHeight() }
     .onChange(of: model.isTranslating) { _, _ in reportHeight() }
     .onAppear(perform: startLookup)
@@ -873,6 +910,60 @@ private struct SelectionPanelBody: View {
   private func submitTypedSource() {
     guard !normalizedInputText.isEmpty, model.selectedAction != nil else { return }
     model.translate()
+  }
+
+  // MARK: - Keyboard
+
+  /// The keys every surface shares, bound here because the main menu does
+  /// not reach a pop-up over another app: ⌘1–9 pick an action, ⌘L steps the
+  /// language, ⌘R asks again, ⇧⌘C copies. Tab is the coordinator's, and ⌘.
+  /// sits on the stop button while there is something to stop.
+  private var keyboardShortcuts: some View {
+    ZStack {
+      ForEach(Array(model.popupActions.prefix(9).enumerated()), id: \.element.id) { index, action in
+        Button("") { actionSelection.wrappedValue = action.id }
+          .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: [.command])
+      }
+      Button("") { model.cycleTargetLanguage() }
+        .keyboardShortcut("l", modifiers: [.command])
+      Button("") { model.regenerate() }
+        .keyboardShortcut("r", modifiers: [.command])
+      Button("") {
+        guard model.canCopyResult else { return }
+        perform(.copy)
+      }
+      .keyboardShortcut("c", modifiers: [.command, .shift])
+    }
+    .opacity(0)
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+
+  /// The keys worth knowing right now, most useful first; the footer drops
+  /// the tail when it runs out of room.
+  private var keyHints: [String] {
+    let zh = L10n.isChinese
+    var hints: [String] = []
+    if !model.outputText.isEmpty {
+      let primary = model.primaryResultCommand.title
+      hints.append(isSourceFieldFocused ? "⌘↩ \(primary)" : "↩ \(primary)")
+    } else if let action = model.selectedAction, !normalizedInputText.isEmpty {
+      hints.append("↩ \(action.displayName)")
+    }
+    if model.selectedAction?.availableOptions.isEmpty == false {
+      hints.append(zh ? "⇥ 选项" : "⇥ option")
+    }
+    if model.selectedAction?.usesTargetLanguage == true, model.visibleTargetLanguages.count > 1 {
+      hints.append(zh ? "⌘L 语言" : "⌘L language")
+    }
+    if model.popupActions.count > 1 {
+      let last = min(model.popupActions.count, 9)
+      hints.append(zh ? "⌘1–\(last) 动作" : "⌘1–\(last) action")
+    }
+    if !model.outputText.isEmpty, !model.isTranslating {
+      hints.append(zh ? "⌘R 重新生成" : "⌘R again")
+    }
+    return hints
   }
 
   // MARK: - Header
@@ -960,11 +1051,12 @@ private struct SelectionPanelBody: View {
   private var controls: some View {
     VStack(spacing: AppSpacing.sm) {
       ActionTabBar(
-        actions: model.visibleActions,
+        actions: model.popupActions,
         selection: actionSelection,
         size: .compact,
-        defaultActionID: settingsStore.settings.defaultActionID,
-        setDefault: { settingsStore.setDefaultAction($0) }
+        // The pop-up's own default, set here and nowhere else.
+        defaultActionID: model.popupDefaultAction?.id,
+        setDefault: { settingsStore.settings.popupDefaultActionID = $0 }
       )
       // The strip sizes to its content, so pin it to the leading edge rather
       // than letting the stack centre a half-width track.
@@ -1184,12 +1276,12 @@ private struct SelectionPanelBody: View {
   private var resultContent: some View {
     if model.isAccessibilityPermissionError {
       accessibilityPermissionMessage
-    } else if model.visibleActions.isEmpty {
+    } else if model.popupActions.isEmpty {
       NoActionsView()
         .padding(.vertical, AppSpacing.lg)
     } else if model.outputText.isEmpty, model.isTranslating {
       message(
-        L10n.isChinese ? "正在翻译…" : "Translating…",
+        model.selectedAction?.progressTitle ?? (L10n.isChinese ? "正在处理…" : "Working…"),
         symbol: "ellipsis",
         tint: palette.mutedForeground
       )
@@ -1222,7 +1314,7 @@ private struct SelectionPanelBody: View {
       Text(readyHint)
         .font(AppFont.body)
         .foregroundStyle(palette.mutedForeground)
-      Button(L10n.isChinese ? "翻译" : "Translate") {
+      Button(model.selectedAction?.displayName ?? (L10n.isChinese ? "运行" : "Run")) {
         model.translate()
       }
       .appButton(isEditingSource ? .secondary : .brand, size: .sm, capsule: true)
@@ -1237,7 +1329,8 @@ private struct SelectionPanelBody: View {
 
   private var readyHint: String {
     guard isEditingSource else {
-      return L10n.isChinese ? "就绪，等待翻译" : "Ready to translate"
+      let name = model.selectedAction?.displayName ?? (L10n.isChinese ? "运行" : "run")
+      return L10n.isChinese ? "按 ↩ 开始\(name)" : "Press ↩ to run \(name)"
     }
     return normalizedInputText.isEmpty
       ? (L10n.isChinese ? "输入后按 ↩ 查询" : "Type, then press ↩")
@@ -1368,7 +1461,10 @@ private struct SelectionPanelBody: View {
         model.toggleCollectCurrentWord()
       }
 
-      Spacer(minLength: AppSpacing.sm)
+      // The hints take the room between the two groups, and give it up first.
+      footerHints
+        .padding(.horizontal, AppSpacing.xs)
+        .frame(maxWidth: .infinity, alignment: .leading)
 
       IconButton(
         title: model.isSpeaking(.result)
@@ -1388,9 +1484,7 @@ private struct SelectionPanelBody: View {
 
       // The action decides which commands its answer offers, and the source
       // decides which of those can run. The first is the pill; the rest sit
-      // beside it as icons. None of them takes a shortcut: until the reader
-      // clicks the pop-up, keystrokes still go to the source app, where ⌘↩
-      // usually means Send.
+      // beside it as icons.
       ForEach(Array(model.offeredResultCommands.dropFirst())) { command in
         IconButton(
           title: commandHelp(command),
@@ -1414,12 +1508,38 @@ private struct SelectionPanelBody: View {
       }
       .appButton(.brand, size: .sm, capsule: true)
       .symbolEffect(.bounce, value: didCopy)
+      // Return is the pop-up's primary command, as it is the writing
+      // pop-up's — once there is an answer, and only while the field is not
+      // taking Return to look up what was typed in it; ⌘↩ reaches it from there.
+      .keyboardShortcut(primaryShortcut)
       .disabled(!model.canPerform(primary))
       .help(commandHelp(primary))
       .accessibilityLabel(commandHelp(primary))
     }
     .padding(.horizontal, AppSpacing.md)
     .frame(height: AppMetrics.paneFooterHeight + 6)
+  }
+
+  private var primaryShortcut: KeyboardShortcut? {
+    guard !model.outputText.isEmpty else { return nil }
+    return KeyboardShortcut(.return, modifiers: isSourceFieldFocused ? [.command] : [])
+  }
+
+  /// The key hints, as many as fit between the two button groups, in the
+  /// writing pop-up's form.
+  private var footerHints: some View {
+    let hints = keyHints
+    return ViewThatFits(in: .horizontal) {
+      ForEach(Array(stride(from: hints.count, through: 1, by: -1)), id: \.self) { count in
+        Text(hints.prefix(count).joined(separator: L10n.isChinese ? "　" : "  "))
+          .lineLimit(1)
+          .fixedSize()
+      }
+      Color.clear.frame(width: 0, height: 0)
+    }
+    .font(AppFont.caption)
+    .foregroundStyle(palette.faintForeground)
+    .accessibilityHidden(true)
   }
 
   private func perform(_ command: ResultCommand) {

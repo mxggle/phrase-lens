@@ -350,6 +350,17 @@ final class ComposeModel: ObservableObject {
     (index + (backwards ? -1 : 1) + count) % count
   }
 
+  /// ⌘.: stops the answer where it got to, the same key every surface uses.
+  /// What has arrived stays, to keep, edit or ask again for with ⌘R.
+  func stop() {
+    let key = currentKey
+    guard let draft = drafts[key], draft.isStreaming else { return }
+    tasks[key]?.cancel()
+    tasks[key] = nil
+    replacesWhenFinished = false
+    drafts[key] = ComposeDraft(text: WriteBackComposer.clean(draft.text), isStreaming: false)
+  }
+
   /// Asks again for the current style, for a different wording.
   func regenerate() {
     guard capture != nil, !isStreaming else { return }

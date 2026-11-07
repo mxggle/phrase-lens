@@ -16,6 +16,12 @@ struct ActionsView: View {
   @State private var splitFraction = 0.32
   /// Compact layouts show one column at a time; this is which one.
   @State private var showsEditorInCompact = false
+  @State private var isSymbolPickerShown = false
+  @State private var trialText = ""
+  @State private var trialOutput = ""
+  @State private var trialError: String?
+  @State private var isTrying = false
+  @State private var trialTask: Task<Void, Never>?
 
   var body: some View {
     Group {
@@ -43,7 +49,16 @@ struct ActionsView: View {
       draftBuiltIns = settingsStore.settings.resolvedBuiltInActions
       selectedID = selectedID ?? orderedActions.first?.id
     }
-    .onDisappear { flushPendingSave() }
+    .onDisappear {
+      flushPendingSave()
+      stopTrial()
+    }
+    .onChange(of: selectedID) { _, _ in
+      // A trial answers for the action it ran, not the one selected next.
+      stopTrial()
+      trialOutput = ""
+      trialError = nil
+    }
     .onChange(of: draftActions) { _, actions in
       scheduleSave(actions)
     }
@@ -160,7 +175,7 @@ struct ActionsView: View {
                 reloadDrafts(selecting: action.id)
                 if layoutWidth.isCompact { showsEditorInCompact = true }
               } label: {
-                Label(action.name, systemImage: installed ? "checkmark" : (action.mode?.symbol ?? "sparkles"))
+                Label(action.displayName, systemImage: installed ? "checkmark" : action.displaySymbol)
               }
               .disabled(installed)
             }
@@ -203,14 +218,11 @@ struct ActionsView: View {
         .padding(.horizontal, AppSpacing.sm + 2)
         .padding(.bottom, AppSpacing.xs)
       ForEach(actions) { action in
-        let isHidden = isActionHidden(action.id)
         ActionListRow(
           action: action,
           isSelected: action.id == selectedID,
-          isHidden: isHidden,
+          places: places(of: action.id),
           isDefault: settingsStore.settings.defaultActionID == action.id,
-          isWriting: settingsStore.settings.writingActionIDs.contains(action.id),
-          canHide: isHidden || visibleActionCount > 1,
           onSelect: {
             selectedID = action.id
             if layoutWidth.isCompact {
@@ -218,8 +230,7 @@ struct ActionsView: View {
                 showsEditorInCompact = true
               }
             }
-          },
-          onToggleVisibility: { toggleVisibility(action.id) }
+          }
         )
         .dropDestination(for: String.self) { values, _ in
           guard let value = values.first, let sourceID = UUID(uuidString: value) else { return false }
@@ -286,10 +297,7 @@ struct ActionsView: View {
   /// Which buttons the answer gets, and which of them is the pill.
   @ViewBuilder
   private func resultCommandsEditor(_ action: Binding<TranslationAction>) -> some View {
-    SettingsRow(
-      L10n.isChinese ? "结果按钮" : "Result buttons",
-      detail: resultCommandsDetail(action.wrappedValue)
-    ) {
+    SettingsRow(L10n.isChinese ? "显示的按钮" : "Buttons shown") {
       HStack(spacing: AppSpacing.xs) {
         ForEach(ResultCommand.allCases) { command in
           Toggle(
@@ -349,115 +357,13 @@ struct ActionsView: View {
     return detail
   }
 
+  /// Laid out in the order an action is thought about: what it is called,
+  /// what it asks, the choices it offers, where it appears, what its answer
+  /// gets, and — last, since most actions never need them — which model
+  /// answers and how. The prompt used to sit under ten rows of settings.
   @ViewBuilder
   private func actionEditor(action: Binding<TranslationAction>, isBuiltIn: Bool) -> some View {
-    SettingsCard(
-      L10n.isChinese ? "动作设置" : "Action",
-      caption: L10n.isChinese ? "所做修改将自动保存。" : "Changes are saved automatically."
-    ) {
-      SettingsRow(L10n.isChinese ? "动作名称" : "Action name") {
-        AppTextField(
-          placeholder: L10n.isChinese ? "动作名称" : "Name",
-          text: action.name,
-          size: .sm
-        )
-        .frame(maxWidth: 260)
-      }
-      Hairline()
-      SettingsRow(L10n.isChinese ? "动作来源" : "Action source") {
-        Badge(
-          text: isBuiltIn
-            ? (L10n.isChinese ? "预置" : "Preset")
-            : (L10n.isChinese ? "自定义" : "Custom"),
-          variant: .neutral
-        )
-      }
-      Hairline()
-      actionModelEditor(action)
-      Hairline()
-      SettingsRow(
-        L10n.isChinese ? "以 Markdown 格式渲染结果" : "Render as Markdown",
-        detail: L10n.isChinese
-          ? "支持渲染标题、加粗文本、代码块与列表项。"
-          : "Formats headings, bold text, code blocks, and bullet points."
-      ) {
-        Toggle("", isOn: action.outputMarkdown)
-          .toggleStyle(AppSwitchStyle())
-          .labelsHidden()
-          .accessibilityLabel(L10n.isChinese ? "以 Markdown 格式渲染结果" : "Render as Markdown")
-      }
-      Hairline()
-      resultCommandsEditor(action)
-      Hairline()
-      SettingsRow(
-        L10n.isChinese ? "在翻译器中显示" : "Show in translator",
-        detail: L10n.isChinese ? "隐藏的动作仍保留配置，但不会出现在动作选择器中。" : "Hidden actions stay configured but do not appear in the action picker."
-      ) {
-        Toggle(
-          "",
-          isOn: Binding(
-            get: { !isActionHidden(action.wrappedValue.id) },
-            set: { setAction(action.wrappedValue.id, visible: $0) }
-          )
-        )
-        .toggleStyle(AppSwitchStyle())
-        .labelsHidden()
-        .disabled(!isActionHidden(action.wrappedValue.id) && visibleActionCount == 1)
-        .accessibilityLabel(L10n.isChinese ? "在翻译器中显示" : "Show in translator")
-      }
-      Hairline()
-      SettingsRow(
-        L10n.isChinese ? "写作时可用" : "Use when writing",
-        detail: L10n.isChinese
-          ? "在输入框里按 \(settingsStore.settings.shortcuts.writing) 时，出现在写作浮窗里，处理输入框里写好的文字，回车替换原文。"
-          : "Offered in the pop-up that \(settingsStore.settings.shortcuts.writing) opens on a text field, working on what you wrote there. Return puts the result in its place."
-      ) {
-        Toggle(
-          "",
-          isOn: Binding(
-            get: { settingsStore.settings.writingActionIDs.contains(action.wrappedValue.id) },
-            set: { isOn in
-              let id = action.wrappedValue.id
-              guard settingsStore.settings.writingActionIDs.contains(id) != isOn else { return }
-              if isOn {
-                settingsStore.settings.writingActionIDs.insert(id)
-              } else {
-                settingsStore.settings.writingActionIDs.remove(id)
-              }
-            }
-          )
-        )
-        .toggleStyle(AppSwitchStyle())
-        .labelsHidden()
-        .accessibilityLabel(L10n.isChinese ? "写作时可用" : "Use when writing")
-      }
-      Hairline()
-      SettingsRow(
-        L10n.isChinese ? "默认动作" : "Default action",
-        detail: L10n.isChinese ? "新翻译开始时默认使用此动作。" : "Use this action when a new translation starts."
-      ) {
-        Button(
-          settingsStore.settings.defaultActionID == action.wrappedValue.id
-            ? (L10n.isChinese ? "默认" : "Default") : (L10n.isChinese ? "设为默认" : "Set as Default")
-        ) {
-          setDefaultAction(action.wrappedValue.id)
-        }
-        .appButton(
-          settingsStore.settings.defaultActionID == action.wrappedValue.id
-            ? .secondary : .outline,
-          size: .sm
-        )
-        .disabled(settingsStore.settings.defaultActionID == action.wrappedValue.id)
-      }
-      Hairline()
-      SettingsRow(
-        L10n.isChinese ? "制作动作副本" : "Duplicate action",
-        detail: L10n.isChinese ? "基于此动作当前的提示词创建一个新的自定义动作。" : "Creates a new custom action starting from this one's current prompts."
-      ) {
-        Button(L10n.isChinese ? "制作副本" : "Duplicate") { duplicateAction(action.wrappedValue) }
-          .appButton(.outline, size: .sm)
-      }
-    }
+    editorHeader(action, isBuiltIn: isBuiltIn)
 
     SettingsCard(
       L10n.isChinese ? "系统提示词 (Role Prompt)" : "System prompt",
@@ -519,27 +425,263 @@ struct ActionsView: View {
 
     optionsEditor(action)
 
-    HStack(spacing: AppSpacing.sm) {
-      Button(L10n.isChinese ? "恢复此动作默认提示词" : "Reset to default prompt") {
-        restoreAction(action.wrappedValue.id)
-      }
-      .appButton(.outline, size: .sm)
+    placementEditor(action.wrappedValue)
 
-      if !isBuiltIn {
-        Button(L10n.isChinese ? "删除此动作" : "Delete Action") {
-          removeSelectedAction()
+    SettingsCard(
+      L10n.isChinese ? "结果按钮" : "Result buttons",
+      caption: resultCommandsDetail(action.wrappedValue)
+    ) {
+      resultCommandsEditor(action)
+    }
+
+    SettingsCard(L10n.isChinese ? "高级" : "Advanced") {
+      actionModelEditor(action)
+      Hairline()
+      SettingsRow(
+        L10n.isChinese ? "以 Markdown 格式渲染结果" : "Render as Markdown",
+        detail: L10n.isChinese
+          ? "支持渲染标题、加粗文本、代码块与列表项。"
+          : "Formats headings, bold text, code blocks, and bullet points."
+      ) {
+        Toggle("", isOn: action.outputMarkdown)
+          .toggleStyle(AppSwitchStyle())
+          .labelsHidden()
+          .accessibilityLabel(L10n.isChinese ? "以 Markdown 格式渲染结果" : "Render as Markdown")
+      }
+    }
+
+    trialCard(action.wrappedValue)
+  }
+
+  // MARK: - Header
+
+  /// The action's glyph and name, and the commands on the action as a whole.
+  private func editorHeader(_ action: Binding<TranslationAction>, isBuiltIn: Bool) -> some View {
+    VStack(alignment: .leading, spacing: AppSpacing.xs) {
+      HStack(spacing: AppSpacing.sm) {
+        symbolPicker(action)
+        AppTextField(
+          placeholder: L10n.isChinese ? "动作名称" : "Action name",
+          // An unrenamed preset reads in the interface language here too.
+          text: Binding(
+            get: { action.wrappedValue.displayName },
+            set: { action.wrappedValue.name = $0 }
+          ),
+          size: .md
+        )
+        .frame(maxWidth: 320)
+        .accessibilityLabel(L10n.isChinese ? "动作名称" : "Action name")
+        Spacer(minLength: AppSpacing.sm)
+        AppMenuButton(title: L10n.isChinese ? "更多" : "More", symbol: "ellipsis", variant: .ghost) {
+          Button(L10n.isChinese ? "制作副本" : "Duplicate") { duplicateAction(action.wrappedValue) }
+          Button(isBuiltIn ? (L10n.isChinese ? "恢复预置设置" : "Restore Preset") : (L10n.isChinese ? "恢复默认提示词" : "Reset Prompts")) {
+            restoreAction(action.wrappedValue.id)
+          }
+          Divider()
+          Button(L10n.isChinese ? "删除动作" : "Delete Action", role: .destructive) {
+            removeSelectedAction()
+          }
         }
-        .appButton(.destructive, size: .sm)
+        .help(
+          isBuiltIn
+            ? (L10n.isChinese ? "制作副本；恢复预置的提示词、选项和显示设置（保留模型选择）；删除" : "Duplicate; restore the preset prompts, options, and display, keeping the model; delete")
+            : (L10n.isChinese ? "制作副本；恢复自定义动作模板；删除" : "Duplicate; reset to the custom action template; delete")
+        )
       }
-
       Text(
         isBuiltIn
-          ? (L10n.isChinese ? "恢复预置的提示词、选项和显示设置，保留模型选择。" : "Restore the preset prompts, options, and display settings, keeping the model choice.")
-          : (L10n.isChinese ? "恢复自定义动作模板。" : "Restores the custom action template.")
+          ? (L10n.isChinese ? "预置动作 · 修改会自动保存" : "Preset · Changes are saved automatically")
+          : (L10n.isChinese ? "自定义动作 · 修改会自动保存" : "Custom · Changes are saved automatically")
       )
       .font(AppFont.caption)
       .foregroundStyle(palette.mutedForeground)
+      .padding(.horizontal, AppSpacing.xs)
     }
+  }
+
+  /// The glyph the action is drawn with in tabs and menus, so several custom
+  /// actions can be told apart at a glance rather than only by reading.
+  private func symbolPicker(_ action: Binding<TranslationAction>) -> some View {
+    let current = action.wrappedValue.displaySymbol
+    let factory = action.wrappedValue.mode?.symbol ?? "sparkles"
+    let choices = TranslationAction.symbolChoices.contains(factory)
+      ? TranslationAction.symbolChoices : [factory] + TranslationAction.symbolChoices
+    return Button {
+      isSymbolPickerShown = true
+    } label: {
+      Image(systemName: current)
+        .font(.system(size: 14, weight: .medium))
+        .foregroundStyle(palette.accent)
+        .frame(width: AppMetrics.controlHeight, height: AppMetrics.controlHeight)
+        .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+        .overlay {
+          RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+            .strokeBorder(palette.border, lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .help(L10n.isChinese ? "选择图标" : "Choose an icon")
+    .accessibilityLabel(L10n.isChinese ? "动作图标" : "Action icon")
+    .popover(isPresented: $isSymbolPickerShown, arrowEdge: .bottom) {
+      LazyVGrid(
+        columns: Array(repeating: GridItem(.fixed(30), spacing: AppSpacing.xs), count: 6),
+        spacing: AppSpacing.xs
+      ) {
+        ForEach(choices, id: \.self) { symbol in
+          let isOn = symbol == current
+          Button {
+            // The factory glyph is stored as no choice, so a preset whose
+            // glyph changes in an update follows it.
+            action.wrappedValue.symbol = symbol == factory ? nil : symbol
+            isSymbolPickerShown = false
+          } label: {
+            Image(systemName: symbol)
+              .font(.system(size: 13, weight: .medium))
+              .foregroundStyle(isOn ? palette.accent : palette.secondaryForeground)
+              .frame(width: 30, height: 30)
+              .background(
+                isOn ? palette.accentFill : Color.clear,
+                in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
+              )
+              .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(symbol)
+          .accessibilityAddTraits(isOn ? [.isSelected] : [])
+        }
+      }
+      .padding(AppSpacing.sm + 2)
+    }
+  }
+
+  // MARK: - Where it appears
+
+  /// One row of chips for the three places an action can be offered. The
+  /// default for each place is set on that place's own tabs (right-click).
+  private func placementEditor(_ action: TranslationAction) -> some View {
+    let id = action.id
+    let inMain = !isActionHidden(id)
+    let inPopup = !settingsStore.settings.popupHiddenActionIDs.contains(id)
+    let inWriting = settingsStore.settings.writingActionIDs.contains(id)
+    let shortcuts = settingsStore.settings.shortcuts
+    return SettingsCard(
+      L10n.isChinese ? "出现在" : "Appears in",
+      caption: L10n.isChinese
+        ? "主窗口和查词浮窗至少各保留一个动作。写作浮窗处理输入框里写好的文字，回车替换原文。主窗口和查词浮窗的默认动作，在各自的动作标签上右键设置。"
+        : "The main window and the lookup pop-up each keep at least one action. The writing pop-up works on what you wrote in a text field, and Return puts the result in its place. Right-click an action tab in the main window or the lookup pop-up to make it that place's default."
+    ) {
+      SettingsBlock {
+        FlowLayout(spacing: AppSpacing.xs + 2, lineSpacing: AppSpacing.xs) {
+          Toggle(
+            L10n.isChinese ? "主窗口" : "Main window",
+            isOn: Binding(get: { inMain }, set: { setAction(id, visible: $0) })
+          )
+          .toggleStyle(ChipToggleStyle())
+          .disabled(inMain && visibleActionCount == 1)
+
+          Toggle(
+            L10n.isChinese ? "查词浮窗 \(shortcuts.translateSelection)" : "Lookup pop-up \(shortcuts.translateSelection)",
+            isOn: Binding(get: { inPopup }, set: { setActionInPopup(id, shown: $0) })
+          )
+          .toggleStyle(ChipToggleStyle())
+          .disabled(inPopup && popupActionCount == 1)
+
+          Toggle(
+            L10n.isChinese ? "写作浮窗 \(shortcuts.writing)" : "Writing pop-up \(shortcuts.writing)",
+            isOn: Binding(get: { inWriting }, set: { setActionInWriting(id, shown: $0) })
+          )
+          .toggleStyle(ChipToggleStyle())
+        }
+      }
+    }
+  }
+
+  // MARK: - Try it
+
+  /// Runs the action as it stands in the editor on a sentence, so a prompt
+  /// can be tuned without going back to the workbench. Nothing is filed in
+  /// history.
+  private func trialCard(_ action: TranslationAction) -> some View {
+    SettingsCard(
+      L10n.isChinese ? "试一下" : "Try it",
+      caption: L10n.isChinese
+        ? "用编辑器里现在的提示词和选项跑一次，不会记入历史。"
+        : "Runs the prompt and option as they are in the editor. Nothing is saved to history."
+    ) {
+      SettingsBlock {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+          HStack(spacing: AppSpacing.sm) {
+            AppTextField(
+              placeholder: L10n.isChinese ? "输入一句话" : "Type a sentence",
+              text: $trialText,
+              size: .sm,
+              onSubmit: { runTrial(action) }
+            )
+            Button {
+              if isTrying { stopTrial() } else { runTrial(action) }
+            } label: {
+              AdaptiveLabel(
+                title: isTrying ? (L10n.isChinese ? "停止" : "Stop") : action.displayName,
+                symbol: isTrying ? "stop.fill" : "play.fill"
+              )
+            }
+            .appButton(.secondary, size: .sm)
+            .disabled(!isTrying && trialText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          }
+          if let trialError {
+            InlineNote(text: trialError, kind: .error)
+          } else if isTrying || !trialOutput.isEmpty {
+            Group {
+              if trialOutput.isEmpty {
+                Text(action.progressTitle)
+                  .foregroundStyle(palette.mutedForeground)
+              } else if action.outputMarkdown {
+                MarkdownText(trialOutput, baseFontSize: settingsStore.settings.fontSize)
+              } else {
+                Text(trialOutput)
+                  .textSelection(.enabled)
+              }
+            }
+            .font(.system(size: settingsStore.settings.fontSize))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(AppSpacing.sm + 2)
+            .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+          }
+        }
+      }
+    }
+  }
+
+  private func runTrial(_ action: TranslationAction) {
+    let text = trialText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return }
+    trialTask?.cancel()
+    trialOutput = ""
+    trialError = nil
+    isTrying = true
+    let option = settingsStore.settings.chosenOption(for: action, inApp: nil)
+    trialTask = Task { @MainActor in
+      do {
+        let stream = try await model.tryAction(action, on: text, option: option)
+        for try await chunk in stream {
+          guard !Task.isCancelled else { return }
+          trialOutput += chunk
+        }
+      } catch {
+        guard !Task.isCancelled else { return }
+        if case TranslationError.cancelled = error {} else {
+          trialError = error.localizedDescription
+        }
+      }
+      if !Task.isCancelled { isTrying = false }
+    }
+  }
+
+  private func stopTrial() {
+    trialTask?.cancel()
+    trialTask = nil
+    isTrying = false
   }
 
   // MARK: - Options
@@ -734,20 +876,49 @@ struct ActionsView: View {
       if settingsStore.settings.defaultActionID == id,
         let replacement = orderedActions.first(where: { !hidden.contains($0.id) })
       {
-        setDefaultAction(replacement.id)
+        settingsStore.setDefaultAction(replacement.id)
       }
     }
     settingsStore.settings.hiddenActionIDs = hidden
   }
 
-  private func toggleVisibility(_ id: UUID) {
-    setAction(id, visible: isActionHidden(id))
+  /// Where an action is offered, shortest names first in the order the
+  /// editor's chips use: the main window, then each pop-up by its shortcut.
+  private func places(of id: UUID) -> [String] {
+    let settings = settingsStore.settings
+    var places: [String] = []
+    if !settings.hiddenActionIDs.contains(id) { places.append(L10n.isChinese ? "主窗口" : "Window") }
+    if !settings.popupHiddenActionIDs.contains(id) { places.append(settings.shortcuts.translateSelection) }
+    if settings.writingActionIDs.contains(id) { places.append(settings.shortcuts.writing) }
+    return places
   }
 
-  private func setDefaultAction(_ id: UUID) {
-    setAction(id, visible: true)
-    settingsStore.setDefaultAction(id)
-    model.selectedActionID = id
+  private var popupActionCount: Int {
+    allDraftActions.reduce(into: 0) { count, action in
+      if !settingsStore.settings.popupHiddenActionIDs.contains(action.id) { count += 1 }
+    }
+  }
+
+  /// Like the main window, the lookup pop-up always keeps one action.
+  private func setActionInPopup(_ id: UUID, shown: Bool) {
+    var hidden = settingsStore.settings.popupHiddenActionIDs
+    if shown {
+      hidden.remove(id)
+    } else {
+      guard popupActionCount > 1 else { return }
+      hidden.insert(id)
+    }
+    guard hidden != settingsStore.settings.popupHiddenActionIDs else { return }
+    settingsStore.settings.popupHiddenActionIDs = hidden
+  }
+
+  private func setActionInWriting(_ id: UUID, shown: Bool) {
+    guard settingsStore.settings.writingActionIDs.contains(id) != shown else { return }
+    if shown {
+      settingsStore.settings.writingActionIDs.insert(id)
+    } else {
+      settingsStore.settings.writingActionIDs.remove(id)
+    }
   }
 
   private func normalizeActionOrder() {
@@ -964,8 +1135,8 @@ struct ActionsView: View {
   /// prompts are exactly
   /// what was visible in the editor at the moment of duplication.
   private func duplicateAction(_ action: TranslationAction) {
-    let base = action.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.name
-    let copy = TranslationAction(
+    let base = action.displayName.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.displayName
+    var copy = TranslationAction(
       name: L10n.isChinese ? "\(base) 副本" : "\(base) Copy",
       rolePrompt: action.rolePrompt,
       commandPrompt: action.commandPrompt,
@@ -975,6 +1146,7 @@ struct ActionsView: View {
       options: action.options,
       defaultOptionID: action.defaultOptionID
     )
+    copy.symbol = action.symbol ?? action.mode?.symbol
     draftActions.append(copy)
     var order = settingsStore.settings.actionOrder
     if let index = order.firstIndex(of: action.id) {
@@ -1033,35 +1205,37 @@ struct ActionsView: View {
 
 // MARK: - List row
 
-/// One action in the source list: what it is, whether it is the default, and
-/// whether the translator shows it.
+/// One action in the source list: what it is, where it is offered, and
+/// whether it is the main window's default.
 ///
 /// The row is one selectable surface, drag handle included, so the selection
-/// reads as a single object rather than a highlighted label floating between a
-/// grip and an eye. The grip and the visibility switch stay faint until the
-/// pointer is on the row; a hidden action keeps its crossed-out eye in sight,
-/// because that is the state the row exists to show.
+/// reads as a single object rather than a highlighted label beside a grip.
+/// Where the action appears is changed in the editor's "Appears in" chips;
+/// the row only says it, dimming an action that appears nowhere.
 private struct ActionListRow: View {
   let action: TranslationAction
   let isSelected: Bool
-  let isHidden: Bool
+  /// Short names of the places that offer it: "主窗口", "⌥F", "⌥W".
+  let places: [String]
   let isDefault: Bool
-  /// Offered in the writing pop-up.
-  let isWriting: Bool
-  let canHide: Bool
   let onSelect: () -> Void
-  let onToggleVisibility: () -> Void
 
   @Environment(\.palette) private var palette
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var isHovering = false
 
   private var name: String {
-    action.name.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.name
+    action.displayName.isEmpty ? (L10n.isChinese ? "未命名动作" : "Untitled Action") : action.displayName
   }
 
   private var kind: String {
     action.isBuiltIn ? (L10n.isChinese ? "预置" : "Preset") : (L10n.isChinese ? "自定义" : "Custom")
+  }
+
+  private var placesText: String {
+    places.isEmpty
+      ? (L10n.isChinese ? "未启用" : "Not offered")
+      : places.joined(separator: L10n.isChinese ? "、" : ", ")
   }
 
   var body: some View {
@@ -1078,28 +1252,26 @@ private struct ActionListRow: View {
 
       Button(action: onSelect) {
         HStack(spacing: AppSpacing.sm + 2) {
-          Image(systemName: action.mode?.symbol ?? "sparkles")
+          Image(systemName: action.displaySymbol)
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(isSelected ? palette.foreground : palette.mutedForeground)
             .frame(width: 16)
           VStack(alignment: .leading, spacing: 1) {
             Text(name)
               .font(AppFont.bodyMedium)
-              .foregroundStyle(isHidden ? palette.mutedForeground : palette.foreground)
+              .foregroundStyle(places.isEmpty ? palette.mutedForeground : palette.foreground)
               .lineLimit(1)
               .truncationMode(.tail)
             // The default is a property of the action, so it is said on the
             // action's own line rather than with a badge that takes the width
             // the name needs.
             HStack(spacing: AppSpacing.xs) {
-              Text(isHidden ? (L10n.isChinese ? "\(kind) · 已隐藏" : "\(kind) · Hidden") : kind)
+              Text(kind)
                 .foregroundStyle(palette.mutedForeground)
-              if isWriting {
-                Text("·").foregroundStyle(palette.faintForeground)
-                Text(L10n.isChinese ? "写作" : "Writing")
-                  .foregroundStyle(palette.mutedForeground)
-                  .help(L10n.isChinese ? "出现在写作浮窗里" : "Offered in the writing pop-up")
-              }
+              Text("·").foregroundStyle(palette.faintForeground)
+              Text(placesText)
+                .foregroundStyle(places.isEmpty ? palette.faintForeground : palette.mutedForeground)
+                .help(L10n.isChinese ? "出现在：\(placesText)" : "Appears in: \(placesText)")
               if isDefault {
                 Text("·").foregroundStyle(palette.faintForeground)
                 Text(L10n.isChinese ? "默认" : "Default")
@@ -1116,22 +1288,14 @@ private struct ActionListRow: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel(name)
-      .accessibilityValue(isDefault ? (L10n.isChinese ? "默认动作" : "Default action") : "")
+      .accessibilityValue(
+        [placesText, isDefault ? (L10n.isChinese ? "默认动作" : "Default action") : nil]
+          .compactMap { $0 }.joined(separator: ", ")
+      )
       .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-
-      IconButton(
-        title: L10n.isChinese
-          ? (isHidden ? "显示动作" : "隐藏动作")
-          : (isHidden ? "Show action" : "Hide action"),
-        symbol: isHidden ? "eye.slash" : "eye",
-        isDisabled: !canHide
-      ) {
-        onToggleVisibility()
-      }
-      .opacity(isHovering || isHidden || isSelected ? 1 : 0)
     }
     .padding(.leading, AppSpacing.xs)
-    .padding(.trailing, AppSpacing.xxs)
+    .padding(.trailing, AppSpacing.sm)
     .padding(.vertical, AppSpacing.xs + 1)
     .background(fill, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
     .contentShape(Rectangle())

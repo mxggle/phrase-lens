@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
@@ -13,7 +14,9 @@ enum AppSection: String, CaseIterable, Identifiable {
   var title: String {
     switch self {
     case .setup: L10n.isChinese ? "新手引导" : "Getting Started"
-    case .translator: L10n.isChinese ? "翻译" : "Translator"
+    // Not "Translate": the first action tab is already called that, and the
+    // section runs every action, not only translation.
+    case .translator: L10n.isChinese ? "工作台" : "Workbench"
     case .learning: L10n.isChinese ? "学习中心" : "Study"
     case .history: L10n.isChinese ? "历史记录" : "History"
     case .vocabulary: L10n.isChinese ? "生词本" : "Vocabulary"
@@ -302,6 +305,16 @@ private struct ErrorBanner: View {
             if model.errorMessage != nil {
               recovery
             }
+            // The whole of a provider's message, for a bug report or a search,
+            // without having to select three clipped lines of it.
+            IconButton(
+              title: L10n.isChinese ? "拷贝详情" : "Copy details",
+              symbol: "doc.on.doc",
+              size: .iconSmall
+            ) {
+              NSPasteboard.general.clearContents()
+              NSPasteboard.general.setString(message, forType: .string)
+            }
             IconButton(
               title: L10n.isChinese ? "关闭提示" : "Dismiss",
               symbol: "xmark",
@@ -485,15 +498,11 @@ private struct SidebarView: View {
     .accessibilityLabel("PhraseLens")
   }
 
+  /// Only a number that asks for something: the terms due for review today.
+  /// Totals are not news, so they sit in the section's own top bar instead.
   private func badgeText(for section: AppSection) -> String? {
-    switch section {
-    case .setup: nil
-    case .history: model.history.isEmpty ? nil : "\(model.history.count)"
-    case .vocabulary: model.vocabulary.isEmpty ? nil : "\(model.vocabulary.count)"
-    case .actions: model.orderedActions.isEmpty ? nil : "\(model.orderedActions.count)"
-    case .translator: nil
-    case .learning: learning.dueCount > 0 ? "\(learning.dueCount)" : nil
-    }
+    guard section == .learning, learning.dueCount > 0 else { return nil }
+    return "\(learning.dueCount)"
   }
 
   // MARK: Provider
@@ -580,6 +589,25 @@ private struct NavBar: View {
   @Environment(\.layoutWidth) private var layoutWidth
   @Environment(\.openSettings) private var openSettings
 
+  /// The section's caption, led by how many things are in it: the totals the
+  /// sidebar used to badge every row with, said where they describe the page.
+  private var caption: String {
+    let zh = L10n.isChinese
+    switch section {
+    case .history where !model.history.isEmpty:
+      let count = model.history.count
+      return zh ? "\(count) 条记录，保存在本机" : "\(count) \(count == 1 ? "lookup" : "lookups") saved on this Mac"
+    case .vocabulary where !model.vocabulary.isEmpty:
+      let count = model.vocabulary.count
+      return zh ? "\(count) 个词，阅读时收集" : "\(count) \(count == 1 ? "word" : "words") collected while reading"
+    case .actions where !model.orderedActions.isEmpty:
+      let count = model.orderedActions.count
+      return zh ? "\(count) 个动作，定制每个动作背后的提示词" : "\(count) \(count == 1 ? "action" : "actions"), and the prompt behind each"
+    default:
+      return section.caption
+    }
+  }
+
   var body: some View {
     HStack(spacing: AppSpacing.md) {
       VStack(alignment: .leading, spacing: 1) {
@@ -588,7 +616,7 @@ private struct NavBar: View {
           .titleTracking()
           .foregroundStyle(palette.foreground)
         if section.showsCaption, !layoutWidth.isCompact {
-          Text(section.caption)
+          Text(caption)
             .font(AppFont.caption)
             .foregroundStyle(palette.mutedForeground)
             .lineLimit(1)
@@ -669,6 +697,7 @@ private struct NavBarControls: View {
     Binding(
       get: { model.selectedActionID },
       set: { id in
+        model.mainWindowTookOverLookup()
         model.selectedActionID = id
         if settingsStore.settings.autoTranslate, !model.inputText.isEmpty {
           model.translate()

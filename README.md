@@ -73,9 +73,9 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | **Toggle Full Workspace** | <kbd>⌥</kbd> <kbd>⇧</kbd> <kbd>F</kbd> | None |
 | **Screenshot OCR** | <kbd>⌥</kbd> <kbd>S</kbd> | Screen Recording |
 | **Writing** *(focused field)* | <kbd>⌥</kbd> <kbd>W</kbd> | macOS Accessibility |
-| **Ask a Follow-Up** *(in-app)* | <kbd>⌘</kbd> <kbd>L</kbd> | None |
-| **Switch Action** *(in-app)* | <kbd>⌘</kbd> <kbd>1</kbd>…<kbd>9</kbd> | None |
-| **Next / Previous Action** *(in-app)* | <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>]</kbd> / <kbd>[</kbd> | None |
+| **Ask a Follow-Up** *(main window)* | <kbd>⌘</kbd> <kbd>K</kbd> | None |
+
+In the main window and both pop-ups the same keys do the same thing: <kbd>Return</kbd> runs the surface's primary command (run the action in the main window, the result's main button in the ⌥F pop-up, Replace in the ⌥W pop-up), <kbd>Tab</kbd> / <kbd>⇧</kbd> <kbd>Tab</kbd> step through the action's options, <kbd>⌘</kbd> <kbd>1</kbd>…<kbd>9</kbd> pick an action, <kbd>⌘</kbd> <kbd>L</kbd> switches the target language, <kbd>⌘</kbd> <kbd>R</kbd> asks again, <kbd>⌘</kbd> <kbd>.</kbd> stops, and <kbd>⇧</kbd> <kbd>⌘</kbd> <kbd>C</kbd> copies the result. <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>]</kbd> / <kbd>[</kbd> step through the main window's actions. The menu bar item lists every global shortcut as you have set it.
 
 > [!NOTE]
 > All shortcuts are fully customizable in **Settings > Shortcuts**. 

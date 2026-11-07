@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 enum SelfTestRunner {
   static func run() -> [String] {
@@ -634,11 +635,23 @@ enum SelfTestRunner {
       "built-in action override was not resolved",
       failures: &failures
     )
+    actionSettings.popupHiddenActionIDs = []
+    check(
+      actionSettings.popupActions(customActions: [customAction]).contains(where: { $0.id == customAction.id }),
+      "an action hidden from the main window was also taken out of the lookup pop-up",
+      failures: &failures
+    )
+    actionSettings.popupHiddenActionIDs = [translateAction.id]
     actionSettings.setDefaultAction(customAction.id)
     check(
       actionSettings.defaultActionID == customAction.id
         && !actionSettings.hiddenActionIDs.contains(customAction.id),
       "setting a default action did not atomically make it visible",
+      failures: &failures
+    )
+    check(
+      actionSettings.popupHiddenActionIDs == [translateAction.id],
+      "the main window's default changed what the lookup pop-up offers",
       failures: &failures
     )
 
@@ -669,6 +682,8 @@ enum SelfTestRunner {
         migrated.actionOrder == TranslationAction.defaultOrder
           // Compose arrives with the writing pop-up, kept off the lookup one.
           && migrated.hiddenActionIDs == AppSettings.writingOnlyActionIDs
+          && migrated.popupHiddenActionIDs == AppSettings.writingOnlyActionIDs
+          && migrated.popupDefaultActionID == nil
           && migrated.builtInActionOverrides.isEmpty
           && migrated.selectionPanelPlacement == .nearPointer
           && migrated.selectionPanelTopLeft == nil
@@ -691,6 +706,8 @@ enum SelfTestRunner {
       persisted.hiddenActionIDs = [
         TranslationAction.builtIns.first { $0.mode == .polishing }!.id
       ]
+      persisted.popupHiddenActionIDs = [translateAction.id]
+      persisted.popupDefaultActionID = legacyCustomID
       persisted.setBuiltInOverride(overriddenTranslate)
       let roundTripped = try JSONDecoder().decode(
         AppSettings.self,
@@ -739,9 +756,31 @@ enum SelfTestRunner {
         "persisted order or built-in override was not restored after decoding",
         failures: &failures
       )
+      // Before 0.18 one list hid actions from both the main window and the
+      // pop-up, so the pop-up starts out with that same list.
+      let polishID = TranslationAction.builtIn(for: .polishing).id
+      let sharedHidden = try JSONDecoder().decode(
+        AppSettings.self,
+        from: Data(#"{"hiddenActionIDs": ["\#(polishID.uuidString)"]}"#.utf8)
+      )
+      check(
+        sharedHidden.hiddenActionIDs.contains(polishID)
+          && sharedHidden.popupHiddenActionIDs == sharedHidden.hiddenActionIDs,
+        "the pop-up did not inherit the actions hidden before 0.18",
+        failures: &failures
+      )
     } catch {
       failures.append("action settings migration or round trip threw: \(error)")
     }
+    let lookupKey = KeyboardShortcut(globalShortcut: "⌥F")
+    check(
+      lookupKey?.key == KeyEquivalent("f") && lookupKey?.modifiers == .option
+        && KeyboardShortcut(globalShortcut: "⌥⇧F")?.modifiers == [.option, .shift]
+        && KeyboardShortcut(globalShortcut: "") == nil
+        && KeyboardShortcut(globalShortcut: "⌥F5") == nil,
+      "a global shortcut was not shown as the menu shortcut it is",
+      failures: &failures
+    )
     failures += selectionPanelPlacementFailures()
     let fragmentedContext = SelectionContextMatcher.context(
       matching: "selected phrase",
@@ -1939,6 +1978,19 @@ enum SelfTestRunner {
       check(translateAction.localizedTitle == "翻译", "TranslationAction.localizedTitle in Chinese", failures: &failures)
       let customAction = TranslationAction(name: "Custom")
       check(customAction.localizedTitle == "Custom", "Custom TranslationAction.localizedTitle", failures: &failures)
+      // A preset saved while the app was in English still reads in Chinese;
+      // one the reader renamed keeps the name they gave it.
+      var savedInEnglish = translateAction
+      savedInEnglish.name = "Translate"
+      var renamed = translateAction
+      renamed.name = "我的翻译"
+      check(
+        savedInEnglish.displayName == "翻译" && renamed.displayName == "我的翻译",
+        "TranslationAction.displayName in Chinese",
+        failures: &failures
+      )
+      let polishAction = TranslationAction.builtIn(for: .polishing)
+      check(polishAction.progressTitle == "正在润色…", "TranslationAction.progressTitle in Chinese", failures: &failures)
 
       let wordSuggestions = FollowUpSuggestion.suggestions(for: "word", mode: nil)
       check(wordSuggestions.map(\.label) == ["实用例句", "词义辨析", "高频搭配", "词根词缀", "记忆要点"], "word suggestions labels in Chinese", failures: &failures)
@@ -1986,6 +2038,15 @@ enum SelfTestRunner {
       check(LanguageCode.english.displayName == "English", "LanguageCode.english displayName in English", failures: &failures)
       check(ActionMode.translate.title == "Translate", "ActionMode.translate title in English", failures: &failures)
       check(translateAction.localizedTitle == "Translate", "TranslationAction.localizedTitle in English", failures: &failures)
+      var savedInChinese = translateAction
+      savedInChinese.name = "翻译"
+      check(savedInChinese.displayName == "Translate", "TranslationAction.displayName in English", failures: &failures)
+      check(
+        TranslationAction.builtIn(for: .polishing).progressTitle == "Polishing…"
+          && customAction.progressTitle == "Running “Custom”…",
+        "TranslationAction.progressTitle in English",
+        failures: &failures
+      )
       check(DictionaryLanguages.name("zh") == "Chinese", "DictionaryLanguages.name zh in English", failures: &failures)
       check(DictionaryLanguages.name("auto") == "Auto", "DictionaryLanguages.name auto in English", failures: &failures)
 

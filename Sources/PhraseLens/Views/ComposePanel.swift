@@ -319,6 +319,10 @@ private struct ComposePanelBody: View {
       Spacer(minLength: AppSpacing.sm)
       if model.isStreaming {
         Spinner(size: 12, isLive: true)
+        IconButton(title: L10n.isChinese ? "停止 (⌘.)" : "Stop (⌘.)", symbol: "stop.fill", size: .iconSmall) {
+          model.stop()
+        }
+        .keyboardShortcut(".", modifiers: [.command])
       }
       IconButton(title: L10n.isChinese ? "取消 (Esc)" : "Cancel (Escape)", symbol: "xmark", size: .iconSmall) {
         model.cancel()
@@ -390,34 +394,18 @@ private struct ComposePanelBody: View {
     .frame(height: AppMetrics.controlHeightSmall)
   }
 
+  /// The same ghost pull-down the main window labels its panes with, so the
+  /// pop-up has two kinds of choice and no more: tabs pick the action, chips
+  /// pick its option, and the language reads as a setting beside them.
   private var languagePicker: some View {
-    HStack(spacing: 2) {
-      ForEach(model.languageOptions) { language in
-        let isOn = language == model.style.language
-        Button {
-          model.select(language)
-        } label: {
-          Text(language.displayName)
-            .font(AppFont.label)
-            .foregroundStyle(isOn ? palette.foreground : palette.mutedForeground)
-            .lineLimit(1)
-            .fixedSize()
-            .padding(.horizontal, AppSpacing.sm)
-            .frame(height: 22)
-            .background(
-              isOn ? palette.surfaceElevated : Color.clear,
-              in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(L10n.isChinese ? "写成\(language.displayName) (⌘L 切换)" : "Write in \(language.displayName) (⌘L to switch)")
-        .accessibilityAddTraits(isOn ? [.isSelected] : [])
-      }
-    }
-    .padding(2)
-    .background(palette.muted, in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
-    .fixedSize()
+    AppSelect(
+      title: L10n.isChinese ? "写作语言 (⌘L 切换)" : "Writing language (⌘L to switch)",
+      selection: Binding(get: { model.style.language }, set: { model.select($0) }),
+      options: model.languageOptions,
+      label: { $0.displayName },
+      size: .sm,
+      isGhost: true
+    )
     .background {
       // ⌘L steps through the languages from anywhere in the pop-up.
       Button("") { model.cycleLanguage() }

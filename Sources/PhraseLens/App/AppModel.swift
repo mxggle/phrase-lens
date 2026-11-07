@@ -118,6 +118,7 @@ final class AppModel: ObservableObject {
     var action: TranslationAction
     var index: Int
     var wasHidden: Bool
+    var wasPopupHidden: Bool
     var wasDefault: Bool
     var wasSelected: Bool
   }
@@ -210,6 +211,7 @@ final class AppModel: ObservableObject {
           && previous.installedBuiltInActionIDs == current.installedBuiltInActionIDs
           && previous.actionOrder == current.actionOrder
           && previous.hiddenActionIDs == current.hiddenActionIDs
+          && previous.popupHiddenActionIDs == current.popupHiddenActionIDs
           && previous.builtInActionOverrides == current.builtInActionOverrides
       }
       .dropFirst()
@@ -273,12 +275,28 @@ final class AppModel: ObservableObject {
     settingsStore.settings.orderedActions(customActions: customActions)
   }
 
-  /// The actions that may be selected from translation surfaces.
+  /// The actions the main window offers.
   var visibleActions: [TranslationAction] {
     settingsStore.settings.orderedActions(
       customActions: customActions,
       includingHidden: false
     )
+  }
+
+  /// The actions the ⌥F pop-up offers, which the author sets apart from the
+  /// main window's.
+  var popupActions: [TranslationAction] {
+    settingsStore.settings.popupActions(customActions: customActions)
+  }
+
+  /// The action the pop-up starts on: its own default, else the main
+  /// window's, when the pop-up offers it, else the first one it does.
+  var popupDefaultAction: TranslationAction? {
+    let actions = popupActions
+    let settings = settingsStore.settings
+    return actions.first { $0.id == settings.popupDefaultActionID }
+      ?? actions.first { $0.id == settings.defaultActionID }
+      ?? actions.first
   }
 
   /// The option picked under the selected action, for the text on screen.
@@ -308,8 +326,26 @@ final class AppModel: ObservableObject {
     }
   }
 
+  /// Tab and ⇧Tab: the next option under the selected action, starting from
+  /// the first when none is picked, as in the writing pop-up. Returns whether
+  /// the action had any options to step through.
+  @discardableResult
+  func cycleOption(backwards: Bool = false, retranslate: Bool = true) -> Bool {
+    guard let options = selectedAction?.availableOptions, !options.isEmpty else { return false }
+    let next: ActionOption
+    if let index = options.firstIndex(where: { $0.id == selectedOption?.id }) {
+      next = options[(index + (backwards ? -1 : 1) + options.count) % options.count]
+    } else {
+      next = backwards ? options[options.count - 1] : options[0]
+    }
+    toggleOption(next.id, retranslate: retranslate)
+    return true
+  }
+
   var selectedAction: TranslationAction? {
-    visibleActions.first(where: { $0.id == selectedActionID })
+    // Either surface's: a lookup handed over from the pop-up keeps running the
+    // action it was started with, even one the main window does not offer.
+    (visibleActions + popupActions).first(where: { $0.id == selectedActionID })
       ?? settingsStore.settings.resolvedDefaultAction(customActions: customActions)
   }
 
@@ -394,6 +430,18 @@ final class AppModel: ObservableObject {
 
   var canCopyResult: Bool { !outputText.isEmpty }
 
+  /// Whether the answer on screen was asked for the text, action, option and
+  /// language now set. Until one of them changes, running again only asks
+  /// for another answer, so the run command steps down from primary and the
+  /// follow-up composer is the one lit command in the window.
+  var resultIsCurrent: Bool {
+    guard !outputText.isEmpty, let route = currentResultRoute, let action = selectedAction else { return false }
+    return route.text == inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+      && route.action.id == action.id
+      && route.option?.id == selectedOption?.id
+      && (!action.usesTargetLanguage || route.target == settingsStore.settings.targetLanguage)
+  }
+
   func translate() {
     translateWithAI()
   }
@@ -469,7 +517,7 @@ final class AppModel: ObservableObject {
           let now = clock.now
           if now >= nextUIUpdate {
             outputText = streamedText
-            statusMessage = L10n.isChinese ? "正在翻译…" : "Translating…"
+            statusMessage = action.progressTitle
             nextUIUpdate = now.advanced(by: .milliseconds(50))
           }
         }
@@ -807,6 +855,8 @@ final class AppModel: ObservableObject {
   func askFollowUp(_ rawQuestion: String) {
     let question = rawQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !question.isEmpty, canAskFollowUp else { return }
+    // Follow-ups are only asked in the main window.
+    mainWindowTookOverLookup()
 
     stopFollowUp()
     followUpError = nil
@@ -1382,6 +1432,7 @@ final class AppModel: ObservableObject {
     let settings = settingsStore.settings
     deletedActions.append(DeletedAction(action: action, index: index,
       wasHidden: settings.hiddenActionIDs.contains(id),
+      wasPopupHidden: settings.popupHiddenActionIDs.contains(id),
       wasDefault: settings.defaultActionID == id, wasSelected: selectedActionID == id))
     if selectedActionID == id {
       stopTranslation()
@@ -1391,6 +1442,7 @@ final class AppModel: ObservableObject {
     updated.builtInActionOverrides.removeAll { $0.id == id }
     updated.actionOrder.removeAll { $0 == id }
     updated.hiddenActionIDs.remove(id)
+    updated.popupHiddenActionIDs.remove(id)
     customActions.removeAll { $0.id == id }
     settingsStore.settings = updated
     if !action.isBuiltIn { saveCustomActions(customActions) }
@@ -1414,6 +1466,8 @@ final class AppModel: ObservableObject {
     }
     if deleted.wasHidden { updated.hiddenActionIDs.insert(action.id) }
     else { updated.hiddenActionIDs.remove(action.id) }
+    if deleted.wasPopupHidden { updated.popupHiddenActionIDs.insert(action.id) }
+    else { updated.popupHiddenActionIDs.remove(action.id) }
     if deleted.wasDefault { updated.defaultActionID = action.id }
     settingsStore.settings = updated
     if !action.isBuiltIn { saveCustomActions(customActions) }
@@ -1434,7 +1488,8 @@ final class AppModel: ObservableObject {
   /// Translation menu and its ⌘1…⌘9 shortcuts. Mirrors what the tab bar does
   /// on click, so a keyboard switch re-runs the same way a click does.
   func selectAction(_ id: UUID) {
-    guard id != selectedActionID, visibleActions.contains(where: { $0.id == id }) else { return }
+    let surfaceActions = SelectionPanelCoordinator.shared.isVisible ? popupActions : visibleActions
+    guard id != selectedActionID, surfaceActions.contains(where: { $0.id == id }) else { return }
     selectedActionID = id
     guard settingsStore.settings.autoTranslate,
       !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1444,11 +1499,66 @@ final class AppModel: ObservableObject {
 
   /// Steps through the visible actions, wrapping at both ends, for ⌘⇧] / ⌘⇧[.
   func cycleAction(by offset: Int) {
-    let actions = visibleActions
+    let actions = SelectionPanelCoordinator.shared.isVisible ? popupActions : visibleActions
     guard actions.count > 1 else { return }
     let current = actions.firstIndex(where: { $0.id == selectedActionID }) ?? 0
     let next = (current + offset % actions.count + actions.count) % actions.count
     selectAction(actions[next].id)
+  }
+
+  /// ⌘L: the next of the reader's target languages, the same key the writing
+  /// pop-up uses for its language. An answer already on screen is asked
+  /// again in the new one, since reading it in another language is the point.
+  func cycleTargetLanguage() {
+    let languages = visibleTargetLanguages
+    guard languages.count > 1 else { return }
+    let current = languages.firstIndex(of: settingsStore.settings.targetLanguage) ?? -1
+    settingsStore.settings.targetLanguage = languages[(current + 1) % languages.count]
+    if !outputText.isEmpty || isTranslating {
+      regenerate()
+    }
+  }
+
+  /// The action editor's "Try it": an action as the editor has it, unsaved
+  /// edits included, run on a sample without touching the workbench or
+  /// filing anything in history. Writing-only actions are asked the way the
+  /// writing pop-up asks them.
+  func tryAction(
+    _ action: TranslationAction,
+    on text: String,
+    option: ActionOption?
+  ) async throws -> AsyncThrowingStream<String, Error> {
+    let settings = settingsStore.settings
+    let writingOnly = settings.writingActionIDs.contains(action.id)
+      && settings.hiddenActionIDs.contains(action.id)
+      && settings.popupHiddenActionIDs.contains(action.id)
+    let prompt = PromptBuilder.build(
+      text: text,
+      source: writingOnly ? .auto : TranslationSourceResolver.resolve(
+        text, configuredSource: settings.sourceLanguage, inputSource: .manual
+      ),
+      target: settings.targetLanguage,
+      action: action,
+      writing: writingOnly,
+      option: option
+    )
+    let (connection, configuration) = try settingsStore.resolve(action)
+    let (key, accountId) = try await settingsStore.validCredentials(for: connection, proxy: settings.proxy)
+    return client.stream(
+      prompt: prompt,
+      configuration: configuration,
+      apiKey: key,
+      accountId: accountId,
+      proxy: settings.proxy
+    )
+  }
+
+  /// ⌘R: asks again for the text on screen, for a different answer.
+  func regenerate() {
+    guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, selectedAction != nil else {
+      return
+    }
+    translate()
   }
 
   func configureHotKeys() {
@@ -1600,7 +1710,7 @@ final class AppModel: ObservableObject {
           selectedText: snapshot.text
         )
         statusMessage = L10n.isChinese ? "就绪" : "Ready"
-        selectDefaultAction()
+        if compact { selectPopupDefaultAction() } else { selectDefaultAction() }
         if compact {
           selectionPopupSessionID = UUID()
           SelectionPanelCoordinator.shared.show(model: self)
@@ -1623,7 +1733,7 @@ final class AppModel: ObservableObject {
           selectionBundleIdentifier = nil
           selectionApplicationName = nil
           statusMessage = L10n.isChinese ? "就绪" : "Ready"
-          selectDefaultAction()
+          if compact { selectPopupDefaultAction() } else { selectDefaultAction() }
           if compact {
             selectionWasEmpty = true
             selectionPopupSessionID = UUID()
@@ -1680,6 +1790,15 @@ final class AppModel: ObservableObject {
       failedRequestCanRetry: failedRequestCanRetry,
       statusMessage: statusMessage
     )
+  }
+
+  /// The reader worked in the main window while the pop-up was up — typed,
+  /// ran an action, asked a follow-up. The two show the same lookup, and what
+  /// the window shows is now theirs, so the lookup is handed over: the pop-up
+  /// goes, and closing it can no longer put the old work back over the new.
+  func mainWindowTookOverLookup() {
+    guard SelectionPanelCoordinator.shared.isVisible else { return }
+    SelectionPanelCoordinator.shared.close(as: .handOff)
   }
 
   /// Puts the main window's work back the way the lookup found it.
@@ -1907,6 +2026,12 @@ final class AppModel: ObservableObject {
     }
   }
 
+  private func selectPopupDefaultAction() {
+    if let action = popupDefaultAction {
+      selectedActionID = action.id
+    }
+  }
+
   /// Removes references to deleted actions and guarantees that both the saved
   /// default and the live selection resolve to a visible action.
   private func reconcileActionConfiguration() {
@@ -1921,6 +2046,12 @@ final class AppModel: ObservableObject {
     if !settingsStore.settings.hiddenActionIDs.isSubset(of: availableIDs) {
       settingsStore.settings.hiddenActionIDs.formIntersection(availableIDs)
     }
+    if !settingsStore.settings.popupHiddenActionIDs.isSubset(of: availableIDs) {
+      settingsStore.settings.popupHiddenActionIDs.formIntersection(availableIDs)
+    }
+    if let id = settingsStore.settings.popupDefaultActionID, !availableIDs.contains(id) {
+      settingsStore.settings.popupDefaultActionID = nil
+    }
     reconcileActionSelection()
   }
 
@@ -1929,6 +2060,9 @@ final class AppModel: ObservableObject {
     if visibleActions.isEmpty, let firstAvailable = orderedActions.first {
       settingsStore.settings.hiddenActionIDs.remove(firstAvailable.id)
     }
+    if popupActions.isEmpty, let firstAvailable = orderedActions.first {
+      settingsStore.settings.popupHiddenActionIDs.remove(firstAvailable.id)
+    }
     guard
       let fallback = settingsStore.settings.resolvedDefaultAction(customActions: customActions)
     else { return }
@@ -1936,8 +2070,10 @@ final class AppModel: ObservableObject {
     if settingsStore.settings.defaultActionID != fallback.id {
       settingsStore.settings.defaultActionID = fallback.id
     }
-    if preferDefault || !visibleActions.contains(where: { $0.id == selectedActionID }) {
-      selectedActionID = fallback.id
+    let surfaceActions = SelectionPanelCoordinator.shared.isVisible ? popupActions : visibleActions
+    if preferDefault || !surfaceActions.contains(where: { $0.id == selectedActionID }) {
+      selectedActionID = SelectionPanelCoordinator.shared.isVisible
+        ? (popupDefaultAction?.id ?? fallback.id) : fallback.id
     }
   }
 }
