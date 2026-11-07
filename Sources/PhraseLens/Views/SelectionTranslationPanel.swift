@@ -69,6 +69,8 @@ final class SelectionPanelCoordinator {
   private init() {}
 
   var isVisible: Bool { panel != nil }
+  /// Whether the pop-up has key focus, rather than merely being on screen.
+  var isKey: Bool { panel?.isKeyWindow ?? false }
 
   func show(model: AppModel) {
     // A pop-up that is already on screen for this model just shows the new

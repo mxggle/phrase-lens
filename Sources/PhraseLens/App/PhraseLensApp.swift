@@ -235,9 +235,15 @@ private struct WorkspaceCommands: View {
 
   var body: some View {
     let actionName = model.selectedAction?.displayName ?? (L10n.isChinese ? "动作" : "Action")
-    Button(L10n.isChinese ? "运行“\(actionName)”" : "Run “\(actionName)”") { model.translate() }
+    Button(L10n.isChinese ? "运行“\(actionName)”" : "Run “\(actionName)”") {
+      model.mainMenuCommandWillRun()
+      model.translate()
+    }
       .disabled(model.selectedAction == nil || !hasInput)
-    Button(L10n.isChinese ? "重新生成" : "Ask Again") { model.regenerate() }
+    Button(L10n.isChinese ? "重新生成" : "Ask Again") {
+      model.mainMenuCommandWillRun()
+      model.regenerate()
+    }
       .keyboardShortcut("r", modifiers: [.command])
       .disabled(model.selectedAction == nil || !hasInput)
     Button(L10n.isChinese ? "停止" : "Stop") { model.stopTranslation() }
@@ -262,7 +268,10 @@ private struct WorkspaceCommands: View {
       .keyboardShortcut("]", modifiers: [.command, .shift])
     Button(L10n.isChinese ? "上一个动作" : "Previous Action") { model.cycleAction(by: -1) }
       .keyboardShortcut("[", modifiers: [.command, .shift])
-    Button(L10n.isChinese ? "切换目标语言" : "Next Target Language") { model.cycleTargetLanguage() }
+    Button(L10n.isChinese ? "切换目标语言" : "Next Target Language") {
+      model.mainMenuCommandWillRun()
+      model.cycleTargetLanguage()
+    }
       .keyboardShortcut("l", modifiers: [.command])
       .disabled(model.visibleTargetLanguages.count < 2)
     Divider()

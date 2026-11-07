@@ -1484,12 +1484,26 @@ final class AppModel: ObservableObject {
     selectedActionID = id
   }
 
+  /// Whether the lookup pop-up has key focus. A pinned pop-up stays up while
+  /// the reader works in the main window, so being visible is not enough to
+  /// make a shared command the pop-up's.
+  var popupHasFocus: Bool { SelectionPanelCoordinator.shared.isKey }
+
+  /// The main menu's commands act on the window with focus. When that is the
+  /// main window while a pinned pop-up is still up, the main window takes the
+  /// lookup over first, the way editing it or clicking its tabs does.
+  func mainMenuCommandWillRun() {
+    guard !popupHasFocus else { return }
+    mainWindowTookOverLookup()
+  }
+
   /// Arms an action from a surface that holds no binding of its own — the
   /// Translation menu and its ⌘1…⌘9 shortcuts. Mirrors what the tab bar does
   /// on click, so a keyboard switch re-runs the same way a click does.
   func selectAction(_ id: UUID) {
-    let surfaceActions = SelectionPanelCoordinator.shared.isVisible ? popupActions : visibleActions
+    let surfaceActions = popupHasFocus ? popupActions : visibleActions
     guard id != selectedActionID, surfaceActions.contains(where: { $0.id == id }) else { return }
+    mainMenuCommandWillRun()
     selectedActionID = id
     guard settingsStore.settings.autoTranslate,
       !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1499,7 +1513,7 @@ final class AppModel: ObservableObject {
 
   /// Steps through the visible actions, wrapping at both ends, for ⌘⇧] / ⌘⇧[.
   func cycleAction(by offset: Int) {
-    let actions = SelectionPanelCoordinator.shared.isVisible ? popupActions : visibleActions
+    let actions = popupHasFocus ? popupActions : visibleActions
     guard actions.count > 1 else { return }
     let current = actions.firstIndex(where: { $0.id == selectedActionID }) ?? 0
     let next = (current + offset % actions.count + actions.count) % actions.count
