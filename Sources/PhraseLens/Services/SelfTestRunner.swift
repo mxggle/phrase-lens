@@ -671,7 +671,8 @@ enum SelfTestRunner {
           && migrated.hiddenActionIDs == AppSettings.writingOnlyActionIDs
           && migrated.builtInActionOverrides.isEmpty
           && migrated.selectionPanelPlacement == .nearPointer
-          && migrated.selectionPanelPosition == nil,
+          && migrated.selectionPanelTopLeft == nil
+          && migrated.selectionPanelWidth == 480,
         "legacy settings did not receive safe action-presentation defaults",
         failures: &failures
       )
@@ -684,7 +685,8 @@ enum SelfTestRunner {
 
       var persisted = migrated
       persisted.selectionPanelPlacement = .fixed
-      persisted.selectionPanelPosition = SelectionPanelPosition(x: 320, y: 180)
+      persisted.selectionPanelTopLeft = SelectionPanelPosition(x: 320, y: 620)
+      persisted.selectionPanelWidth = 560
       persisted.actionOrder = [legacyCustomID, translateAction.id]
       persisted.hiddenActionIDs = [
         TranslationAction.builtIns.first { $0.mode == .polishing }!.id
@@ -740,24 +742,7 @@ enum SelfTestRunner {
     } catch {
       failures.append("action settings migration or round trip threw: \(error)")
     }
-    let visibleFrame = CGRect(x: 0, y: 0, width: 1_440, height: 900)
-    let panelSize = CGSize(width: 480, height: 440)
-    let pointerFrame = SelectionPanelGeometry.frameNearPointer(
-      size: panelSize,
-      pointer: CGPoint(x: 1_430, y: 890),
-      visibleFrame: visibleFrame
-    )
-    let restoredFrame = SelectionPanelGeometry.frameAtRememberedOrigin(
-      size: panelSize,
-      origin: CGPoint(x: 2_000, y: -500),
-      visibleFrame: visibleFrame
-    )
-    check(
-      visibleFrame.insetBy(dx: 10, dy: 10).contains(pointerFrame)
-        && visibleFrame.insetBy(dx: 10, dy: 10).contains(restoredFrame),
-      "selection pop-up placement escaped the visible display",
-      failures: &failures
-    )
+    failures += selectionPanelPlacementFailures()
     let fragmentedContext = SelectionContextMatcher.context(
       matching: "selected phrase",
       in: ["The paragraph starts before the selected", "phrase and continues after it."]
@@ -1947,7 +1932,7 @@ enum SelfTestRunner {
       check(TTSProvider.edge.displayName == "Microsoft Edge 神经语音（云端）", "TTSProvider.edge displayName in Chinese", failures: &failures)
       check(TTSProvider.system.displayName == "macOS 系统语音（本地）", "TTSProvider.system displayName in Chinese", failures: &failures)
 
-      check(SelectionPanelPlacementMode.nearPointer.displayName == "跟随鼠标光标", "SelectionPanelPlacementMode.nearPointer in Chinese", failures: &failures)
+      check(SelectionPanelPlacementMode.nearPointer.displayName == "跟随选中文字", "SelectionPanelPlacementMode.nearPointer in Chinese", failures: &failures)
       check(SelectionPanelPlacementMode.fixed.displayName == "记忆上次位置", "SelectionPanelPlacementMode.fixed in Chinese", failures: &failures)
 
       let translateAction = TranslationAction.builtIns.first { $0.mode == .translate }!
@@ -2021,6 +2006,87 @@ enum SelfTestRunner {
 
   /// Result commands: per-mode defaults, normalization, and documents
   /// written before the field existed or by a version that knows more.
+  /// Where the selection pop-up opens, and how far it may grow from there.
+  private static func selectionPanelPlacementFailures() -> [String] {
+    var failures: [String] = []
+    let visibleFrame = CGRect(x: 0, y: 0, width: 1_440, height: 900)
+    let onScreen = visibleFrame.insetBy(dx: 10, dy: 10)
+    let width: CGFloat = 480
+    let heights: [CGFloat] = [120, 440, 2_000]
+
+    let midScreen = SelectionPanelGeometry.anchor(
+      below: CGRect(x: 200, y: 600, width: 80, height: 18),
+      width: width,
+      visibleFrame: visibleFrame
+    )
+    let nearBottom = SelectionPanelGeometry.anchor(
+      below: CGRect(x: 1_300, y: 60, width: 80, height: 18),
+      width: width,
+      visibleFrame: visibleFrame
+    )
+    let nearPointer = SelectionPanelGeometry.anchor(
+      nearPointer: CGPoint(x: 1_430, y: 890),
+      width: width,
+      visibleFrame: visibleFrame
+    )
+    let remembered = SelectionPanelGeometry.anchor(
+      topLeft: CGPoint(x: 2_000, y: -500),
+      width: width,
+      visibleFrame: visibleFrame
+    )
+    check(
+      [midScreen, nearBottom, nearPointer, remembered].allSatisfy { anchor in
+        heights.allSatisfy { onScreen.contains(anchor.frame(width: width, height: $0)) }
+      },
+      "selection pop-up placement escaped the visible display",
+      failures: &failures
+    )
+    // The panel hangs from just under the words and grows down, so a longer
+    // answer never moves the part the reader is already looking at.
+    let short = midScreen.frame(width: width, height: 200)
+    let tall = midScreen.frame(width: width, height: 420)
+    check(
+      midScreen.edge == .top && short.maxY == 592 && tall.maxY == 592 && short.minX == 200,
+      "selection pop-up did not open under the selection, or moved its top edge as it grew",
+      failures: &failures
+    )
+    check(
+      nearBottom.edge == .bottom
+        && nearBottom.frame(width: width, height: 300).minY >= 78
+        && nearBottom.frame(width: width, height: 300).maxX <= onScreen.maxX,
+      "a selection near the bottom of the display did not flip the pop-up above it",
+      failures: &failures
+    )
+    check(
+      midScreen.frame(width: width, height: 2_000).height <= 640
+        && SelectionPanelGeometry.heightCap(for: visibleFrame) == 630,
+      "the selection pop-up grew past the height a pop-up should stop at",
+      failures: &failures
+    )
+    check(
+      !SelectionPanelGeometry.canAnchor(to: CGRect(x: 0, y: 0, width: 600, height: 700), in: visibleFrame)
+        && !SelectionPanelGeometry.canAnchor(to: CGRect(x: 3_000, y: 3_000, width: 40, height: 16), in: visibleFrame)
+        && SelectionPanelGeometry.canAnchor(to: CGRect(x: 200, y: 600, width: 80, height: 18), in: visibleFrame),
+      "the pop-up anchored to a selection rectangle that is off screen or spans the document",
+      failures: &failures
+    )
+
+    // 0.17 saved the bottom-left corner of a pop-up that was always 440 tall.
+    do {
+      let legacy = Data(#"{"selectionPanelPlacement":"fixed","selectionPanelPosition":{"x":320,"y":180}}"#.utf8)
+      let migrated = try JSONDecoder().decode(AppSettings.self, from: legacy)
+      check(
+        migrated.selectionPanelTopLeft == SelectionPanelPosition(x: 320, y: 620)
+          && migrated.selectionPanelWidth == 480,
+        "the remembered pop-up position did not carry over as its top-left corner",
+        failures: &failures
+      )
+    } catch {
+      failures.append("legacy pop-up position failed to decode: \(error)")
+    }
+    return failures
+  }
+
   private static func resultCommandFailures() -> [String] {
     var failures: [String] = []
     let polish = TranslationAction.builtIn(for: .polishing)

@@ -972,12 +972,12 @@ enum SelectionPanelPlacementMode: String, Codable, CaseIterable, Identifiable, S
   var displayName: String {
     if L10n.isChinese {
       switch self {
-      case .nearPointer: return "跟随鼠标光标"
+      case .nearPointer: return "跟随选中文字"
       case .fixed: return "记忆上次位置"
       }
     }
     switch self {
-    case .nearPointer: return "Near pointer"
+    case .nearPointer: return "Next to the selection"
     case .fixed: return "Last position"
     }
   }
@@ -1194,7 +1194,12 @@ struct AppSettings: Codable, Equatable, Sendable {
   var showDockIcon = true
   var useCompactSelectionPreview = true
   var selectionPanelPlacement: SelectionPanelPlacementMode = .nearPointer
-  var selectionPanelPosition: SelectionPanelPosition?
+  /// Where the pop-up's top-left corner was last left. The top is what stays
+  /// put: the height follows the content, so the panel grows down from here.
+  var selectionPanelTopLeft: SelectionPanelPosition?
+  /// The pop-up's width, as the reader last dragged it. The height is not
+  /// theirs to set; it follows the content.
+  var selectionPanelWidth = 480.0
   /// Keeps the pop-up on screen when the user clicks away from it, so working
   /// in another app while reading a result no longer costs the result.
   var selectionPanelPinned = false
@@ -1262,7 +1267,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     case showDockIcon
     case useCompactSelectionPreview
     case selectionPanelPlacement
-    case selectionPanelPosition
+    case selectionPanelTopLeft
+    case selectionPanelWidth
     case selectionPanelPinned
     case useClipboardFallback
     case theme
@@ -1291,6 +1297,9 @@ struct AppSettings: Codable, Equatable, Sendable {
   private enum LegacyCodingKeys: String, CodingKey {
     /// 0.15's fixed register, before it became one of Compose's options.
     case writingRegister
+    /// 0.17's pop-up position: the bottom-left corner of a panel that was
+    /// always 440 points tall.
+    case selectionPanelPosition
   }
 
   init(from decoder: Decoder) throws {
@@ -1341,8 +1350,15 @@ struct AppSettings: Codable, Equatable, Sendable {
     selectionPanelPlacement =
       try container.decodeIfPresent(SelectionPanelPlacementMode.self, forKey: .selectionPanelPlacement)
       ?? .nearPointer
-    selectionPanelPosition =
-      try container.decodeIfPresent(SelectionPanelPosition.self, forKey: .selectionPanelPosition)
+    if let topLeft = try container.decodeIfPresent(SelectionPanelPosition.self, forKey: .selectionPanelTopLeft) {
+      selectionPanelTopLeft = topLeft
+    } else if let origin = try? legacy.decodeIfPresent(SelectionPanelPosition.self, forKey: .selectionPanelPosition) {
+      // The panel's height follows its content now, so the corner that stays
+      // put is the top one. The old panel's top was 440 points above its origin.
+      selectionPanelTopLeft = SelectionPanelPosition(x: origin.x, y: origin.y + 440)
+    }
+    selectionPanelWidth =
+      try container.decodeIfPresent(Double.self, forKey: .selectionPanelWidth) ?? 480
     selectionPanelPinned =
       try container.decodeIfPresent(Bool.self, forKey: .selectionPanelPinned) ?? false
     useClipboardFallback =

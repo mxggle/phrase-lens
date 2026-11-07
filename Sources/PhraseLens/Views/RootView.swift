@@ -193,25 +193,6 @@ struct RootView: View {
     .onChange(of: model.learningFocusToken) { _, _ in selection = .learning }
     .preferredColorScheme(settingsStore.settings.theme.preferredColorScheme)
     .environment(\.locale, settingsStore.resolvedLocale)
-    .alert(
-      "PhraseLens",
-      isPresented: Binding(
-        get: { model.errorMessage != nil },
-        set: { if !$0 { model.errorMessage = nil } }
-      )
-    ) {
-      if model.isAccessibilityPermissionError {
-        Button(L10n.isChinese ? "打开系统设置" : "Open System Settings") {
-          model.errorMessage = nil
-          model.openAccessibilitySettings()
-        }
-        Button(L10n.isChinese ? "以后再说" : "Not Now", role: .cancel) { model.errorMessage = nil }
-      } else {
-        Button(L10n.isChinese ? "好" : "OK", role: .cancel) { model.errorMessage = nil }
-      }
-    } message: {
-      Text(model.errorMessage ?? "")
-    }
   }
 
   /// A narrow window collapses the sidebar on its own; once the user has
@@ -260,16 +241,19 @@ private struct Shell: View {
   private var detail: some View {
     VStack(spacing: 0) {
       NavBar(section: selection)
-      WidthReader { _, _ in
-        switch selection {
-        case .setup: SetupGuideView {
-          selection = .translator
-        }
-        case .translator: TranslatorView()
-        case .learning: LearningView()
-        case .history: HistoryView()
-        case .vocabulary: VocabularyView()
-        case .actions: ActionsView()
+      VStack(spacing: 0) {
+        ErrorBanner()
+        WidthReader { _, _ in
+          switch selection {
+          case .setup: SetupGuideView {
+            selection = .translator
+          }
+          case .translator: TranslatorView()
+          case .learning: LearningView()
+          case .history: HistoryView()
+          case .vocabulary: VocabularyView()
+          case .actions: ActionsView()
+          }
         }
       }
       .insetPanel(palette)
@@ -277,6 +261,99 @@ private struct Shell: View {
       .padding(.bottom, AppMetrics.panelInset)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+}
+
+// MARK: - Error banner
+
+/// A failure, said at the top of the work it interrupted rather than in a
+/// modal alert.
+///
+/// The alert stopped everything — reading the half an answer that did arrive
+/// included — and offered nothing but OK. The banner offers the way out the
+/// failure has, and stays until it is dismissed or the next request clears it.
+private struct ErrorBanner: View {
+  @EnvironmentObject private var model: AppModel
+  @EnvironmentObject private var learning: LearningModel
+  @Environment(\.palette) private var palette
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.openSettings) private var openSettings
+
+  private var message: String? { model.errorMessage ?? learning.errorMessage }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      if let message {
+        VStack(spacing: 0) {
+          HStack(spacing: AppSpacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundStyle(palette.warning)
+              .accessibilityHidden(true)
+            Text(message)
+              .font(AppFont.body)
+              .foregroundStyle(palette.foreground)
+              // Provider messages run long; the whole of it is in the tooltip.
+              .lineLimit(3)
+              .fixedSize(horizontal: false, vertical: true)
+              .textSelection(.enabled)
+              .help(message)
+              .frame(maxWidth: .infinity, alignment: .leading)
+            if model.errorMessage != nil {
+              recovery
+            }
+            IconButton(
+              title: L10n.isChinese ? "关闭提示" : "Dismiss",
+              symbol: "xmark",
+              size: .iconSmall
+            ) {
+              dismiss()
+            }
+          }
+          .padding(.horizontal, AppSpacing.md)
+          .padding(.vertical, AppSpacing.sm)
+          .background(palette.warning.opacity(0.08))
+          Hairline()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L10n.isChinese ? "出现问题" : "Problem")
+        .transition(.move(edge: .top).combined(with: .opacity))
+      }
+    }
+    .animation(AppMotion.state(reduceMotion: reduceMotion), value: message)
+  }
+
+  /// The one command that gets past this failure, when there is one: a retry
+  /// would only reproduce an error that Settings or System Settings has to fix.
+  @ViewBuilder
+  private var recovery: some View {
+    if model.isAccessibilityPermissionError {
+      Button(L10n.isChinese ? "打开系统设置" : "Open System Settings") {
+        model.errorMessage = nil
+        model.openAccessibilitySettings()
+      }
+      .appButton(.secondary, size: .sm)
+    } else if model.isConfigurationError {
+      Button(L10n.tr("panel.open_settings")) {
+        WindowCoordinator.prepareForSettings()
+        SettingsNavigation.show(.provider) { openSettings() }
+      }
+      .appButton(.secondary, size: .sm)
+    } else if model.failedRequestCanRetry {
+      Button(L10n.tr("panel.retry")) {
+        model.translateWithAI()
+      }
+      .appButton(.secondary, size: .sm)
+      .disabled(model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+  }
+
+  private func dismiss() {
+    if model.errorMessage != nil {
+      model.errorMessage = nil
+    } else {
+      learning.errorMessage = nil
+    }
   }
 }
 

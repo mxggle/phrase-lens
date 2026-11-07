@@ -130,18 +130,8 @@ struct LearningView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(palette.background)
+    // Failures surface in the window's error banner, above this section.
     .onAppear { learning.writeReportIfDue() }
-    .alert(
-      "PhraseLens",
-      isPresented: Binding(
-        get: { learning.errorMessage != nil },
-        set: { if !$0 { learning.errorMessage = nil } }
-      )
-    ) {
-      Button(L10n.isChinese ? "好" : "OK", role: .cancel) { learning.errorMessage = nil }
-    } message: {
-      Text(learning.errorMessage ?? "")
-    }
   }
 }
 
