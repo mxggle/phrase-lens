@@ -2,10 +2,16 @@ import AppKit
 import SwiftUI
 
 /// Settings panes, in the order the sidebar lists them.
+///
+/// Grouped by where a setting takes effect rather than by what kind of control
+/// it is: each global shortcut opens one way into the app, and that way's
+/// page holds its key, the permission it needs, and how it behaves.
 enum SettingsPane: String, CaseIterable, Identifiable {
   case general
   case provider
-  case shortcuts
+  case lookup
+  case writing
+  case capture
   case speech
   case learning
   case network
@@ -16,10 +22,12 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
-    case .general: L10n.isChinese ? "常规" : "General"
+    case .general: L10n.isChinese ? "通用" : "General"
     case .provider: L10n.isChinese ? "AI 连接" : "AI Connections"
-    case .shortcuts: L10n.isChinese ? "快捷键" : "Shortcuts"
-    case .speech: L10n.isChinese ? "朗读与写作" : "Speech & Writing"
+    case .lookup: L10n.isChinese ? "查词浮窗" : "Lookup Pop-up"
+    case .writing: L10n.isChinese ? "写作浮窗" : "Writing Pop-up"
+    case .capture: L10n.isChinese ? "截屏识别" : "Screen Text"
+    case .speech: L10n.isChinese ? "朗读" : "Speech"
     case .learning: L10n.isChinese ? "学习助手" : "Study"
     case .network: L10n.isChinese ? "网络代理" : "Network"
     case .setup: L10n.isChinese ? "新手引导" : "Getting Started"
@@ -31,7 +39,9 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     switch self {
     case .general: "gearshape"
     case .provider: "cpu"
-    case .shortcuts: "keyboard"
+    case .lookup: "text.magnifyingglass"
+    case .writing: "pencil.line"
+    case .capture: "text.viewfinder"
     case .speech: "speaker.wave.2"
     case .learning: "graduationcap"
     case .network: "network"
@@ -42,14 +52,44 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
   var caption: String {
     switch self {
-    case .general: L10n.isChinese ? "界面语言、翻译行为与窗口外观" : "Languages, translation behavior, and the window"
+    case .general: L10n.isChinese ? "语言、主窗口与外观" : "Languages, the main window, and appearance"
     case .provider: L10n.isChinese ? "应答模型及 API 密钥配置" : "Which model answers, and the credential it uses"
-    case .shortcuts: L10n.isChinese ? "全局快捷键与系统权限" : "Global keys and the permission they need"
-    case .speech: L10n.isChinese ? "语音播放引擎、朗读参数与写作" : "Voice playback and writing"
+    case .lookup: L10n.isChinese ? "在任何 App 里选中文字，按快捷键查词、翻译" : "Select text in any app and press the shortcut to look it up"
+    case .writing: L10n.isChinese ? "在任何输入框里写好内容，按快捷键翻译、润色并替换" : "Write in any text field, then press the shortcut to rewrite it in place"
+    case .capture: L10n.isChinese ? "框选屏幕上的区域，识别其中的文字" : "Drag across the screen to read the text in it"
+    case .speech: L10n.isChinese ? "语音引擎、语速与音量" : "Voice, rate, and volume"
     case .learning: L10n.isChinese ? "学习记录、后台分析与复习" : "The study record, background analysis, and review"
     case .network: L10n.isChinese ? "代理服务器与直连白名单" : "Proxy configuration"
-    case .setup: L10n.isChinese ? "连接服务商、启用快捷键并体验首次翻译" : "Connect a provider, enable shortcuts, and try a translation"
+    case .setup: L10n.isChinese ? "连接服务商、启用快捷键并练一次" : "Connect a provider, enable shortcuts, and practice once"
     case .about: L10n.isChinese ? "版本、软件更新与开源许可协议" : "Version, software updates, and licensing"
+    }
+  }
+
+  /// Where the sidebar leaves a gap before this pane: between the app-wide
+  /// panes, the ways in, the supporting services, and the guide.
+  var startsGroup: Bool {
+    self == .lookup || self == .speech || self == .setup
+  }
+
+  /// The global shortcut this pane is the home of, shown beside its name.
+  var hotKey: HotKeyAction? {
+    switch self {
+    case .lookup: .translateSelection
+    case .writing: .writing
+    case .capture: .screenshotOCR
+    default: nil
+    }
+  }
+}
+
+extension HotKeyAction {
+  /// The Settings page that holds this shortcut.
+  var settingsPane: SettingsPane {
+    switch self {
+    case .translateSelection: .lookup
+    case .showWindow: .general
+    case .screenshotOCR: .capture
+    case .writing: .writing
     }
   }
 }
@@ -191,10 +231,12 @@ private struct SettingsShell: View {
           title: item.title,
           symbol: item.symbol,
           isSelected: pane == item,
+          trailing: item.hotKey.map { settingsStore.settings.shortcuts.value(for: $0) },
           raised: true
         ) {
           pane = item
         }
+        .padding(.top, item.startsGroup ? AppSpacing.md : 0)
       }
 
       Spacer(minLength: 0)
@@ -242,8 +284,10 @@ private struct SettingsShell: View {
               switch pane {
               case .general: GeneralSettingsPane()
               case .provider: ProviderSettingsPane()
-              case .shortcuts: ShortcutSettingsPane()
-              case .speech: SpeechWritingSettingsPane()
+              case .lookup: LookupSettingsPane()
+              case .writing: WritingSettingsPane()
+              case .capture: CaptureSettingsPane()
+              case .speech: SpeechSettingsPane()
               case .learning: LearningSettingsPane()
               case .network: NetworkSettingsPane()
               case .about: AboutSettingsPane()
@@ -292,7 +336,9 @@ private struct GeneralSettingsPane: View {
         Hairline()
         SettingsRow(
           L10n.isChinese ? "默认目标语言" : "Default target",
-          detail: L10n.isChinese ? "新翻译默认转换的目标语言。" : "The language new translations aim for."
+          detail: L10n.isChinese
+            ? "工作台和查词浮窗翻译到的语言。写作浮窗有自己的写作语言。"
+            : "What the workbench and the lookup pop-up translate into. The writing pop-up has its own language."
         ) {
           AppSelect(
             title: L10n.isChinese ? "默认目标语言" : "Default target language",
@@ -304,12 +350,12 @@ private struct GeneralSettingsPane: View {
         Hairline()
         SettingsBlock {
           VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            Text(L10n.isChinese ? "翻译快捷选择语言" : "Languages in the translator")
+            Text(L10n.isChinese ? "快捷选择语言" : "Languages to switch between")
               .font(AppFont.body)
             Text(
               L10n.isChinese
-                ? "至少保留一种可用语言。默认包含中文、日语与英语。"
-                : "At least one language stays enabled. Chinese, Japanese, and English are the defaults."
+                ? "工作台和查词浮窗的语言菜单只列这些，⌘L 在它们之间切换。至少保留一种。"
+                : "The workbench and the lookup pop-up list these, and ⌘L steps through them. At least one stays enabled."
             )
             .font(AppFont.caption)
             .foregroundStyle(palette.mutedForeground)
@@ -322,66 +368,31 @@ private struct GeneralSettingsPane: View {
 
       // The default action is set where it applies: right-click an action
       // tab in the main window or the lookup pop-up.
-      SettingsCard(L10n.isChinese ? "翻译与交互" : "Translation") {
-        switchRow(
-          L10n.isChinese ? "自动开始翻译" : "Translate automatically",
+      SettingsCard(L10n.isChinese ? "主窗口" : "Main Window") {
+        ShortcutSettingRow(
+          action: .showWindow,
+          title: L10n.isChinese ? "显示或隐藏" : "Show or hide",
           detail: L10n.isChinese
-            ? "划选文字或完成截屏后立即自动执行翻译。"
-            : "Runs as soon as text arrives from a selection or from screen capture.",
-          isOn: $settingsStore.settings.autoTranslate
+            ? "工作台、学习中心、历史记录和动作都在主窗口里。"
+            : "The workbench, Study, History, and Actions all live in the main window.",
+          value: $settingsStore.settings.shortcuts.showWindow
         )
         Hairline()
-        switchRow(
-          L10n.isChinese ? "在划选浮窗中呈现结果" : "Show selections in a pop-up",
-          detail: L10n.isChinese
-            ? "在光标附近的悬浮面板中呈现译文，而不是激活主窗口。"
-            : "Translates selected text in a floating panel instead of the main window.",
-          isOn: $settingsStore.settings.useCompactSelectionPreview
+        SwitchRow(
+          L10n.isChinese ? "主窗口置顶" : "Always on top",
+          isOn: $settingsStore.settings.alwaysOnTop
         )
         Hairline()
-        SettingsRow(
-          L10n.isChinese ? "浮窗弹出位置" : "Pop-up position",
+        SwitchRow(
+          L10n.isChinese ? "失焦自动隐藏" : "Hide when inactive",
           detail: L10n.isChinese
-            ? (settingsStore.settings.selectionPanelPlacement == .nearPointer
-              ? "在选中文字下方弹出，下方放不下时改到上方；读不到选区位置时在鼠标光标旁弹出。"
-              : "记忆上次拖动的位置，后续弹窗均在固定位置打开。")
-            : (settingsStore.settings.selectionPanelPlacement == .nearPointer
-              ? "Opens under the selected text, or above it when there is no room; beside the pointer when the selection's position cannot be read."
-              : "Drag the pop-up once; future pop-ups return to that position.")
-        ) {
-          AppSelect(
-            title: L10n.isChinese ? "浮窗弹出位置" : "Pop-up position",
-            selection: $settingsStore.settings.selectionPanelPlacement,
-            options: SelectionPanelPlacementMode.allCases,
-            label: { mode in
-              switch mode {
-              case .nearPointer: L10n.isChinese ? "跟随选区" : mode.displayName
-              case .fixed: L10n.isChinese ? "固定位置" : mode.displayName
-              }
-            }
-          )
-          .disabled(!settingsStore.settings.useCompactSelectionPreview)
-        }
-        Hairline()
-        switchRow(
-          L10n.isChinese ? "保持浮窗常驻显示（固定）" : "Keep the pop-up open",
-          detail: L10n.isChinese
-            ? "点击其他应用窗口时不自动隐藏，按 Escape 键或点按关闭按钮关闭。亦可通过浮窗标题栏的图钉图标快捷切换。"
-            : "Stays on screen when you click elsewhere; close it with Escape or the close button. "
-              + "The pin in the pop-up's title bar toggles this too.",
-          isOn: $settingsStore.settings.selectionPanelPinned
-        )
-        Hairline()
-        switchRow(
-          L10n.isChinese ? "剪贴板取词兜底" : "Copy as a fallback",
-          detail: L10n.isChinese
-            ? "当遇到无法直接读取辅助功能文本的网页或文档时，自动通过模拟拷贝读取。"
-            : "Uses the clipboard for web and document selections that cannot be read directly.",
-          isOn: $settingsStore.settings.useClipboardFallback
+            ? "切换到其他应用程序时自动收起主窗口。"
+            : "Puts the window away when you switch to another app.",
+          isOn: $settingsStore.settings.autoHideWhenInactive
         )
       }
 
-      SettingsCard(L10n.isChinese ? "窗口与外观" : "Window") {
+      SettingsCard(L10n.isChinese ? "外观与启动" : "Appearance & Startup") {
         SettingsRow(L10n.isChinese ? "外观主题" : "Appearance") {
           AppSelect(
             title: L10n.isChinese ? "外观主题" : "Appearance",
@@ -397,37 +408,11 @@ private struct GeneralSettingsPane: View {
           )
         }
         Hairline()
-        switchRow(
-          L10n.isChinese ? "主窗口置顶" : "Always on top",
-          isOn: $settingsStore.settings.alwaysOnTop
-        )
-        Hairline()
-        switchRow(
-          L10n.isChinese ? "失焦自动隐藏" : "Hide when inactive",
-          detail: L10n.isChinese
-            ? "切换到其他应用程序时自动收起主窗口。"
-            : "Puts the window away when you switch to another app.",
-          isOn: $settingsStore.settings.autoHideWhenInactive
-        )
-        Hairline()
-        switchRow(
-          L10n.isChinese ? "在程序坞 (Dock) 中显示图标" : "Show Dock icon",
-          isOn: $settingsStore.settings.showDockIcon
-        )
-        Hairline()
-        switchRow(
-          L10n.isChinese ? "登录时自动启动" : "Launch at login",
-          isOn: Binding(
-            get: { settingsStore.settings.launchAtLogin },
-            set: { model.applyLaunchAtLogin($0) }
-          )
-        )
-        Hairline()
         SettingsRow(
           L10n.isChinese ? "文本字体大小" : "Text size",
           detail: L10n.isChinese
-            ? "同时应用于原文输入框与译文呈现区。"
-            : "Applies to the source text and the result."
+            ? "工作台、两个浮窗和学习中心里的原文与结果都用这个字号。"
+            : "Used for the source text and the result in the workbench, both pop-ups, and Study."
         ) {
           HStack(spacing: AppSpacing.sm) {
             Slider(value: $settingsStore.settings.fontSize, in: 12...24, step: 1)
@@ -441,20 +426,23 @@ private struct GeneralSettingsPane: View {
               .frame(width: 34, alignment: .trailing)
           }
         }
+        Hairline()
+        SwitchRow(
+          L10n.isChinese ? "在程序坞 (Dock) 中显示图标" : "Show Dock icon",
+          detail: L10n.isChinese
+            ? "关闭后只在菜单栏显示，快捷键照常可用。"
+            : "When off, PhraseLens lives in the menu bar; the shortcuts keep working.",
+          isOn: $settingsStore.settings.showDockIcon
+        )
+        Hairline()
+        SwitchRow(
+          L10n.isChinese ? "登录时自动启动" : "Launch at login",
+          isOn: Binding(
+            get: { settingsStore.settings.launchAtLogin },
+            set: { model.applyLaunchAtLogin($0) }
+          )
+        )
       }
-    }
-  }
-
-  private func switchRow(
-    _ title: String,
-    detail: String? = nil,
-    isOn: Binding<Bool>
-  ) -> some View {
-    SettingsRow(title, detail: detail) {
-      Toggle("", isOn: isOn)
-        .toggleStyle(AppSwitchStyle())
-        .labelsHidden()
-        .accessibilityLabel(title)
     }
   }
 
@@ -1148,117 +1136,374 @@ private struct ProviderSettingsPane: View {
 
 }
 
-// MARK: - Shortcuts
+// MARK: - Shared rows
 
-private struct ShortcutSettingsPane: View {
+/// A setting that is on or off.
+private struct SwitchRow: View {
+  let title: String
+  var detail: String?
+  @Binding var isOn: Bool
+
+  init(_ title: String, detail: String? = nil, isOn: Binding<Bool>) {
+    self.title = title
+    self.detail = detail
+    _isOn = isOn
+  }
+
+  var body: some View {
+    SettingsRow(title, detail: detail) {
+      Toggle("", isOn: $isOn)
+        .toggleStyle(AppSwitchStyle())
+        .labelsHidden()
+        .accessibilityLabel(title)
+    }
+  }
+}
+
+/// One global shortcut, with the reason it could not be registered right
+/// under it rather than on a page of its own.
+private struct ShortcutSettingRow: View {
+  let action: HotKeyAction
+  let title: String
+  let detail: String
+  @Binding var value: String
+
+  @EnvironmentObject private var model: AppModel
+
+  var body: some View {
+    SettingsRow(title, detail: detail) {
+      ShortcutRecorder(value: $value, accessibilityTitle: title)
+    }
+    if let error = model.shortcutErrors[action] {
+      SettingsBlock { InlineNote(text: error, kind: .warning) }
+    }
+  }
+}
+
+/// Whether macOS lets PhraseLens read and write text in other apps.
+private struct AccessibilityPermissionRow: View {
+  let detail: String
+
+  @EnvironmentObject private var model: AppModel
+
+  var body: some View {
+    SettingsRow(L10n.isChinese ? "辅助功能权限" : "Accessibility", detail: detail) {
+      PermissionStatus(
+        isGranted: model.isAccessibilityTrusted,
+        help: L10n.isChinese ? "打开系统设置中的辅助功能" : "Open the Accessibility pane of System Settings"
+      ) {
+        model.openAccessibilitySettings()
+      }
+    }
+    .onAppear { model.refreshAccessibilityPermission() }
+    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+      model.refreshAccessibilityPermission()
+    }
+  }
+}
+
+/// A permission's state, and the way to grant it while it is missing.
+private struct PermissionStatus: View {
+  let isGranted: Bool
+  let help: String
+  let open: () -> Void
+
+  var body: some View {
+    HStack(spacing: AppSpacing.sm) {
+      Badge(
+        text: isGranted
+          ? (L10n.isChinese ? "已授权" : "Granted")
+          : (L10n.isChinese ? "未授权" : "Not granted"),
+        variant: isGranted ? .success : .warning,
+        symbol: isGranted ? "checkmark" : "exclamationmark"
+      )
+      if !isGranted {
+        Button(L10n.isChinese ? "打开系统设置" : "Open System Settings", action: open)
+          .appButton(.outline, size: .sm)
+          .help(help)
+      }
+    }
+  }
+}
+
+/// The actions a pop-up offers, by name, and the way to change them. They are
+/// edited in Actions, where each action says where it appears.
+private struct SurfaceActionsRow: View {
+  let names: [String]
+  let detail: String
+
+  @EnvironmentObject private var model: AppModel
+  @Environment(\.palette) private var palette
+
+  var body: some View {
+    SettingsRow(L10n.isChinese ? "可用的动作" : "Actions", detail: detail, stacksControl: true) {
+      HStack(alignment: .firstTextBaseline, spacing: AppSpacing.sm) {
+        Text(
+          names.isEmpty
+            ? (L10n.isChinese ? "还没有" : "None yet")
+            : names.joined(separator: L10n.isChinese ? "、" : ", ")
+        )
+        .font(AppFont.body)
+        .foregroundStyle(palette.secondaryForeground)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        Button {
+          model.openActions()
+        } label: {
+          AdaptiveLabel(title: L10n.isChinese ? "编辑动作…" : "Edit Actions…", symbol: "slider.horizontal.3")
+        }
+        .appButton(.outline, size: .sm)
+        .help(L10n.isChinese ? "在主窗口的“动作”里选择每个动作出现在哪里" : "Choose where each action appears, in the main window's Actions")
+      }
+    }
+  }
+}
+
+// MARK: - Lookup pop-up
+
+private struct LookupSettingsPane: View {
+  @EnvironmentObject private var model: AppModel
+  @EnvironmentObject private var settingsStore: SettingsStore
+
+  private var shortcut: String { settingsStore.settings.shortcuts.translateSelection }
+
+  var body: some View {
+    PaneStack {
+      SettingsCard(
+        L10n.isChinese ? "快捷键与权限" : "Shortcut & Permission",
+        caption: L10n.isChinese
+          ? "没选中文字时按快捷键，浮窗会打开一个输入框，可以直接输入要查的内容。"
+          : "Press it with nothing selected and the pop-up opens with a field to type in."
+      ) {
+        ShortcutSettingRow(
+          action: .translateSelection,
+          title: L10n.isChinese ? "快捷键" : "Shortcut",
+          detail: L10n.isChinese
+            ? "在任何 App 里选中文字后按下。"
+            : "Press it after selecting text in any app.",
+          value: $settingsStore.settings.shortcuts.translateSelection
+        )
+        Hairline()
+        AccessibilityPermissionRow(
+          detail: L10n.isChinese
+            ? "读取其他 App 里选中的文字需要它。没有它时，浮窗只能手动输入。"
+            : "Needed to read the text selected in another app. Without it, the pop-up only takes typing."
+        )
+      }
+
+      SettingsCard(L10n.isChinese ? "浮窗" : "Pop-up") {
+        SwitchRow(
+          L10n.isChinese ? "在浮窗中显示结果" : "Show results in a pop-up",
+          detail: L10n.isChinese
+            ? "关闭后，按 \(shortcut) 会把选中的文字送到主窗口的工作台。"
+            : "When off, \(shortcut) sends the selected text to the workbench in the main window instead.",
+          isOn: $settingsStore.settings.useCompactSelectionPreview
+        )
+        Hairline()
+        SettingsRow(
+          L10n.isChinese ? "弹出位置" : "Position",
+          detail: L10n.isChinese
+            ? (settingsStore.settings.selectionPanelPlacement == .nearPointer
+              ? "在选中文字下方弹出，下方放不下时改到上方；读不到选区位置时在鼠标光标旁弹出。"
+              : "记忆上次拖动的位置，后续弹窗均在固定位置打开。")
+            : (settingsStore.settings.selectionPanelPlacement == .nearPointer
+              ? "Opens under the selected text, or above it when there is no room; beside the pointer when the selection's position cannot be read."
+              : "Drag the pop-up once; future pop-ups return to that position.")
+        ) {
+          AppSelect(
+            title: L10n.isChinese ? "弹出位置" : "Position",
+            selection: $settingsStore.settings.selectionPanelPlacement,
+            options: SelectionPanelPlacementMode.allCases,
+            label: { mode in
+              switch mode {
+              case .nearPointer: L10n.isChinese ? "跟随选区" : mode.displayName
+              case .fixed: L10n.isChinese ? "固定位置" : mode.displayName
+              }
+            }
+          )
+        }
+        .disabled(!settingsStore.settings.useCompactSelectionPreview)
+        Hairline()
+        SwitchRow(
+          L10n.isChinese ? "保持浮窗常驻显示（固定）" : "Keep the pop-up open",
+          detail: L10n.isChinese
+            ? "点击其他应用窗口时不自动隐藏，按 Escape 键或点按关闭按钮关闭。浮窗标题栏的图钉也能切换。"
+            : "Stays on screen when you click elsewhere; close it with Escape or the close button. "
+              + "The pin in the pop-up's title bar toggles this too.",
+          isOn: $settingsStore.settings.selectionPanelPinned
+        )
+        .disabled(!settingsStore.settings.useCompactSelectionPreview)
+      }
+
+      SettingsCard(L10n.isChinese ? "读取与运行" : "Reading & Running") {
+        SwitchRow(
+          L10n.isChinese ? "自动运行" : "Run automatically",
+          detail: L10n.isChinese
+            ? "读到文字后立即运行默认动作。截屏识别出文字、在工作台切换动作时也一样。"
+            : "Runs the default action as soon as text arrives. The same goes for screen text, and for switching actions in the workbench.",
+          isOn: $settingsStore.settings.autoTranslate
+        )
+        Hairline()
+        SwitchRow(
+          L10n.isChinese ? "剪贴板取词兜底" : "Copy as a fallback",
+          detail: L10n.isChinese
+            ? "遇到无法直接读取选中文字的网页或文档时，模拟一次拷贝来读取。"
+            : "Uses the clipboard for web and document selections that cannot be read directly.",
+          isOn: $settingsStore.settings.useClipboardFallback
+        )
+        Hairline()
+        SwitchRow(
+          L10n.isChinese ? "自动朗读原文" : "Speak the original",
+          detail: L10n.isChinese
+            ? "结果出来后，把查的内容读一遍。声音在“朗读”里设置。"
+            : "Reads what you looked up aloud once the result is in. The voice is set in Speech.",
+          isOn: $settingsStore.settings.autoSpeakSelection
+        )
+      }
+
+      SettingsCard(L10n.isChinese ? "动作" : "Actions") {
+        SurfaceActionsRow(names: model.popupActions.map(\.displayName), detail: actionsDetail)
+      }
+    }
+  }
+
+  private var actionsDetail: String {
+    let name = model.popupDefaultAction?.displayName
+    if L10n.isChinese {
+      let current = name.map { "，现在是“\($0)”。" } ?? "。"
+      return "浮窗的动作栏按这个顺序排列，⌘1–9 切换。右键某个动作可以设为浮窗的默认动作" + current
+    }
+    let current = name.map { " (now “\($0)”)." } ?? "."
+    return "The pop-up's tabs, in this order; ⌘1–9 switches between them. Right-click one to make it the pop-up's default" + current
+  }
+}
+
+// MARK: - Writing pop-up
+
+private struct WritingSettingsPane: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
 
   var body: some View {
     PaneStack {
       SettingsCard(
-        L10n.isChinese ? "全局快捷键" : "Global shortcuts",
+        L10n.isChinese ? "快捷键与权限" : "Shortcut & Permission",
         caption: L10n.isChinese
-          ? "点按快捷键并按下您想要的组合键。设置立即生效。默认 ⌥F 打开浮窗，⌥⇧F 打开完整窗口。"
-          : "Click a shortcut and press the keys you want. Shortcuts apply immediately. "
-            + "The defaults pair ⌥F for the pop-up with ⌥⇧F for the full window."
+          ? "在任何输入框里写好内容，按快捷键：浮窗里用写作动作处理它，可以直接修改，回车替换原文。浮窗会按应用记住上次用的动作、语言和选项。"
+          : "Write in any text field and press it. The pop-up runs a writing action on what you wrote; edit the result if you like, "
+            + "and Return puts it in place. It remembers the action, language, and option you used last in each app."
       ) {
-        shortcutRow(
-          L10n.isChinese ? "划选翻译" : "Translate selection",
+        ShortcutSettingRow(
+          action: .writing,
+          title: L10n.isChinese ? "快捷键" : "Shortcut",
           detail: L10n.isChinese
-            ? "无需打开完整工作区即可翻译选中的文字。"
-            : "Translate selected text without opening the full workspace.",
-          value: $settingsStore.settings.shortcuts.translateSelection
+            ? "光标在输入框里时按下。"
+            : "Press it with the caret in a text field.",
+          value: $settingsStore.settings.shortcuts.writing
         )
         Hairline()
-        shortcutRow(
-          L10n.isChinese ? "切换主窗口" : "Toggle main window",
+        AccessibilityPermissionRow(
           detail: L10n.isChinese
-            ? "显示或隐藏包含翻译、历史记录与工具的完整工作区。"
-            : "Show or hide the complete translator, history, and tools.",
-          value: $settingsStore.settings.shortcuts.showWindow
+            ? "读取输入框里的内容、再把结果写回去都需要它。"
+            : "Needed to read what is in the field, and to write the result back."
+        )
+      }
+
+      SettingsCard(L10n.isChinese ? "写作" : "Writing") {
+        SwitchRow(
+          L10n.isChinese ? "先预览再替换" : "Preview before replacing",
+          detail: L10n.isChinese
+            ? "关闭后，快捷键会直接用上次的动作处理输入框里的文字并替换。"
+            : "When off, the shortcut runs the action used last and replaces the text straight away.",
+          isOn: $settingsStore.settings.writingShowsPreview
         )
         Hairline()
-        shortcutRow(
-          L10n.isChinese ? "截屏文字识别" : "Screenshot OCR",
+        SettingsRow(
+          L10n.isChinese ? "写作语言" : "Write in",
           detail: L10n.isChinese
-            ? "框选屏幕区域并识别提取其中的文字。"
-            : "Select a screen region and recognize its text.",
+            ? "提示词里的 ${targetLang}，和工作台的目标语言分开。浮窗里按 ⌘L 切换。"
+            : "What ${targetLang} becomes, kept apart from the workbench's target. Press ⌘L in the pop-up to switch."
+        ) {
+          AppSelect(
+            title: L10n.isChinese ? "写作语言" : "Write in",
+            selection: $settingsStore.settings.writingTargetLanguage,
+            options: LanguageCode.allCases.filter { $0 != .auto },
+            label: { $0.displayName }
+          )
+        }
+      }
+
+      SettingsCard(L10n.isChinese ? "动作" : "Actions") {
+        SurfaceActionsRow(
+          names: settingsStore.settings.writingActions(customActions: model.customActions).map(\.displayName),
+          detail: L10n.isChinese
+            ? "浮窗的动作栏按这个顺序排列，⌘1–9 切换。在“动作”里打开某个动作的“写作浮窗”，它就会出现在这里。"
+            : "The pop-up's tabs, in this order; ⌘1–9 switches between them. Turn on “Writing pop-up” for an action in Actions to add it."
+        )
+      }
+    }
+  }
+}
+
+// MARK: - Screen text
+
+private struct CaptureSettingsPane: View {
+  @EnvironmentObject private var model: AppModel
+  @EnvironmentObject private var settingsStore: SettingsStore
+
+  var body: some View {
+    PaneStack {
+      SettingsCard(
+        L10n.isChinese ? "快捷键与权限" : "Shortcut & Permission",
+        caption: L10n.isChinese
+          ? "按下后框选屏幕上的一块区域，识别出的文字会放进主窗口的工作台。图片、视频字幕、不能选中的界面文字都可以。"
+          : "Press it, then drag across part of the screen; the text found there lands in the workbench. "
+            + "It works on images, subtitles, and text an app will not let you select."
+      ) {
+        ShortcutSettingRow(
+          action: .screenshotOCR,
+          title: L10n.isChinese ? "快捷键" : "Shortcut",
+          detail: L10n.isChinese
+            ? "在任何地方按下，然后拖动鼠标框选。"
+            : "Press it anywhere, then drag to select.",
           value: $settingsStore.settings.shortcuts.screenshotOCR
         )
         Hairline()
-        shortcutRow(
-          L10n.isChinese ? "写作" : "Writing",
+        SettingsRow(
+          L10n.isChinese ? "屏幕录制权限" : "Screen Recording",
           detail: L10n.isChinese
-            ? "在输入框里写好内容后按下，用写作翻译、润色等动作处理它，再替换回去。"
-            : "Run Compose, Polish, or another writing action on what you wrote in the focused field, then put the result in its place.",
-          value: $settingsStore.settings.shortcuts.writing
+            ? "截取屏幕需要它。第一次截屏时 macOS 会询问；授权后可能需要重新打开 PhraseLens。"
+            : "Needed to capture the screen. macOS asks the first time; PhraseLens may need a relaunch after you allow it."
+        ) {
+          PermissionStatus(
+            isGranted: model.isScreenRecordingTrusted,
+            help: L10n.isChinese ? "打开系统设置中的屏幕录制" : "Open the Screen Recording pane of System Settings"
+          ) {
+            model.openScreenRecordingSettings()
+          }
+        }
+      }
+
+      SettingsCard(L10n.isChinese ? "识别之后" : "After Capture") {
+        SwitchRow(
+          L10n.isChinese ? "自动运行" : "Run automatically",
+          detail: L10n.isChinese
+            ? "识别出文字后立即运行默认动作。这个开关和查词浮窗的“自动运行”是同一个。"
+            : "Runs the default action as soon as the text is read. It is the same switch as the lookup pop-up's “Run automatically”.",
+          isOn: $settingsStore.settings.autoTranslate
         )
       }
-
-      SettingsCard(
-        L10n.isChinese ? "系统权限" : "Permissions",
-        caption: L10n.isChinese
-          ? "划选读取与写作需要 macOS 辅助功能权限。"
-          : "Selection lookup and writing need macOS Accessibility permission."
-      ) {
-        SettingsRow(
-          L10n.isChinese ? "辅助功能权限" : "Accessibility permission",
-          detail: L10n.isChinese
-            ? "划选读取屏幕文字及在其他应用中自动输入替换文本时必需。"
-            : "Required for capturing selected text and typing into other apps."
-        ) {
-          HStack(spacing: AppSpacing.sm) {
-            Badge(
-              text: model.isAccessibilityTrusted
-                ? (L10n.isChinese ? "已授权" : "Granted")
-                : (L10n.isChinese ? "未授权" : "Not granted"),
-              variant: model.isAccessibilityTrusted ? .success : .warning,
-              symbol: model.isAccessibilityTrusted ? "checkmark" : "exclamationmark"
-            )
-            Button(L10n.isChinese ? "打开系统设置" : "Open System Settings") {
-              model.openAccessibilitySettings()
-            }
-            .appButton(.outline, size: .sm)
-            .help(L10n.isChinese ? "打开系统设置中的辅助功能" : "Open the Accessibility pane of System Settings")
-          }
-        }
-      }
-
-      if !model.shortcutErrors.isEmpty {
-        SettingsCard(L10n.isChinese ? "故障排查" : "Problems") {
-          SettingsBlock {
-            VStack(alignment: .leading, spacing: AppSpacing.sm) {
-              ForEach(model.shortcutErrors, id: \.self) { error in
-                InlineNote(text: error, kind: .warning)
-              }
-            }
-          }
-        }
-      }
     }
-    .onAppear { model.refreshAccessibilityPermission() }
-    .onReceive(
-      NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
-    ) { _ in
-      model.refreshAccessibilityPermission()
-    }
-  }
-
-  private func shortcutRow(
-    _ title: String,
-    detail: String,
-    value: Binding<String>
-  ) -> some View {
-    SettingsRow(title, detail: detail) {
-      ShortcutRecorder(value: value, accessibilityTitle: title)
+    .onAppear { model.refreshScreenRecordingPermission() }
+    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+      model.refreshScreenRecordingPermission()
     }
   }
 }
 
 // MARK: - Speech
 
-private struct SpeechWritingSettingsPane: View {
+private struct SpeechSettingsPane: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var settingsStore: SettingsStore
   @Environment(\.palette) private var palette
@@ -1276,18 +1521,6 @@ private struct SpeechWritingSettingsPane: View {
             options: TTSProvider.allCases,
             label: { $0.displayName }
           )
-        }
-        Hairline()
-        SettingsRow(
-          L10n.isChinese ? "选词后自动朗读" : "Automatically speak selected text",
-          detail: L10n.isChinese
-            ? "翻译完成后自动朗读源文本。"
-            : "Reads the source text aloud once a translation completes."
-        ) {
-          Toggle("", isOn: $settingsStore.settings.autoSpeakSelection)
-            .toggleStyle(AppSwitchStyle())
-            .labelsHidden()
-            .accessibilityLabel(L10n.isChinese ? "选词后自动朗读" : "Automatically speak selected text")
         }
         Hairline()
         SettingsRow(L10n.isChinese ? "语速" : "Speech rate") {
@@ -1329,63 +1562,7 @@ private struct SpeechWritingSettingsPane: View {
           }
         }
       }
-
-      SettingsCard(
-        L10n.isChinese ? "写作" : "Writing",
-        caption: L10n.isChinese
-          ? "在任何输入框里写好内容，按 \(settingsStore.settings.shortcuts.writing)：浮窗里用下面这些动作处理它，"
-            + "可以直接修改，回车替换原文。浮窗会按应用记住上次用的动作、语言和选项。"
-          : "Write in any text field, then press \(settingsStore.settings.shortcuts.writing). The pop-up runs "
-            + "one of the actions below on what you wrote; edit the result if you like, and Return puts it "
-            + "in place. It remembers the action, language, and option you used last in each app."
-      ) {
-        SettingsRow(
-          L10n.isChinese ? "写作时可用的动作" : "Actions when writing",
-          detail: L10n.isChinese
-            ? "在“动作”里打开或关闭某个动作的“写作时可用”，也可以在那里修改它们的提示词。"
-            : "Turn “Use when writing” on or off for an action in Actions, where its prompts can be edited too."
-        ) {
-          Text(writingActionNames)
-            .font(AppFont.body)
-            .foregroundStyle(palette.secondaryForeground)
-            .lineLimit(2)
-            .multilineTextAlignment(.trailing)
-        }
-        Hairline()
-        SettingsRow(
-          L10n.isChinese ? "先预览再替换" : "Preview before replacing",
-          detail: L10n.isChinese
-            ? "关闭后，快捷键会直接用上次的动作处理输入框里的文字并替换。"
-            : "When off, the shortcut runs the action used last and replaces the text straight away."
-        ) {
-          Toggle("", isOn: $settingsStore.settings.writingShowsPreview)
-            .toggleStyle(AppSwitchStyle())
-            .labelsHidden()
-            .accessibilityLabel(L10n.isChinese ? "先预览再替换" : "Preview before replacing")
-        }
-        Hairline()
-        SettingsRow(
-          L10n.isChinese ? "目标语言" : "Write in",
-          detail: L10n.isChinese
-            ? "提示词里的 ${targetLang}。浮窗里按 ⌘L 切换。"
-            : "What ${targetLang} becomes. Press ⌘L in the pop-up to switch."
-        ) {
-          AppSelect(
-            title: L10n.isChinese ? "目标语言" : "Write in",
-            selection: $settingsStore.settings.writingTargetLanguage,
-            options: LanguageCode.allCases.filter { $0 != .auto },
-            label: { $0.displayName }
-          )
-        }
-      }
     }
-  }
-
-  /// The actions the writing pop-up offers, by name, in its order.
-  private var writingActionNames: String {
-    let names = settingsStore.settings.writingActions(customActions: model.customActions).map(\.displayName)
-    guard !names.isEmpty else { return L10n.isChinese ? "还没有" : "None yet" }
-    return names.joined(separator: L10n.isChinese ? "、" : ", ")
   }
 }
 

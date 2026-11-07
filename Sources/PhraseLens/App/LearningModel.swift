@@ -199,10 +199,14 @@ final class LearningModel: ObservableObject {
     termIDByHistory[id].flatMap(term(id:))
   }
 
-  /// Opens one term's page.
+  /// Opens one term's page. Saved words are listed as cards rather than
+  /// terms, so a page opened from there goes back to the term list.
   func select(_ id: UUID) {
     selectedTermID = id
     tab = .terms
+    if termFilter == .collected || term(id: id).map(termFilter.includes) == false {
+      termFilter = .all
+    }
   }
 
   /// Opens the term list under a filter.

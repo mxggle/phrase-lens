@@ -16,19 +16,21 @@ This file maps the original desktop behaviors to their native implementation.
 | Result buttons | Per-action Copy, Replace, and Insert with a chosen primary button; Replace and Insert write back to the selection's own app through Accessibility or a verified paste — [design](result-commands.md) |
 | TTS | `AVSpeechSynthesizer` with source-text autoplay, manual source and result playback in each pane's own language, and cancellation |
 | Pronunciation readings | `PronunciationGuide` per language, applied by `PromptBuilder` to the looked-up term and to short translations |
-| History | Atomic JSON storage, search, restore, favorites, delete |
-| Vocabulary | Atomic JSON storage, deduplication, search, delete |
+| History | Atomic JSON storage, search, restore, delete; the star is offered for sentences and passages, while a word row carries the bookmark |
+| Saved words | The bookmark (`AppModel.collect`) saves a word with its explanation to `vocabulary.json` and enrolls its term in review, first due tomorrow. Listed in Study › Terms › Saved (`LearningTermFilter.collected`) with AI filing and facets; double-clicking a card opens the term's page. Words saved before the bookmark meant review can be enrolled together, ten a day (`LearningModel.enrollSpread`) |
 | Study record | `LearningLedger` files lookups into `learning.json`: repeats, sentences, senses, follow-ups — [design](learning-assistant.md) |
 | Learner memory | `PromptBuilder.applyingLearnerMemory` hands the record to explanations; follow-up chips ordered by habit |
 | Related terms and cards | Local candidates (`LearningRelations`) judged by `LearningAnnotator`; memory cards and weekly diagnosis by `LearningCoach` |
 | Review | `ReviewScheduler` spaced repetition, with a re-lookup counted as a lapse |
 | Study assistant | Tool-using chat over the record (`AgentClient`, `LearningTools`), native for Anthropic and OpenAI-compatible connections |
 | Custom actions | Editable prompts with source, target, and text variables, an icon of their own (`symbol`), and where each action appears: the main window (`hiddenActionIDs`), the ⌥F pop-up (`popupHiddenActionIDs`, with its own default in `popupDefaultActionID`) and the ⌥W pop-up (`writingActionIDs`). The editor has a "Try it" box that runs the unsaved draft through `AppModel.tryAction` without touching history. An unrenamed preset is shown in the interface language (`displayName`) |
-| Global shortcuts | Carbon hot-key registration with conflict reporting. Inside the app one key grammar holds on every surface: ↩ primary command, Tab option, ⌘1–9 action, ⌘L language, ⌘R ask again, ⌘. stop, ⇧⌘C copy, and ⌘K follow-up in the main window |
+| Global shortcuts | Carbon hot-key registration with conflict reporting by action (`AppModel.shortcutErrors`), shown on the Settings page that holds the shortcut (`HotKeyAction.settingsPane`). Inside the app one key grammar holds on every surface: ↩ primary command, Tab option, ⌘1–9 action, ⌘L language, ⌘R ask again, ⌘. stop, ⇧⌘C copy, and ⌘K follow-up in the main window |
 | Menu bar | `MenuBarExtra` with every entry point (look up, write, OCR, main window) beside the shortcut the reader set, today's review count, settings and quit |
 | Launch at login | `SMAppService.mainApp` |
 | Proxy | Ephemeral `URLSessionConfiguration` proxy settings |
 | Theme and window behavior | System/light/dark, always-on-top, auto-hide, Dock policy |
+| Settings | One page per way in (`SettingsPane`): General (languages, main window, appearance), AI Connections, Lookup Pop-up, Writing Pop-up, Screen Text, then Speech, Study, Network, Getting Started, About. Each entry page leads with its shortcut and the permission it needs (Accessibility, or Screen Recording via `CGPreflightScreenCaptureAccess`) |
+| Setup guide | Five steps ending in practice: the guide ticks ⌥F and ⌥W off as they are pressed in other apps (`AppModel.practicedHotKeys`) |
 | Credential storage | AES-GCM sealed file in Application Support, key derived from the Mac's hardware UUID |
 
 ## Verification boundaries

@@ -59,7 +59,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 | 🗣️ **Dual Speech Synthesizers** | Read the source text *or the translation* aloud — each in its own language's voice — using high-fidelity **Microsoft Edge Neural TTS** or offline native **macOS System Voices**. |
 | 🈁 **Readings You Can Pronounce** | Words and short phrases come back with a reading: furigana for Japanese (`垂直な（すいちょくな）`), pinyin for Chinese (`词语（cíyǔ）`) — on the term you looked up and on the translation you have to say. |
 | 🌐 **English & Simplified Chinese** | Choose English or 简体中文 in Settings, or follow your macOS language. The setup guide, menus, settings, accessibility labels, errors, and website are localized. |
-| 📚 **History & Vocabulary** | Automatically preserve search histories and manage personal vocabulary collections with quick search and restore. |
+| 📚 **History & Saved Words** | Every lookup is kept in History. Bookmark a word to save it with its explanation and add it to spaced review; saved words live in Study › Terms › Saved, filed by AI and opening on the term's page. Star the sentences and passages you want to keep. |
 | 🧩 **Custom Prompt Templates** | Create custom AI actions using dynamic variables: `${sourceLang}`, `${targetLang}`, `${text}`, and `${context}`. Duplicate any built-in action to start from its shipped prompt. |
 | 🎛️ **Menu Bar & Global Hotkeys** | Lightweight `MenuBarExtra` companion, customizable global Carbon shortcuts, and launch-at-login support. |
 
@@ -78,7 +78,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 In the main window and both pop-ups the same keys do the same thing: <kbd>Return</kbd> runs the surface's primary command (run the action in the main window, the result's main button in the ⌥F pop-up, Replace in the ⌥W pop-up), <kbd>Tab</kbd> / <kbd>⇧</kbd> <kbd>Tab</kbd> step through the action's options, <kbd>⌘</kbd> <kbd>1</kbd>…<kbd>9</kbd> pick an action, <kbd>⌘</kbd> <kbd>L</kbd> switches the target language, <kbd>⌘</kbd> <kbd>R</kbd> asks again, <kbd>⌘</kbd> <kbd>.</kbd> stops, and <kbd>⇧</kbd> <kbd>⌘</kbd> <kbd>C</kbd> copies the result. <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>]</kbd> / <kbd>[</kbd> step through the main window's actions. The menu bar item lists every global shortcut as you have set it.
 
 > [!NOTE]
-> All shortcuts are fully customizable in **Settings > Shortcuts**. 
+> Settings has a page for each way in — **Lookup Pop-up**, **Writing Pop-up**, and **Screen Text** — with its shortcut, the permission it needs and whether it is granted, and how it behaves; the main window's shortcut is under **General**.
 > Selection lookup and in-place writing require **macOS Accessibility** permission. Screenshot OCR requires **Screen Recording** permission.
 
 ---
@@ -252,11 +252,11 @@ The **Actions** workspace contains your own action collection. Every action, inc
 
 In **Settings > AI Connections**, create named connections with independent credentials, including multiple accounts or OpenAI-compatible gateways. Selecting a connection edits it; **Make global default** explicitly changes the default connection and model. Referenced connections cannot be deleted until their actions and global default are reassigned.
 
-In **Settings > Actions**, choose **Use global default** or pin a connection and model. Switching connections selects that connection's remembered model. Duplicate and prompt reset preserve routing. The writing shortcut uses the Translate action; vocabulary tagging uses the global default. Follow-ups retain the original connection, model, prompts, language, and proxy context, including when restored from history. If the connection is removed or its endpoint, authentication, or credentials change, rerun the original action with an explicitly selected connection. Older history without route metadata needs a new original request before follow-ups.
+In the main window's **Actions** section, choose **Use global default** or pin a connection and model. Switching connections selects that connection's remembered model. Duplicate and prompt reset preserve routing. The writing shortcut uses the Translate action; vocabulary tagging uses the global default. Follow-ups retain the original connection, model, prompts, language, and proxy context, including when restored from history. If the connection is removed or its endpoint, authentication, or credentials change, rerun the original action with an explicitly selected connection. Older history without route metadata needs a new original request before follow-ups.
 
 Migration copies credentials from the app-owned encrypted store into stable connection identities and retains legacy data; it never automatically reads the old Keychain. Legacy action model choices are retained, with the previously active explicit choice migrated to a pinned route.
 
-You can expand PhraseLens by defining custom prompt templates in **Settings > Actions**. Templates support variable interpolation:
+You can expand PhraseLens by defining custom prompt templates in the main window's **Actions** section. Templates support variable interpolation:
 
 ```text
 ${sourceLang} -> Detected or chosen source language

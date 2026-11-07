@@ -125,8 +125,15 @@ final class AppModel: ObservableObject {
   @Published private var deletedActions: [DeletedAction] = []
   var lastDeletedActionName: String? { deletedActions.last?.action.name }
   var canUndoActionDeletion: Bool { !deletedActions.isEmpty }
-  @Published var shortcutErrors: [String] = []
+  /// Why a global shortcut could not be registered, by the shortcut's action.
+  @Published var shortcutErrors: [HotKeyAction: String] = [:]
   @Published private(set) var isAccessibilityTrusted = false
+  /// Whether macOS lets this app capture the screen, which screen text (OCR)
+  /// needs. Read without prompting; the prompt comes with the first capture.
+  @Published private(set) var isScreenRecordingTrusted = false
+  /// The global shortcuts used since launch. The setup guide's practice step
+  /// ticks them off as the reader tries each one in another app.
+  @Published private(set) var practicedHotKeys: Set<HotKeyAction> = []
   /// The pane whose text is being spoken, or nil when nothing is.
   @Published private(set) var speakingPane: SpokenPane?
 
@@ -256,8 +263,8 @@ final class AppModel: ObservableObject {
         try await library.addVocabulary(entry)
         vocabulary.insert(entry, at: 0)
         statusMessage = L10n.isChinese
-          ? "反复查询的“\(term.headword)”已加入生词本"
-          : "“\(term.headword)” keeps coming back, so it was added to Vocabulary"
+          ? "反复查询的“\(term.headword)”已自动收藏"
+          : "“\(term.headword)” keeps coming back, so it was saved"
         tagVocabulary([entry], announcing: false)
       } catch {
         // Unattended: the next sitting with this term tries again.
@@ -1091,7 +1098,7 @@ final class AppModel: ObservableObject {
     Task {
       do {
         try await library.removeVocabulary(ids: [entry.id])
-        statusMessage = L10n.isChinese ? "已从生词本移除" : "Removed from vocabulary"
+        statusMessage = L10n.isChinese ? "已取消收藏" : "Removed from Saved"
       } catch {
         vocabulary.insert(entry, at: 0)
         errorMessage = error.localizedDescription
@@ -1109,11 +1116,40 @@ final class AppModel: ObservableObject {
       inputSource: inputSource,
       restoredSource: restoredSourceLanguage
     )
+    collect(word: word, explanation: outputText, source: source, target: settings.targetLanguage)
+  }
+
+  /// Whether a history row's word is saved. Only rows that looked up a word
+  /// or a phrase can be: a sentence is kept with the history star instead.
+  func isCollected(_ entry: HistoryEntry) -> Bool {
+    vocabularyEntry(matching: entry.sourceText) != nil
+  }
+
+  /// Saves the word a history row looked up, with the answer it got then, or
+  /// takes it back out.
+  func toggleCollect(_ entry: HistoryEntry) {
+    if let existing = vocabularyEntry(matching: entry.sourceText) {
+      removeCollectedWord(existing)
+    } else {
+      collect(
+        word: entry.sourceText.trimmingCharacters(in: .whitespacesAndNewlines),
+        explanation: entry.translatedText,
+        source: entry.sourceLanguage,
+        target: entry.targetLanguage
+      )
+    }
+  }
+
+  /// The bookmark means "I want to learn this": the word is saved with its
+  /// explanation, and its term joins the review queue. Taking the bookmark
+  /// off later leaves the review alone; Study's term page removes it.
+  private func collect(word: String, explanation: String, source: LanguageCode, target: LanguageCode) {
+    guard !word.isEmpty, !explanation.isEmpty else { return }
     var entry = VocabularyEntry(
       word: word,
-      explanation: outputText,
+      explanation: explanation,
       sourceLanguage: source,
-      targetLanguage: settings.targetLanguage
+      targetLanguage: target
     )
     if let existing = vocabulary.first(where: { $0.matchesIdentity(of: entry) }) { entry.id = existing.id }
     let savedEntry = entry
@@ -1123,7 +1159,10 @@ final class AppModel: ObservableObject {
         try await library.addVocabulary(entry)
         vocabulary.removeAll { $0.matchesIdentity(of: entry) }
         vocabulary.insert(entry, at: 0)
-        statusMessage = L10n.isChinese ? "已添加到生词本" : "Added to vocabulary"
+        let enrolled = enrollCollected(word: word, language: source)
+        statusMessage = enrolled
+          ? (L10n.isChinese ? "已收藏，并加入复习" : "Saved, and added to review")
+          : (L10n.isChinese ? "已收藏" : "Saved")
         // Filed straight away, so the word is already browsable by the time
         // the reader next opens the library. It runs unattended: a failure
         // here leaves the word saved and unfiled, which the Organize command
@@ -1133,6 +1172,32 @@ final class AppModel: ObservableObject {
         errorMessage = error.localizedDescription
       }
     }
+  }
+
+  /// Puts a saved word's term into review, first due tomorrow like any term
+  /// just looked up. Returns whether it was newly enrolled.
+  @discardableResult
+  private func enrollCollected(word: String, language: LanguageCode) -> Bool {
+    guard learning.isEnabled, let term = learning.term(for: word, language: language), term.review == nil
+    else { return false }
+    learning.enroll(term.id, dueNow: false)
+    return true
+  }
+
+  /// The saved words whose terms are recorded but not in review: those saved
+  /// before the bookmark also meant review.
+  var collectedTermsOutsideReview: [LearningTerm] {
+    guard learning.isEnabled else { return [] }
+    return vocabulary.compactMap { entry in
+      learning.term(for: entry.word, language: entry.sourceLanguage)
+    }
+    .filter { $0.review == nil }
+  }
+
+  /// Enrolls every saved word that is not in review yet, spread over the
+  /// coming days the way an imported backlog is.
+  func enrollCollectedBacklog() {
+    learning.enrollSpread(collectedTermsOutsideReview.map(\.id))
   }
 
   func restore(_ entry: HistoryEntry, showWindow: Bool = true) {
@@ -1185,10 +1250,7 @@ final class AppModel: ObservableObject {
 
   /// Opens the study section, on one term when given.
   func openLearning(termID: UUID? = nil, tab: LearningTab? = nil) {
-    if let termID {
-      learning.selectedTermID = termID
-      learning.tab = .terms
-    }
+    if let termID { learning.select(termID) }
     if let tab { learning.tab = tab }
     learningFocusToken = UUID()
     WindowCoordinator.showMain()
@@ -1644,7 +1706,19 @@ final class AppModel: ObservableObject {
       .store(in: &cancellables)
   }
 
+  /// The failures in the order the shortcuts are listed, each led by the
+  /// page and the keys it concerns.
+  var shortcutErrorMessages: [String] {
+    let shortcuts = settingsStore.settings.shortcuts
+    return HotKeyAction.allCases.compactMap { action in
+      shortcutErrors[action].map {
+        "\(action.displayName) \(shortcuts.value(for: action))\(L10n.isChinese ? "：" : ": ")\($0)"
+      }
+    }
+  }
+
   func handleHotKey(_ action: HotKeyAction, sourceProcessIdentifier: pid_t? = nil) {
+    practicedHotKeys.insert(action)
     switch action {
     case .showWindow:
       WindowCoordinator.toggleMain()
@@ -1968,6 +2042,30 @@ final class AppModel: ObservableObject {
 
   func refreshAccessibilityPermission() {
     updateAccessibilityPermission(accessibility.isTrusted())
+  }
+
+  func refreshScreenRecordingPermission() {
+    isScreenRecordingTrusted = CGPreflightScreenCaptureAccess()
+  }
+
+  /// System Settings, at Screen Recording. macOS only offers the switch for an
+  /// app that has asked once, so asking comes first; the system shows its own
+  /// prompt the first time and does nothing after that.
+  func openScreenRecordingSettings() {
+    if !CGPreflightScreenCaptureAccess() {
+      _ = CGRequestScreenCaptureAccess()
+    }
+    refreshScreenRecordingPermission()
+    guard !isScreenRecordingTrusted else { return }
+    guard
+      let url = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+      ),
+      NSWorkspace.shared.open(url)
+    else {
+      errorMessage = L10n.isChinese ? "无法打开屏幕录制设置。" : "Could not open Screen Recording settings."
+      return
+    }
   }
 
   func openAccessibilitySettings() {

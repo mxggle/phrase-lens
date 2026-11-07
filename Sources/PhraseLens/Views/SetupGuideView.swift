@@ -75,8 +75,8 @@ struct SetupGuideView: View {
 
   private var tabNames: [String] {
     L10n.isChinese
-      ? ["账号", "连接", "模型", "快捷键", "体验"]
-      : ["Account", "Connect", "Model", "Shortcuts", "Try it"]
+      ? ["账号", "连接", "模型", "快捷键", "练一次"]
+      : ["Account", "Connect", "Model", "Shortcuts", "Practice"]
   }
 
   var body: some View {
@@ -87,7 +87,7 @@ struct SetupGuideView: View {
             .font(AppFont.display)
             .titleTracking()
             .foregroundStyle(palette.foreground)
-          Text(L10n.isChinese ? "5 个轻松步骤，开启第一次翻译体验" : "Five small steps to your first translation")
+          Text(L10n.isChinese ? "5 个轻松步骤，最后在别的 App 里练一次" : "Five small steps, ending with a try in another app")
             .font(AppFont.caption)
             .foregroundStyle(palette.mutedForeground)
         }
@@ -108,7 +108,7 @@ struct SetupGuideView: View {
         case 1: connectStep
         case 2: modelStep
         case 3: permissionStep
-        default: tryStep
+        default: practiceStep
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -204,7 +204,13 @@ struct SetupGuideView: View {
     case 3:
       return L10n.isChinese ? "此权限为可选项" : "This permission is optional"
     default:
-      return L10n.isChinese ? "返回结果即代表连接成功" : "A result will confirm the connection"
+      let practiced = practiceHotKeys.filter { model.practicedHotKeys.contains($0) }.count
+      if practiced == practiceHotKeys.count {
+        return L10n.isChinese ? "都练过了，可以开始用了" : "All tried. You are ready."
+      }
+      return L10n.isChinese
+        ? "已练 \(practiced)/\(practiceHotKeys.count)，也可以直接开始"
+        : "\(practiced) of \(practiceHotKeys.count) tried; you can start anyway"
     }
   }
 
@@ -677,6 +683,8 @@ struct SetupGuideView: View {
     settingsStore.settings.provider.model = models[0]
   }
 
+  private var shortcuts: ShortcutSettings { settingsStore.settings.shortcuts }
+
   private var permissionStep: some View {
     SettingsCard(
       L10n.isChinese ? "跨应用划词与快捷键" : "Use text from other apps",
@@ -693,32 +701,24 @@ struct SetupGuideView: View {
             .foregroundStyle(palette.secondaryForeground)
             .fixedSize(horizontal: false, vertical: true)
           VStack(alignment: .leading, spacing: AppSpacing.xs) {
-            HStack(spacing: AppSpacing.xs) {
-              Text("⌥F")
-                .font(AppFont.captionMedium)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(palette.surface, in: RoundedRectangle(cornerRadius: AppRadius.sm))
-                .overlay(RoundedRectangle(cornerRadius: AppRadius.sm).strokeBorder(palette.border))
-              Text(L10n.isChinese
-                ? "在任何应用中划选文字后按下，即可呼出快速翻译浮窗"
-                : "Select text in any app and press ⌥F to translate immediately")
-                .font(AppFont.caption)
-                .foregroundStyle(palette.secondaryForeground)
-            }
-            HStack(spacing: AppSpacing.xs) {
-              Text("⌥S")
-                .font(AppFont.captionMedium)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(palette.surface, in: RoundedRectangle(cornerRadius: AppRadius.sm))
-                .overlay(RoundedRectangle(cornerRadius: AppRadius.sm).strokeBorder(palette.border))
-              Text(L10n.isChinese
-                ? "截屏识别并翻译屏幕上的任意区域（首次使用需屏幕录制权限）"
-                : "Capture and translate any screen area with OCR (requires screen recording)")
-                .font(AppFont.caption)
-                .foregroundStyle(palette.secondaryForeground)
-            }
+            shortcutLine(
+              shortcuts.translateSelection,
+              L10n.isChinese
+                ? "在任何应用中选中文字后按下，在浮窗里查词、翻译"
+                : "Select text in any app and press it to look it up in a pop-up"
+            )
+            shortcutLine(
+              shortcuts.writing,
+              L10n.isChinese
+                ? "在任何输入框里写好内容后按下，翻译或润色后替换原文"
+                : "Write in any text field and press it to translate or polish it in place"
+            )
+            shortcutLine(
+              shortcuts.screenshotOCR,
+              L10n.isChinese
+                ? "框选屏幕上的任意区域，识别其中的文字（首次使用需屏幕录制权限）"
+                : "Read the text in any part of the screen (needs Screen Recording the first time)"
+            )
           }
           HStack(spacing: AppSpacing.sm) {
             Badge(
@@ -738,14 +738,12 @@ struct SetupGuideView: View {
           HStack(spacing: AppSpacing.sm) {
             InlineNote(
               text: L10n.isChinese
-                ? "截屏识别（⌥S）在首次使用时会申请“屏幕录制”权限。"
-                : "Screenshot OCR asks for Screen Recording access when first used.",
+                ? "截屏识别在首次使用时会申请“屏幕录制”权限。"
+                : "Screen text asks for Screen Recording access when first used.",
               kind: .info
             )
             Button(L10n.isChinese ? "屏幕录制设置" : "Screen Recording Settings") {
-              if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(url)
-              }
+              model.openScreenRecordingSettings()
             }
             .appButton(.outline, size: .sm)
           }
@@ -754,41 +752,142 @@ struct SetupGuideView: View {
     }
   }
 
-  private var tryStep: some View {
-    SettingsCard(
-      L10n.isChinese ? "体验翻译" : "Try a translation",
-      caption: L10n.isChinese ? "已在翻译器中为您准备了样例。" : "A sample is ready in the translator."
-    ) {
-      SettingsBlock {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-          Text(L10n.isChinese
-            ? "打开翻译器并点击“翻译”或按下 ↩。返回翻译结果即表明大模型连接成功。"
-            : "Open the translator and press Translate or Enter. A returned result confirms the service responds.")
-            .font(AppFont.body)
-            .foregroundStyle(palette.secondaryForeground)
-            .fixedSize(horizontal: false, vertical: true)
-          if !settingsStore.hasBasicProviderConfiguration {
+  private func shortcutLine(_ keys: String, _ text: String) -> some View {
+    HStack(spacing: AppSpacing.xs) {
+      KeyCap(keys: keys.isEmpty ? "—" : keys)
+      Text(text)
+        .font(AppFont.caption)
+        .foregroundStyle(palette.secondaryForeground)
+    }
+  }
+
+  // MARK: - Practice
+
+  /// The two shortcuts the practice step asks for: the ones that work inside
+  /// other apps, which is the habit worth leaving the guide with.
+  private var practiceHotKeys: [HotKeyAction] { [.translateSelection, .writing] }
+
+  /// The guide ends where PhraseLens is used: in another app. Each task is
+  /// ticked the moment its shortcut is pressed anywhere, so the reader leaves
+  /// having done both once rather than having read about them.
+  private var practiceStep: some View {
+    VStack(alignment: .leading, spacing: AppSpacing.lg) {
+      SettingsCard(
+        L10n.isChinese ? "在别的 App 里练一次" : "Try it in another app",
+        caption: L10n.isChinese
+          ? "这个窗口可以留着。做完一项，这里就会打勾。"
+          : "Leave this window open. Each task is ticked once you have done it."
+      ) {
+        practiceTask(
+          .translateSelection,
+          title: L10n.isChinese ? "查一个词" : "Look something up",
+          detail: L10n.isChinese
+            ? "在浏览器或任意 App 里选中一个词或一句话，按 \(shortcuts.translateSelection)。没选中也可以按，直接在浮窗里输入。"
+            : "Select a word or a sentence in your browser or any app and press \(shortcuts.translateSelection). "
+              + "With nothing selected, it opens a field to type in."
+        )
+        Hairline()
+        practiceTask(
+          .writing,
+          title: L10n.isChinese ? "改写一句话" : "Rewrite a sentence",
+          detail: L10n.isChinese
+            ? "在备忘录、聊天框等任意输入框里写一句话，按 \(shortcuts.writing)，选一个动作，回车替换原文。"
+            : "Write a sentence in Notes, a chat box, or any text field and press \(shortcuts.writing). "
+              + "Pick an action, and Return puts the result in place."
+        )
+        if !model.isAccessibilityTrusted {
+          SettingsBlock {
             InlineNote(
               text: L10n.isChinese
-                ? "在体验样例前，请先在“连接”和“模型”标签页完成基本配置。"
-                : "Finish the connection and model tabs before trying the sample.",
+                ? "没有辅助功能权限时，浮窗读不到别的 App 里的文字，也写不回去。上一步可以打开它。"
+                : "Without Accessibility permission, the pop-ups cannot read text from other apps or write back to them. The previous step turns it on.",
               kind: .warning
             )
           }
-          Button(L10n.isChinese ? "使用样例进入翻译器" : "Open Translator with Sample") {
-            let translationActionID = TranslationAction.builtIns[0].id
-            if model.visibleActions.contains(where: { $0.id == translationActionID }) {
-              model.selectedActionID = translationActionID
+        }
+      }
+
+      SettingsCard(
+        L10n.isChinese ? "或者先在主窗口里试" : "Or start in the main window",
+        caption: L10n.isChinese
+          ? "下面的按钮会在工作台里放好一句样例，按 ↩ 运行。返回结果即表明大模型连接成功。"
+          : "The button below puts a sample in the workbench; press Return to run it. A result confirms the service responds."
+      ) {
+        SettingsBlock {
+          VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            if !settingsStore.hasBasicProviderConfiguration {
+              InlineNote(
+                text: L10n.isChinese
+                  ? "在体验样例前，请先在“连接”和“模型”标签页完成基本配置。"
+                  : "Finish the connection and model tabs before trying the sample.",
+                kind: .warning
+              )
             }
-            model.editInputText("Hello, how are you?")
-            settingsStore.dismissSetupGuide()
-            showTranslator()
+            Button(L10n.isChinese ? "用样例打开工作台" : "Open the Workbench with a Sample") {
+              let translationActionID = TranslationAction.builtIns[0].id
+              if model.visibleActions.contains(where: { $0.id == translationActionID }) {
+                model.selectedActionID = translationActionID
+              }
+              model.editInputText("Hello, how are you?")
+              settingsStore.dismissSetupGuide()
+              showTranslator()
+            }
+            .appButton(.outline, size: .md)
+            .disabled(!settingsStore.hasBasicProviderConfiguration)
           }
-          .appButton(.primary, size: .md)
-          .disabled(!settingsStore.hasBasicProviderConfiguration)
         }
       }
     }
+  }
+
+  private func practiceTask(_ action: HotKeyAction, title: String, detail: String) -> some View {
+    let done = model.practicedHotKeys.contains(action)
+    return HStack(alignment: .top, spacing: AppSpacing.md) {
+      Image(systemName: done ? "checkmark.circle.fill" : "circle")
+        .font(.system(size: 16, weight: .medium))
+        .foregroundStyle(done ? palette.brand : palette.borderStrong)
+        .frame(width: 18)
+        .padding(.top, 1)
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: AppSpacing.xs) {
+          Text(title)
+            .font(AppFont.bodyMedium)
+            .foregroundStyle(palette.foreground)
+          KeyCap(keys: shortcuts.value(for: action).isEmpty ? "—" : shortcuts.value(for: action))
+        }
+        Text(detail)
+          .font(AppFont.caption)
+          .foregroundStyle(palette.mutedForeground)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 0)
+      if done {
+        Badge(text: L10n.isChinese ? "完成" : "Done", variant: .success, symbol: "checkmark")
+      }
+    }
+    .padding(.horizontal, AppSpacing.md + 2)
+    .padding(.vertical, AppSpacing.sm + 2)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .animation(.easeOut(duration: 0.2), value: done)
+    .accessibilityElement(children: .combine)
+    .accessibilityValue(done ? (L10n.isChinese ? "已完成" : "Done") : (L10n.isChinese ? "未完成" : "Not done"))
+  }
+}
+
+/// A key combination drawn as a key cap.
+private struct KeyCap: View {
+  let keys: String
+
+  @Environment(\.palette) private var palette
+
+  var body: some View {
+    Text(keys)
+      .font(AppFont.captionMedium)
+      .padding(.horizontal, 6)
+      .padding(.vertical, 2)
+      .background(palette.surface, in: RoundedRectangle(cornerRadius: AppRadius.sm))
+      .overlay(RoundedRectangle(cornerRadius: AppRadius.sm).strokeBorder(palette.border))
   }
 }
 

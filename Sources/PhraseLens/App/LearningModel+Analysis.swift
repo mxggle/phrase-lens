@@ -215,13 +215,34 @@ extension LearningModel {
     terms.filter { $0.review != nil }.sorted { ($0.review?.due ?? .distantPast) < ($1.review?.due ?? .distantPast) }
   }
 
-  func enroll(_ termID: UUID, now: Date = Date()) {
+  /// `dueNow` is for "Add to Review" on a term's page, which means "quiz me",
+  /// so the term is due straight away. A word bookmarked as it is looked up
+  /// was just read, so it waits until tomorrow like any new term.
+  func enroll(_ termID: UUID, now: Date = Date(), dueNow: Bool = true) {
     guard var term = term(id: termID), term.review == nil else { return }
     var state = ReviewScheduler.enroll(now: now)
-    // Enrolled by hand means "quiz me", so it is due straight away.
-    state.due = now
+    if dueNow { state.due = now }
     term.review = state
     update([term])
+  }
+
+  /// Enrolls a batch at the backlog's pace, so a long list of saved words
+  /// does not all fall due on the same day.
+  func enrollSpread(_ termIDs: [UUID], now: Date = Date()) {
+    let day: TimeInterval = 86_400
+    var seen = Set<UUID>()
+    let waiting = termIDs
+      .filter { seen.insert($0).inserted }
+      .compactMap(term(id:))
+      .filter { $0.review == nil }
+    let changed = waiting.enumerated().map { position, term in
+      var term = term
+      var state = ReviewScheduler.enroll(now: now)
+      state.due = now.addingTimeInterval(Double(position / ReviewScheduler.backlogPerDay) * day)
+      term.review = state
+      return term
+    }
+    update(changed)
   }
 
   func unenroll(_ termID: UUID) {

@@ -308,8 +308,8 @@ struct TranslatorView: View {
     HStack(spacing: 0) {
       IconButton(
         title: model.isCurrentWordCollected
-          ? (L10n.isChinese ? "从生词本中移除此词" : "Remove this word from Vocabulary")
-          : (L10n.isChinese ? "将此词与释义保存至生词本" : "Save this word and its explanation to Vocabulary"),
+          ? (L10n.isChinese ? "取消收藏" : "Remove from Saved")
+          : (L10n.isChinese ? "收藏这个词并加入复习" : "Save this word and add it to review"),
         symbol: model.isCurrentWordCollected ? "bookmark.fill" : "bookmark",
         isDisabled: !model.isCurrentWordCollected
           && (model.outputText.isEmpty || model.inputText.count > 80)

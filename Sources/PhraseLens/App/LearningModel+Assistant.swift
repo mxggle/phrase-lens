@@ -228,7 +228,7 @@ extension LearningModel {
       return zh ? "统计最近 \(days) 天" : "Counted the last \(days) days"
     case LearningTools.getReport.name: return zh ? "读取学习诊断" : "Read the diagnosis"
     case LearningTools.addToReview.name: return zh ? "把“\(term)”加入复习" : "Added “\(term)” to review"
-    case LearningTools.saveToVocabulary.name: return zh ? "把“\(term)”存入生词本" : "Saved “\(term)” to Vocabulary"
+    case LearningTools.saveToVocabulary.name: return zh ? "收藏了“\(term)”" : "Saved “\(term)”"
     case LearningTools.relatedWords.name: return zh ? "Datamuse：查“\(term)”的相关词" : "Datamuse: words related to “\(term)”"
     case LearningTools.dictionary.name: return zh ? "Free Dictionary：查“\(term)”" : "Free Dictionary: “\(term)”"
     default: return call.name

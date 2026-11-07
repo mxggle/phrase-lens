@@ -6,7 +6,6 @@ enum AppSection: String, CaseIterable, Identifiable {
   case translator
   case learning
   case history
-  case vocabulary
   case actions
 
   var id: String { rawValue }
@@ -19,8 +18,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case .translator: L10n.isChinese ? "工作台" : "Workbench"
     case .learning: L10n.isChinese ? "学习中心" : "Study"
     case .history: L10n.isChinese ? "历史记录" : "History"
-    case .vocabulary: L10n.isChinese ? "生词本" : "Vocabulary"
-    case .actions: L10n.isChinese ? "动作配置" : "Actions"
+    case .actions: L10n.isChinese ? "动作" : "Actions"
     }
   }
 
@@ -30,7 +28,6 @@ enum AppSection: String, CaseIterable, Identifiable {
     case .translator: "character.bubble"
     case .learning: "graduationcap"
     case .history: "clock.arrow.circlepath"
-    case .vocabulary: "books.vertical"
     case .actions: "slider.horizontal.3"
     }
   }
@@ -43,7 +40,6 @@ enum AppSection: String, CaseIterable, Identifiable {
     case .translator: L10n.isChinese ? "翻译、润色与解析文本" : "Translate, rewrite, and explain text"
     case .learning: L10n.isChinese ? "反复查询、相关词、复习与学习诊断" : "Repeats, related terms, review, and diagnosis"
     case .history: L10n.isChinese ? "保存在本机的所有翻译记录" : "Every translation saved on this Mac"
-    case .vocabulary: L10n.isChinese ? "阅读时收集的高频词汇" : "Words you collected while reading"
     case .actions: L10n.isChinese ? "定制每个动作背后的提示词" : "The prompts behind each action"
     }
   }
@@ -57,20 +53,19 @@ enum AppSection: String, CaseIterable, Identifiable {
     self != .translator && self != .learning
   }
 
-  /// Sidebar grouping.
+  /// Sidebar grouping: where work is done, and what it leaves behind.
+  /// Actions sit with the workbench because they are what it runs, not a
+  /// setting; saved words live in Study, under Terms › Saved.
   var group: Group {
     switch self {
-    case .setup: .configure
-    case .translator, .learning: .workspace
-    case .history, .vocabulary: .library
-    case .actions: .configure
+    case .setup, .translator, .actions: .workspace
+    case .learning, .history: .library
     }
   }
 
   enum Group: String, CaseIterable, Identifiable {
     case workspace = "Workspace"
     case library = "Library"
-    case configure = "Configure"
 
     var id: String { rawValue }
 
@@ -78,7 +73,6 @@ enum AppSection: String, CaseIterable, Identifiable {
       switch self {
       case .workspace: L10n.isChinese ? "工作区" : "Workspace"
       case .library: L10n.isChinese ? "资源库" : "Library"
-      case .configure: L10n.isChinese ? "设置" : "Configure"
       }
     }
   }
@@ -254,7 +248,6 @@ private struct Shell: View {
           case .translator: TranslatorView()
           case .learning: LearningView()
           case .history: HistoryView()
-          case .vocabulary: VocabularyView()
           case .actions: ActionsView()
           }
         }
@@ -597,9 +590,6 @@ private struct NavBar: View {
     case .history where !model.history.isEmpty:
       let count = model.history.count
       return zh ? "\(count) 条记录，保存在本机" : "\(count) \(count == 1 ? "lookup" : "lookups") saved on this Mac"
-    case .vocabulary where !model.vocabulary.isEmpty:
-      let count = model.vocabulary.count
-      return zh ? "\(count) 个词，阅读时收集" : "\(count) \(count == 1 ? "word" : "words") collected while reading"
     case .actions where !model.orderedActions.isEmpty:
       let count = model.orderedActions.count
       return zh ? "\(count) 个动作，定制每个动作背后的提示词" : "\(count) \(count == 1 ? "action" : "actions"), and the prompt behind each"
@@ -633,11 +623,11 @@ private struct NavBar: View {
 
       Spacer(minLength: AppSpacing.sm)
 
-      if !model.shortcutErrors.isEmpty {
+      if let failed = HotKeyAction.allCases.first(where: { model.shortcutErrors[$0] != nil }) {
         // A warning with nowhere to go is only an alarm. The badge opens the
-        // pane where the conflicting shortcut can be changed.
+        // page where the first conflicting shortcut can be changed.
         Button {
-          SettingsNavigation.show(.shortcuts) { openSettings() }
+          SettingsNavigation.show(failed.settingsPane) { openSettings() }
         } label: {
           Badge(
             text: L10n.isChinese ? "快捷键冲突" : "Shortcut conflict",
@@ -648,9 +638,9 @@ private struct NavBar: View {
         .buttonStyle(.plain)
         .help(
           L10n.isChinese
-            ? "部分全局快捷键注册失败，点按前往设置修改：\n" + model.shortcutErrors.joined(separator: "\n")
+            ? "部分全局快捷键注册失败，点按前往设置修改：\n" + model.shortcutErrorMessages.joined(separator: "\n")
             : "Some global shortcuts could not be registered. Click to change them:\n"
-              + model.shortcutErrors.joined(separator: "\n")
+              + model.shortcutErrorMessages.joined(separator: "\n")
         )
         .accessibilityLabel(L10n.isChinese ? "快捷键冲突，前往设置" : "Shortcut conflict. Opens Settings.")
         .layoutPriority(2)
@@ -688,7 +678,7 @@ private struct NavBarControls: View {
       )
     case .learning:
       LearningTabBar()
-    case .setup, .history, .vocabulary, .actions:
+    case .setup, .history, .actions:
       EmptyView()
     }
   }

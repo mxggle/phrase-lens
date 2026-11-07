@@ -1454,8 +1454,8 @@ private struct SelectionPanelBody: View {
 
       IconButton(
         title: isCurrentTextCollected
-          ? (L10n.isChinese ? "从生词本中移除此词" : "Remove from Vocabulary")
-          : (L10n.isChinese ? "保存至生词本" : "Save this word to Vocabulary"),
+          ? (L10n.isChinese ? "取消收藏" : "Remove from Saved")
+          : (L10n.isChinese ? "收藏这个词并加入复习" : "Save this word and add it to review"),
         symbol: isCurrentTextCollected ? "bookmark.fill" : "bookmark",
         isDisabled: !isCurrentTextCollected && !canCollectCurrentText,
         isOn: isCurrentTextCollected

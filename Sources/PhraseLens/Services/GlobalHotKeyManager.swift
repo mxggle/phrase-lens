@@ -8,14 +8,26 @@ enum HotKeyAction: UInt32, CaseIterable, Sendable {
   case screenshotOCR = 3
   case writing = 5
 
-  /// Mirrors the row titles in the shortcut settings pane, so a reported clash
-  /// names the row the user has to change.
+  /// Mirrors the Settings pages the shortcuts live on, so a reported clash
+  /// names the page the user has to go to.
   var displayName: String {
     switch self {
-    case .translateSelection: L10n.isChinese ? "划选翻译浮窗" : "Selection pop-up"
-    case .showWindow: L10n.isChinese ? "切换主窗口" : "Toggle main window"
-    case .screenshotOCR: L10n.isChinese ? "截屏文字识别" : "Screenshot OCR"
-    case .writing: L10n.isChinese ? "写作" : "Writing"
+    case .translateSelection: L10n.isChinese ? "查词浮窗" : "Lookup pop-up"
+    case .showWindow: L10n.isChinese ? "主窗口" : "Main window"
+    case .screenshotOCR: L10n.isChinese ? "截屏识别" : "Screen text"
+    case .writing: L10n.isChinese ? "写作浮窗" : "Writing pop-up"
+    }
+  }
+}
+
+extension ShortcutSettings {
+  /// The combination bound to `action`; empty when it is unbound.
+  func value(for action: HotKeyAction) -> String {
+    switch action {
+    case .translateSelection: translateSelection
+    case .showWindow: showWindow
+    case .screenshotOCR: screenshotOCR
+    case .writing: writing
     }
   }
 }
@@ -79,24 +91,21 @@ final class GlobalHotKeyManager {
   func register(
     shortcuts: ShortcutSettings,
     handler: @escaping @MainActor @Sendable (HotKeyAction, pid_t?) -> Void
-  ) -> [String] {
+  ) -> [HotKeyAction: String] {
     unregisterAll()
     self.handler = handler
-    let definitions: [(HotKeyAction, String)] = [
-      (.translateSelection, shortcuts.translateSelection),
-      (.showWindow, shortcuts.showWindow),
-      (.screenshotOCR, shortcuts.screenshotOCR),
-      (.writing, shortcuts.writing),
-    ]
+    let definitions: [(HotKeyAction, String)] = HotKeyAction.allCases.map { ($0, shortcuts.value(for: $0)) }
     requestedShortcuts = definitions
-    var errors: [String] = []
+    // Keyed by action, so each Settings page can show the failure beside the
+    // shortcut it belongs to.
+    var errors: [HotKeyAction: String] = [:]
     // An unbound action is a deliberate state, not a failure: an empty shortcut
     // simply gets no hot key, rather than a parse error the user cannot clear.
     for (action, shortcut) in definitions where !shortcut.isEmpty {
       do {
         try register(action: action, shortcut: shortcut)
       } catch {
-        errors.append("\(shortcut): \(error.localizedDescription)")
+        errors[action] = error.localizedDescription
       }
     }
     return errors
