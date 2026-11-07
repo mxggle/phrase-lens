@@ -60,6 +60,28 @@ final class ComposeModel: ObservableObject {
   private let accessibility = AccessibilityService()
   private var capture: ComposeCapture?
   private var tasks: [ComposeRequestKey: Task<Void, Never>] = [:]
+  /// The last pop-up put away without writing, kept for a while so the
+  /// shortcut pressed again on the same text brings it straight back.
+  private var suspended: SuspendedDraft?
+
+  /// Everything a pop-up had for its draft: the answers in every style tried,
+  /// edits to them included. A click elsewhere is usually a glance at
+  /// something — the conversation, a name to check — not a decision to throw
+  /// the answers away and pay for them again.
+  private struct SuspendedDraft {
+    var bundleIdentifier: String?
+    var sourceText: String
+    var actions: [TranslationAction]
+    var style: WritingStyle
+    var currentOption: ActionOption?
+    var languageOptions: [LanguageCode]
+    var drafts: [ComposeRequestKey: ComposeDraft]
+    var suspendedAt: Date
+  }
+
+  /// Long enough to look something up and come back; short enough that the
+  /// pop-up does not resurrect a draft from another conversation.
+  private static let resumeWindow: TimeInterval = 120
 
   init(settingsStore: SettingsStore) {
     self.settingsStore = settingsStore
@@ -134,8 +156,10 @@ final class ComposeModel: ObservableObject {
     }
   }
 
-  /// Escape, the close button, or a click elsewhere: nothing is written.
+  /// Escape, the close button, or a click elsewhere: nothing is written. The
+  /// answers are kept for a while, in case the reader comes straight back.
   func cancel() {
+    suspendDraft()
     cancelRequests()
     capture = nil
     replacesWhenFinished = false
@@ -145,6 +169,10 @@ final class ComposeModel: ObservableObject {
 
   private func begin(with capture: ComposeCapture, actions: [TranslationAction]) {
     cancelRequests()
+    if let suspended = resumableDraft(for: capture, actions: actions) {
+      resume(suspended, with: capture, actions: actions)
+      return
+    }
     let settings = settingsStore.settings
     self.capture = capture
     self.actions = actions
@@ -167,6 +195,66 @@ final class ComposeModel: ObservableObject {
     request(style, option: currentOption)
     ComposePanelCoordinator.shared.show(model: self, anchor: capture.anchorRect)
   }
+
+  // MARK: - Coming back
+
+  private func suspendDraft() {
+    guard let capture else { return }
+    // An answer still arriving cannot be kept: its request is about to be
+    // called off. It is asked for again if the draft comes back.
+    let finished = drafts.filter { !$0.value.isStreaming }
+    guard !finished.isEmpty else {
+      suspended = nil
+      return
+    }
+    suspended = SuspendedDraft(
+      bundleIdentifier: capture.bundleIdentifier,
+      sourceText: sourceText,
+      actions: actions,
+      style: style,
+      currentOption: currentOption,
+      languageOptions: languageOptions,
+      drafts: finished,
+      suspendedAt: Date()
+    )
+  }
+
+  /// The suspended draft, if this capture is the same text in the same app,
+  /// soon enough after, with the same actions on offer. Taken either way: a
+  /// draft that does not match this time is not coming back.
+  private func resumableDraft(for capture: ComposeCapture, actions: [TranslationAction]) -> SuspendedDraft? {
+    defer { self.suspended = nil }
+    guard let suspended = self.suspended,
+      Date().timeIntervalSince(suspended.suspendedAt) < Self.resumeWindow,
+      suspended.bundleIdentifier == capture.bundleIdentifier,
+      suspended.sourceText == capture.text.trimmingCharacters(in: .whitespacesAndNewlines),
+      suspended.actions == actions
+    else { return nil }
+    return suspended
+  }
+
+  /// Opens the pop-up as it was left, on the new capture: the field may have
+  /// moved, and the write has to go to where it is now.
+  private func resume(_ suspended: SuspendedDraft, with capture: ComposeCapture, actions: [TranslationAction]) {
+    self.capture = capture
+    self.actions = actions
+    sourceText = suspended.sourceText
+    style = suspended.style
+    currentOption = suspended.currentOption
+    languageOptions = suspended.languageOptions
+    drafts = suspended.drafts
+    errorMessage = nil
+    copiedAfterFailure = false
+    isAccessibilityPermissionMissing = false
+    replacesWhenFinished = false
+    sessionID = UUID()
+    // A no-op when the answer on screen was kept; asked again when it was
+    // still arriving when the pop-up was put away.
+    request(style, option: currentOption)
+    ComposePanelCoordinator.shared.show(model: self, anchor: capture.anchorRect)
+  }
+
+  // MARK: - Failing
 
   /// Nothing to work on. Saying so beats a shortcut that silently does
   /// nothing, which reads as broken.

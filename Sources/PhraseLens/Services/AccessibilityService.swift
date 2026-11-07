@@ -1656,7 +1656,7 @@ extension AccessibilityService {
   /// Accessibility measures from the top of the main display, downwards;
   /// AppKit from its bottom, upwards.
   @MainActor
-  private static func appKitRect(fromAccessibility rect: CGRect) -> CGRect? {
+  static func appKitRect(fromAccessibility rect: CGRect) -> CGRect? {
     guard let mainHeight = NSScreen.screens.first?.frame.height else { return nil }
     return CGRect(x: rect.minX, y: mainHeight - rect.maxY, width: rect.width, height: rect.height)
   }

@@ -51,7 +51,7 @@ Whether you need a lightning-fast floating pop-up beside your selected text or a
 
 | Feature | Description |
 | :--- | :--- |
-| 🔍 **Global Selection Lookup** | Select text anywhere in Safari, Xcode, Slack, or any app and trigger a compact pop-up right next to your cursor. |
+| 🔍 **Global Selection Lookup** | Select text anywhere in Safari, Xcode, Slack, or any app and press <kbd>⌥</kbd> <kbd>F</kbd>: a compact pop-up opens right under the words and grows to fit the answer. With nothing selected, the same shortcut opens it as a field to type a word into. Looking something up never touches what the main window is showing; the expand button carries the lookup over to the main window when you want to keep going. |
 | 🖥️ **Full Language Workspace** | Dedicated multi-tab workspace for translation, polishing, summarization, usage and context explanation, synonym comparison, and code analysis. |
 | 💬 **Follow-Up Questions** | Keep asking about a result — examples, nuance, collocations, grammar — with one-tap suggested questions. The thread is saved with the result and reopens with it from History. |
 | 📸 **Vision Screenshot OCR** | Snip any region on your screen to extract, recognize, and translate text instantly via Apple's Vision framework. |

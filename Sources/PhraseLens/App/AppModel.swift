@@ -66,6 +66,17 @@ final class AppModel: ObservableObject {
   /// The app the current selection was read from, so an option picked
   /// there is remembered for that app.
   @Published private(set) var selectionBundleIdentifier: String?
+  /// That app's name, for the pop-up's title and its write-back commands.
+  @Published private(set) var selectionApplicationName: String?
+  /// Where the selection sits on screen, in AppKit coordinates, so the pop-up
+  /// can open under the words rather than wherever the pointer was left.
+  private(set) var selectionAnchorRect: CGRect?
+  /// The selection shortcut found nothing selected, and opened the pop-up as
+  /// a field to type the word into instead.
+  @Published private(set) var selectionWasEmpty = false
+  /// Changes each time the selection shortcut fills the pop-up, so a pop-up
+  /// that is already on screen knows to start over on the new lookup.
+  @Published private(set) var selectionPopupSessionID = UUID()
   @Published var selectionContext: String?
   /// What the last selection capture managed to read. Drives the context
   /// badge, and gives a reader reporting "it did not pick up the sentence"
@@ -88,7 +99,15 @@ final class AppModel: ObservableObject {
   /// focus, which is the only way a menu item can reach a text field.
   @Published private(set) var followUpFocusToken = UUID()
   @Published var statusMessage = L10n.isChinese ? "就绪" : "Ready"
-  @Published var errorMessage: String?
+  @Published var errorMessage: String? {
+    didSet {
+      if errorMessage != oldValue { failedRequestCanRetry = false }
+    }
+  }
+  /// The current error came from a request that running again might fix — a
+  /// network or provider failure — rather than from setup that only Settings
+  /// can change. Cleared by any other error, or none.
+  @Published private(set) var failedRequestCanRetry = false
   @Published var history: [HistoryEntry] = []
   @Published var vocabulary: [VocabularyEntry] = []
   /// The filing run the reader started, or nil when none is running.
@@ -135,7 +154,33 @@ final class AppModel: ObservableObject {
   private var currentResultRoute: ResultRoute?
   private var selectionCaptureID = UUID()
   private var restoredSourceLanguage: LanguageCode?
+  /// The main window's work, set aside while the selection pop-up borrows
+  /// the model for a lookup of its own.
+  private var parkedWorkspace: ParkedWorkspace?
   private var cancellables = Set<AnyCancellable>()
+
+  /// Everything the translator pane shows, as it stood before a lookup in the
+  /// pop-up took the model over.
+  private struct ParkedWorkspace {
+    var inputText: String
+    var outputText: String
+    var outputRendering: OutputRendering
+    var selectedActionID: UUID
+    var selectionBundleIdentifier: String?
+    var selectionApplicationName: String?
+    var selectionContext: String?
+    var selectionDiagnostics: SelectionDiagnostics?
+    var insertionTarget: InsertionTarget?
+    var inputSource: InputSource
+    var followUps: [FollowUpTurn]
+    var followUpDraft: String
+    var currentHistoryID: UUID?
+    var currentResultRoute: ResultRoute?
+    var restoredSourceLanguage: LanguageCode?
+    var errorMessage: String?
+    var failedRequestCanRetry: Bool
+    var statusMessage: String
+  }
 
   init(settingsStore: SettingsStore = SettingsStore(), library: LibraryStore = LibraryStore(),
        integrateWithSystem: Bool = true) {
@@ -342,6 +387,8 @@ final class AppModel: ObservableObject {
   var isConfigurationError: Bool {
     guard let errorMessage else { return false }
     return errorMessage == TranslationError.missingAPIKey.localizedDescription
+      || errorMessage == TranslationError.missingOAuthCredentials.localizedDescription
+      || errorMessage == TranslationError.oauthExpired.localizedDescription
       || errorMessage.hasPrefix(TranslationError.invalidEndpoint("").localizedDescription)
   }
 
@@ -466,6 +513,7 @@ final class AppModel: ObservableObject {
         isTranslating = false
         statusMessage = L10n.isChinese ? "失败" : "Failed"
         errorMessage = error.localizedDescription
+        failedRequestCanRetry = !isConfigurationError
         // A provider that stopped early still answered. The text on screen is
         // as real as any other result and belongs in history; the message
         // above is what says it is a fragment.
@@ -607,7 +655,10 @@ final class AppModel: ObservableObject {
     // back before it will take a paste. Closing it is also simply what is
     // wanted: the answer has gone where it was meant to.
     let fromPanel = SelectionPanelCoordinator.shared.isVisible
-    SelectionPanelCoordinator.shared.close(cancelsTranslation: false)
+    let lookup = selectionCaptureID
+    // Not a dismissal: the lookup is still the pop-up's until the write lands,
+    // and a failed write brings the pop-up back to say so.
+    SelectionPanelCoordinator.shared.close(as: .suspension)
     Task {
       do {
         let method = try await accessibility.write(text, placement: placement, into: target)
@@ -620,7 +671,14 @@ final class AppModel: ObservableObject {
         Self.writeBackLog.info(
           "write-back placement=\(placement == .replace ? "replace" : "after", privacy: .public) method=\(method == .accessibility ? "accessibility" : "paste", privacy: .public)"
         )
+        // The answer went where it was meant to, which ends the lookup: the
+        // main window gets back what the pop-up set aside. Unless the next
+        // lookup has already started, in which case it is that one's to end.
+        if fromPanel, selectionCaptureID == lookup {
+          selectionPopupDidClose(handingOff: false)
+        }
       } catch {
+        guard selectionCaptureID == lookup else { return }
         errorMessage = error.localizedDescription
         if fromPanel {
           SelectionPanelCoordinator.shared.show(model: self)
@@ -1490,6 +1548,11 @@ final class AppModel: ObservableObject {
     sourceProcessIdentifier: pid_t? = nil
   ) {
     stopTranslation()
+    // The lookup is about to take the model over, so whatever the main window
+    // was showing is set aside first. It comes back when the pop-up is
+    // dismissed: a word looked up in passing must not cost the reader the
+    // paragraph they were working on.
+    parkWorkspace()
     selectionCaptureID = UUID()
     let activeCapture = selectionCaptureID
     inputText = ""
@@ -1498,6 +1561,8 @@ final class AppModel: ObservableObject {
     selectionContext = nil
     selectionDiagnostics = nil
     insertionTarget = nil
+    selectionAnchorRect = nil
+    selectionWasEmpty = false
     inputSource = .selection
     restoredSourceLanguage = nil
     resetFollowUps()
@@ -1510,8 +1575,9 @@ final class AppModel: ObservableObject {
     // before, so fall back to that instead of inspecting ourselves.
     let sourceApplication =
       sourceProcessIdentifier ?? ActiveApplicationTracker.shared.lastExternalProcessIdentifier
-    selectionBundleIdentifier = sourceApplication
-      .flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+    let runningApplication = sourceApplication.flatMap { NSRunningApplication(processIdentifier: $0) }
+    selectionBundleIdentifier = runningApplication?.bundleIdentifier
+    selectionApplicationName = runningApplication?.localizedName
 
     Task {
       do {
@@ -1526,6 +1592,9 @@ final class AppModel: ObservableObject {
         inputText = snapshot.text
         selectionContext = snapshot.surroundingText
         selectionDiagnostics = snapshot.diagnostics
+        selectionAnchorRect = snapshot.screenRect.flatMap {
+          AccessibilityService.appKitRect(fromAccessibility: $0)
+        }
         insertionTarget = accessibility.insertionTarget(
           for: sourceApplication,
           selectedText: snapshot.text
@@ -1533,8 +1602,12 @@ final class AppModel: ObservableObject {
         statusMessage = L10n.isChinese ? "就绪" : "Ready"
         selectDefaultAction()
         if compact {
+          selectionPopupSessionID = UUID()
           SelectionPanelCoordinator.shared.show(model: self)
         } else {
+          // The main window is where this lookup lives, so there is nothing
+          // to give back to it afterwards.
+          parkedWorkspace = nil
           WindowCoordinator.showMain()
         }
         if settingsStore.settings.autoTranslate {
@@ -1542,20 +1615,127 @@ final class AppModel: ObservableObject {
         }
       } catch {
         guard selectionCaptureID == activeCapture else { return }
-        // No text selected: skip silently instead of showing an error dialog.
+        // Nothing selected is not a failure. The pop-up opens as a field to
+        // type the word into, rather than the shortcut doing nothing at all,
+        // which reads as broken.
         if let error = error as? TranslationError, error == .selectionUnavailable {
           inputSource = .manual
+          selectionBundleIdentifier = nil
+          selectionApplicationName = nil
           statusMessage = L10n.isChinese ? "就绪" : "Ready"
+          selectDefaultAction()
+          if compact {
+            selectionWasEmpty = true
+            selectionPopupSessionID = UUID()
+            SelectionPanelCoordinator.shared.show(model: self)
+          } else {
+            // The main window's own work comes back, with the caret in it.
+            unparkWorkspace()
+            openTranslator()
+          }
           return
         }
         statusMessage = L10n.isChinese ? "未能读取选中文本" : "Selection unavailable"
-        errorMessage = error.localizedDescription
+        let message = error.localizedDescription
         if compact {
+          errorMessage = message
+          selectionPopupSessionID = UUID()
           SelectionPanelCoordinator.shared.show(model: self)
         } else {
+          unparkWorkspace()
+          errorMessage = message
           WindowCoordinator.showMain()
         }
       }
+    }
+  }
+
+  // MARK: - Pop-up workspace
+
+  /// Sets the translator's work aside before a lookup takes the model over.
+  ///
+  /// Only the main window's own work is parked. With the pop-up already on
+  /// screen the model is holding the pop-up's last lookup, and what the window
+  /// had is parked already. The empty state is parked too: an empty window
+  /// should be empty again once the pop-up is gone, not show its leftovers.
+  private func parkWorkspace() {
+    guard parkedWorkspace == nil, !SelectionPanelCoordinator.shared.isVisible else { return }
+    parkedWorkspace = ParkedWorkspace(
+      inputText: inputText,
+      outputText: outputText,
+      outputRendering: outputRendering,
+      selectedActionID: selectedActionID,
+      selectionBundleIdentifier: selectionBundleIdentifier,
+      selectionApplicationName: selectionApplicationName,
+      selectionContext: selectionContext,
+      selectionDiagnostics: selectionDiagnostics,
+      insertionTarget: insertionTarget,
+      inputSource: inputSource,
+      followUps: followUps,
+      followUpDraft: followUpDraft,
+      currentHistoryID: currentHistoryID,
+      currentResultRoute: currentResultRoute,
+      restoredSourceLanguage: restoredSourceLanguage,
+      errorMessage: errorMessage,
+      failedRequestCanRetry: failedRequestCanRetry,
+      statusMessage: statusMessage
+    )
+  }
+
+  /// Puts the main window's work back the way the lookup found it.
+  private func unparkWorkspace() {
+    guard let parked = parkedWorkspace else { return }
+    parkedWorkspace = nil
+    stopTranslation()
+    // First, because setting the input clears the result, the thread, and
+    // the error that belong to it.
+    inputText = parked.inputText
+    outputText = parked.outputText
+    outputRendering = parked.outputRendering
+    if visibleActions.contains(where: { $0.id == parked.selectedActionID }) {
+      selectedActionID = parked.selectedActionID
+    } else {
+      selectDefaultAction()
+    }
+    selectionBundleIdentifier = parked.selectionBundleIdentifier
+    selectionApplicationName = parked.selectionApplicationName
+    selectionContext = parked.selectionContext
+    selectionDiagnostics = parked.selectionDiagnostics
+    insertionTarget = parked.insertionTarget
+    inputSource = parked.inputSource
+    followUps = parked.followUps
+    followUpDraft = parked.followUpDraft
+    followUpError = nil
+    currentHistoryID = parked.currentHistoryID
+    currentResultRoute = parked.currentResultRoute
+    restoredSourceLanguage = parked.restoredSourceLanguage
+    errorMessage = parked.errorMessage
+    failedRequestCanRetry = parked.failedRequestCanRetry
+    statusMessage = parked.statusMessage
+    selectionAnchorRect = nil
+    selectionWasEmpty = false
+  }
+
+  /// The pop-up is gone.
+  ///
+  /// Handed off — to the main window, or to Settings on the way to fixing
+  /// it — the lookup stays and becomes the main window's. Dismissed, the main
+  /// window gets back what it was showing, and a capture still in flight is
+  /// called off, so it cannot reopen a pop-up the reader just waved away.
+  func selectionPopupDidClose(handingOff: Bool) {
+    guard !handingOff else {
+      parkedWorkspace = nil
+      return
+    }
+    selectionCaptureID = UUID()
+    let closedLookup = selectionCaptureID
+    // The panel draws from this model until its exit has finished, so giving
+    // the work back at once would flash the main window's text in the pop-up
+    // on its way out. A lookup started in the meantime keeps it parked.
+    Task { @MainActor in
+      try? await Task.sleep(for: .seconds(PanelMotion.closeDuration))
+      guard selectionCaptureID == closedLookup, !SelectionPanelCoordinator.shared.isVisible else { return }
+      unparkWorkspace()
     }
   }
 
@@ -1782,9 +1962,10 @@ enum WindowCoordinator {
   }
 
   static func showMain() {
-    // The window inherits the pop-up's model, so a translation that is still
-    // streaming carries on here rather than being cancelled out from under it.
-    SelectionPanelCoordinator.shared.close(cancelsTranslation: false)
+    // Asking for the full window while the pop-up is up means carrying the
+    // lookup on there: the window takes the pop-up's lookup over, and a
+    // translation still streaming continues rather than being cancelled.
+    SelectionPanelCoordinator.shared.close(as: .handOff)
     let settings = AppDelegate.sharedModel?.settingsStore.settings
     NSApp.setActivationPolicy(settings?.showDockIcon == false ? .accessory : .regular)
     NSApp.activate(ignoringOtherApps: true)
@@ -1845,7 +2026,7 @@ enum WindowCoordinator {
   /// The pop-up is handed off rather than dismissed, so a translation it was
   /// running survives the trip.
   static func prepareForSettings() {
-    SelectionPanelCoordinator.shared.close(cancelsTranslation: false)
+    SelectionPanelCoordinator.shared.close(as: .handOff)
     let settings = AppDelegate.sharedModel?.settingsStore.settings
     NSApp.setActivationPolicy(settings?.showDockIcon == false ? .accessory : .regular)
     NSApp.activate(ignoringOtherApps: true)

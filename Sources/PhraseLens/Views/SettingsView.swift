@@ -355,10 +355,10 @@ private struct GeneralSettingsPane: View {
           L10n.isChinese ? "浮窗弹出位置" : "Pop-up position",
           detail: L10n.isChinese
             ? (settingsStore.settings.selectionPanelPlacement == .nearPointer
-              ? "在当前屏幕的鼠标光标旁弹出。"
+              ? "在选中文字下方弹出，下方放不下时改到上方；读不到选区位置时在鼠标光标旁弹出。"
               : "记忆上次拖动的位置，后续弹窗均在固定位置打开。")
             : (settingsStore.settings.selectionPanelPlacement == .nearPointer
-              ? "Opens beside the pointer on the active display."
+              ? "Opens under the selected text, or above it when there is no room; beside the pointer when the selection's position cannot be read."
               : "Drag the pop-up once; future pop-ups return to that position.")
         ) {
           AppSelect(
@@ -367,7 +367,7 @@ private struct GeneralSettingsPane: View {
             options: SelectionPanelPlacementMode.allCases,
             label: { mode in
               switch mode {
-              case .nearPointer: L10n.isChinese ? "跟随光标" : mode.displayName
+              case .nearPointer: L10n.isChinese ? "跟随选区" : mode.displayName
               case .fixed: L10n.isChinese ? "固定位置" : mode.displayName
               }
             }
