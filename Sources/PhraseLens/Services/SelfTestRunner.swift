@@ -1932,7 +1932,7 @@ enum SelfTestRunner {
       check(TTSProvider.edge.displayName == "Microsoft Edge 神经语音（云端）", "TTSProvider.edge displayName in Chinese", failures: &failures)
       check(TTSProvider.system.displayName == "macOS 系统语音（本地）", "TTSProvider.system displayName in Chinese", failures: &failures)
 
-      check(SelectionPanelPlacementMode.nearPointer.displayName == "跟随鼠标光标", "SelectionPanelPlacementMode.nearPointer in Chinese", failures: &failures)
+      check(SelectionPanelPlacementMode.nearPointer.displayName == "跟随选中文字", "SelectionPanelPlacementMode.nearPointer in Chinese", failures: &failures)
       check(SelectionPanelPlacementMode.fixed.displayName == "记忆上次位置", "SelectionPanelPlacementMode.fixed in Chinese", failures: &failures)
 
       let translateAction = TranslationAction.builtIns.first { $0.mode == .translate }!
