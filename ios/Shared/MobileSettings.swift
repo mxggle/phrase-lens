@@ -54,6 +54,13 @@ struct MobileSettings: Codable, Equatable, Sendable {
 @MainActor
 final class MobileSettingsStore: ObservableObject {
   nonisolated static let appGroup = "group.com.harry.phraselens"
+
+  /// Whether this build is signed into the App Group. A free Personal Team
+  /// cannot sign one, and then the app and the extension each keep their own
+  /// settings and key instead of sharing them.
+  nonisolated static var isAppGroupAvailable: Bool {
+    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) != nil
+  }
   private static let key = "mobile-settings.v1"
 
   @Published var settings: MobileSettings {
@@ -66,7 +73,8 @@ final class MobileSettingsStore: ObservableObject {
   private let defaults: UserDefaults
 
   init(defaults: UserDefaults? = nil) {
-    let defaults = defaults ?? UserDefaults(suiteName: Self.appGroup) ?? .standard
+    let shared = Self.isAppGroupAvailable ? UserDefaults(suiteName: Self.appGroup) : nil
+    let defaults = defaults ?? shared ?? .standard
     self.defaults = defaults
     settings = Self.load(from: defaults)
   }
