@@ -46,4 +46,48 @@ enum WriteBackProbe {
     }
   }
 }
+
+/// Runs the real selection capture against a running app and prints what it
+/// found around the selection, so a source that loses its context can be
+/// checked from a shell. Reads through accessibility only — no ⌘C — so what it
+/// prints is what the tree alone gave. Debug builds only.
+///
+///     PhraseLens --context-probe <pid>
+@MainActor
+enum SelectionContextProbe {
+  static func run(arguments: [String]) async -> Int32 {
+    guard
+      let index = arguments.firstIndex(of: "--context-probe"),
+      arguments.count > index + 1,
+      let processIdentifier = pid_t(arguments[index + 1])
+    else {
+      print("usage: --context-probe <pid>")
+      return 2
+    }
+    // A probe is a launch of its own: hand the browser back the way it was.
+    defer { BrowserAccessibilityActivator.shared.deactivateAll() }
+    let started = ContinuousClock.now
+    do {
+      let snapshot = try await AccessibilityService().currentSelection(
+        from: processIdentifier,
+        allowCopyFallback: false
+      )
+      let diagnostics = snapshot.diagnostics ?? SelectionDiagnostics()
+      print("PROBE elapsed=\(started.duration(to: .now))")
+      print(
+        "PROBE role=\(diagnostics.focusedRole ?? "nil") elements=\(diagnostics.candidateCount) "
+          + "blocks=\(diagnostics.textSegmentCount) source=\(diagnostics.contextSource.rawValue) "
+          + "traversal=\(diagnostics.traversalMilliseconds)ms truncated=\(diagnostics.traversalTruncated)"
+      )
+      print("PROBE selection=\(snapshot.text.debugDescription)")
+      print("PROBE context=\((snapshot.surroundingText ?? "").debugDescription)")
+      let meaningful = PromptBuilder.hasMeaningfulContext(snapshot.surroundingText, for: snapshot.text)
+      print("PROBE meaningful=\(meaningful)")
+      return meaningful ? 0 : 1
+    } catch {
+      print("PROBE error=\(error.localizedDescription)")
+      return 1
+    }
+  }
+}
 #endif
