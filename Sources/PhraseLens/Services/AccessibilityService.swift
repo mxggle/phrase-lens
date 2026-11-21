@@ -153,6 +153,9 @@ struct AccessibilityService: Sendable {
     // needs it runs off the main thread so a slow application cannot freeze
     // the interface while it is being asked what is selected.
     let frontmostProcessIdentifier = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    if let sourceProcessIdentifier = processIdentifier ?? frontmostProcessIdentifier {
+      await BrowserAccessibilityActivator.shared.preparePageTree(for: sourceProcessIdentifier)
+    }
     let capture = try await Task.detached(priority: .userInitiated) { [self] in
       try self.captureAccessibilityState(
         from: processIdentifier,
@@ -368,12 +371,13 @@ struct AccessibilityService: Sendable {
   /// Bounds what one application can cost us, and asks the ones that build
   /// their accessibility tree on demand to build it.
   ///
-  /// Chromium and everything shipped on top of it — Chrome, Slack, VS Code,
-  /// Discord, Notion — expose a stub tree until an assistive client sets
-  /// `AXManualAccessibility`. Without it the walk below finds a window with
-  /// no text under it, which is indistinguishable from nothing being
-  /// selected. Applications that do not recognize the attribute return an
-  /// error and are unaffected.
+  /// Electron apps — Slack, VS Code, Discord, Notion — expose a stub tree
+  /// until an assistive client sets `AXManualAccessibility`. Without it the
+  /// walk below finds a window with no text under it, which is
+  /// indistinguishable from nothing being selected. Applications that do not
+  /// recognize the attribute return an error and are unaffected — Chrome and
+  /// the other Chromium browsers among them, which need a different switch
+  /// and seconds to act on it; `BrowserAccessibilityActivator` handles those.
   private func prepared(_ application: AXUIElement) -> AXUIElement {
     AXUIElementSetMessagingTimeout(application, Self.messagingTimeout)
     AXUIElementSetAttributeValue(
@@ -1487,6 +1491,9 @@ extension AccessibilityService {
     let runningApplication = NSRunningApplication(processIdentifier: processIdentifier)
     let applicationName = runningApplication?.localizedName
     let bundleIdentifier = runningApplication?.bundleIdentifier
+    // A field on a web page is part of the page, and a browser that has not
+    // built its page tree reports no focused field at all.
+    await BrowserAccessibilityActivator.shared.preparePageTree(for: processIdentifier)
     let application = prepared(AXUIElementCreateApplication(processIdentifier))
 
     var element = try? focusedElement(in: application)

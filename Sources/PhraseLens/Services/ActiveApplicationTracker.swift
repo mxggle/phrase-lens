@@ -22,7 +22,9 @@ final class ActiveApplicationTracker {
 
   func start() {
     guard observer == nil else { return }
-    record(NSWorkspace.shared.frontmostApplication?.processIdentifier)
+    let frontmost = NSWorkspace.shared.frontmostApplication
+    record(frontmost?.processIdentifier)
+    BrowserAccessibilityActivator.shared.activate(frontmost)
     observer = NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didActivateApplicationNotification,
       object: nil,
@@ -33,6 +35,12 @@ final class ActiveApplicationTracker {
       let processIdentifier = application?.processIdentifier
       Task { @MainActor in
         ActiveApplicationTracker.shared.record(processIdentifier)
+        // Coming to the front is the earliest sign a reader is about to
+        // select in a browser, and Chrome needs seconds to build its page
+        // tree once asked.
+        BrowserAccessibilityActivator.shared.activate(
+          processIdentifier.flatMap { NSRunningApplication(processIdentifier: $0) }
+        )
       }
     }
   }

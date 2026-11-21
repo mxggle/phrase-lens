@@ -115,6 +115,22 @@ enum SelfTestRunner {
       "a selection that appears nowhere was given a context anyway",
       failures: &failures
     )
+    // Chrome keeps its pages out of the accessibility tree until it is told a
+    // screen reader is running; Electron apps have a switch without that side
+    // effect, and Safari needs none.
+    check(
+      ["com.google.Chrome", "com.google.Chrome.canary", "com.microsoft.edgemac.Beta",
+       "com.brave.Browser", "company.thebrowser.Browser"]
+        .allSatisfy { BrowserAccessibilityActivator.isChromiumBrowser(bundleIdentifier: $0) },
+      "a Chromium browser was not recognized, so its page text stays out of reach",
+      failures: &failures
+    )
+    check(
+      [nil, "com.apple.Safari", "com.microsoft.VSCode", "com.tinyspeck.slackmacgap"]
+        .allSatisfy { !BrowserAccessibilityActivator.isChromiumBrowser(bundleIdentifier: $0) },
+      "an app that is not a Chromium browser would be told a screen reader is running",
+      failures: &failures
+    )
     // The clipboard and the accessibility tree disagree about soft hyphens,
     // list bullets, and dash width without either read being wrong. That
     // disagreement used to throw away a paragraph that was correct.

@@ -45,6 +45,15 @@ struct PhraseLensApp: App {
       }
       application.run()
     }
+    if CommandLine.arguments.contains("--context-probe") {
+      let application = NSApplication.shared
+      application.setActivationPolicy(.accessory)
+      Task { @MainActor in
+        let status = await SelectionContextProbe.run(arguments: CommandLine.arguments)
+        Darwin.exit(status)
+      }
+      application.run()
+    }
     #endif
     let model: AppModel
     #if DEBUG
@@ -356,6 +365,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     GlobalHotKeyManager.shared.unregisterAll()
     ActiveApplicationTracker.shared.stop()
+    BrowserAccessibilityActivator.shared.deactivateAll()
   }
 
   func applicationDidBecomeActive(_: Notification) {
