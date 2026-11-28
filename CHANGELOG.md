@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.2] — 2026-11-28
+
+### Fixed
+
+- read vertical Japanese in screenshots with Live Text (#24).
+
 ## [0.18.1] — 2026-11-21
 
 ### Fixed
@@ -530,7 +536,8 @@ themselves, so an unrecognized value costs that value and not the collection.
 
 - The About pane resolves the bundle version dynamically.
 
-[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/mxggle/phrase-lens/compare/v0.18.2...HEAD
+[0.18.2]: https://github.com/mxggle/phrase-lens/compare/v0.18.1...v0.18.2
 [0.18.1]: https://github.com/mxggle/phrase-lens/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/mxggle/phrase-lens/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/mxggle/phrase-lens/compare/v0.17.0...v0.17.1
