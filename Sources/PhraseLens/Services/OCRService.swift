@@ -1,13 +1,31 @@
 import AppKit
 import Foundation
 import ImageIO
+import os
 @preconcurrency import Vision
+@preconcurrency import VisionKit
 
 struct OCRService: Sendable {
   /// A capture smaller than this is a stray click rather than a selection: it
   /// carries no text, so it is treated as a cancelled capture instead of being
   /// reported as a failed recognition.
   private static let smallestUsableCapture = 8
+
+  private static let log = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "com.phraselens.app",
+    category: "ocr"
+  )
+
+  /// The recognizer that read a capture.
+  enum Engine: String, Sendable {
+    case liveText = "live-text"
+    case vision
+  }
+
+  struct Recognition: Sendable {
+    let text: String
+    let engine: Engine
+  }
 
   func captureAndRecognize() async throws -> String {
     let temporaryURL = FileManager.default.temporaryDirectory
@@ -20,36 +38,86 @@ struct OCRService: Sendable {
   }
 
   func recognize(url: URL) async throws -> String {
-    try await Task.detached(priority: .userInitiated) {
-      guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-        let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-      else {
-        throw TranslationError.provider(L10n.isChinese ? "无法读取图像。" : "Could not read the image.")
-      }
-      // A click that never became a drag still writes a file, so the empty
-      // capture is recognised here rather than surfacing as "no text found".
-      guard image.width >= Self.smallestUsableCapture,
-        image.height >= Self.smallestUsableCapture
-      else {
-        throw TranslationError.cancelled
-      }
-      let request = VNRecognizeTextRequest()
-      request.recognitionLevel = .accurate
-      request.usesLanguageCorrection = true
-      // Vision picks a single recognition model from `recognitionLanguages`, so pinning
-      // a Latin language ahead of the CJK ones made it drop Chinese and Japanese text
-      // entirely. Let Vision detect the script in the screenshot instead.
-      request.automaticallyDetectsLanguage = true
-      let handler = VNImageRequestHandler(cgImage: image)
-      try handler.perform([request])
-      let lines =
-        request.results?
-        .compactMap { $0.topCandidates(1).first?.string }
-        .filter { !$0.isEmpty } ?? []
-      let result = lines.joined(separator: "\n")
-      guard !result.isEmpty else { throw TranslationError.noTextRecognized }
-      return result
+    try await recognition(url: url).text
+  }
+
+  /// Reads the text in an image with Live Text, and with Vision when Live
+  /// Text is unavailable or finds nothing.
+  func recognition(url: URL) async throws -> Recognition {
+    // A click that never became a drag still writes a file, so the empty
+    // capture is recognised here rather than surfacing as "no text found".
+    let size = try Self.pixelSize(at: url)
+    guard size.width >= Self.smallestUsableCapture, size.height >= Self.smallestUsableCapture else {
+      throw TranslationError.cancelled
+    }
+    if let text = await Self.liveText(at: url) {
+      Self.log.info("recognized engine=live-text size=\(size.width)x\(size.height) characters=\(text.count)")
+      return Recognition(text: text, engine: .liveText)
+    }
+    let text = try await Task.detached(priority: .userInitiated) {
+      try Self.visionText(at: url)
     }.value
+    Self.log.info("recognized engine=vision size=\(size.width)x\(size.height) characters=\(text.count)")
+    guard !text.isEmpty else { throw TranslationError.noTextRecognized }
+    return Recognition(text: text, engine: .vision)
+  }
+
+  private static func pixelSize(at url: URL) throws -> (width: Int, height: Int) {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+      let width = properties[kCGImagePropertyPixelWidth] as? Int,
+      let height = properties[kCGImagePropertyPixelHeight] as? Int
+    else {
+      throw TranslationError.provider(L10n.isChinese ? "无法读取图像。" : "Could not read the image.")
+    }
+    return (width, height)
+  }
+
+  /// Live Text, the recognizer behind selecting text in Preview and Photos.
+  /// `VNRecognizeTextRequest` only reads horizontal lines: on a manga page it
+  /// returned nothing for every vertical speech bubble, at every setting and
+  /// at twice the size, while Live Text read each bubble whole — columns in
+  /// order, joined into one line — in a few hundredths of a second, and read
+  /// horizontal text as well as Vision did. Returns nil when Live Text is
+  /// unavailable, fails or finds nothing, so Vision still gets a try.
+  @MainActor
+  private static func liveText(at url: URL) async -> String? {
+    guard ImageAnalyzer.isSupported else {
+      log.info("live text unsupported on this Mac")
+      return nil
+    }
+    let configuration = ImageAnalyzer.Configuration([.text])
+    do {
+      let analysis = try await ImageAnalyzer().analyze(
+        imageAt: url, orientation: .up, configuration: configuration)
+      let text = analysis.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+      return text.isEmpty ? nil : text
+    } catch {
+      log.error("live text failed: \(error.localizedDescription, privacy: .public)")
+      return nil
+    }
+  }
+
+  private static func visionText(at url: URL) throws -> String {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    else {
+      throw TranslationError.provider(L10n.isChinese ? "无法读取图像。" : "Could not read the image.")
+    }
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = true
+    // Vision picks a single recognition model from `recognitionLanguages`, so pinning
+    // a Latin language ahead of the CJK ones made it drop Chinese and Japanese text
+    // entirely. Let Vision detect the script in the screenshot instead.
+    request.automaticallyDetectsLanguage = true
+    let handler = VNImageRequestHandler(cgImage: image)
+    try handler.perform([request])
+    let lines =
+      request.results?
+      .compactMap { $0.topCandidates(1).first?.string }
+      .filter { !$0.isEmpty } ?? []
+    return lines.joined(separator: "\n")
   }
 
   private func captureInteractively(to url: URL) async throws {

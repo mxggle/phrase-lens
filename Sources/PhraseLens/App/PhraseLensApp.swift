@@ -54,6 +54,15 @@ struct PhraseLensApp: App {
       }
       application.run()
     }
+    if CommandLine.arguments.contains("--ocr-probe") {
+      let application = NSApplication.shared
+      application.setActivationPolicy(.prohibited)
+      Task { @MainActor in
+        let status = await OCRProbe.run(arguments: CommandLine.arguments)
+        Darwin.exit(status)
+      }
+      application.run()
+    }
     #endif
     let model: AppModel
     #if DEBUG
